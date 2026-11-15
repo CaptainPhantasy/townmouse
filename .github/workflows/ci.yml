@@ -48,3 +48,32 @@ jobs:
         with:
           scandir: './scripts'
           severity: warning
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the container
+        run: docker build -t townmouse:ci .
+
+      - name: Start and probe /health
+        run: |
+          docker run -d --name townmouse-ci -p 127.0.0.1:11001:11001 townmouse:ci
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:11001/health >/dev/null; then
+              echo "container is healthy after ${attempt} attempts"
+              exit 0
+            fi
+            sleep 2
+            if ! docker inspect -f '{{.State.Running}}' townmouse-ci | grep -q true; then
+              docker logs townmouse-ci
+              exit 1
+            fi
+          done
+          docker logs townmouse-ci
+          exit 1
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f townmouse-ci || true

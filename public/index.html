@@ -1114,6 +1114,18 @@
    term.loadAddon(fitAddon);
    term.loadAddon(new WebLinksAddon());
    term.open($('#terminal'));
+   try {
+    term.parser.registerOscHandler(52, (data) => {
+     const payload = String(data).split(';')[1] || '';
+     if (payload && payload !== '?') {
+      try {
+       const text = atob(payload);
+       if (text) navigator.clipboard?.writeText(text).catch(() => {});
+      } catch (_) { /* malformed clipboard payload */ }
+     }
+     return true;
+    });
+   } catch (_) { /* older xterm without OSC handlers */ }
    // If resume already selected the old replay dimensions, do not fit to the
    // new viewport here; replay-end owns that transition.
    requestAnimationFrame(() => { if (!resumeReplay) fitAddon.fit(); });

@@ -1252,6 +1252,18 @@ function mountTerminal(record) {
   term.loadAddon(new WebLinksAddon());
   try {
     term.open(record.host);
+    // OSC 52 clipboard writes: agents and shell tools can copy without a
+    // synthetic keystroke. Reads are deliberately not supported.
+    term.parser.registerOscHandler(52, (data) => {
+      const payload = String(data).split(';')[1] || '';
+      if (payload && payload !== '?') {
+        try {
+          const text = atob(payload);
+          if (text) navigator.clipboard?.writeText(text).catch(() => {});
+        } catch (_) { /* malformed clipboard payload */ }
+      }
+      return true;
+    });
   } catch (error) {
     showNotice('The terminal could not be opened.', 'error');
     try { term.dispose(); } catch (_) { /* nothing to release */ }

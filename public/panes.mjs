@@ -250,6 +250,9 @@ function applyState(next, { force = false } = {}) {
   if (force || signature !== lastSignature) {
     lastSignature = signature;
     rebuild(tab);
+    if (!navigator.maxTouchPoints && tab) {
+      requestAnimationFrame(() => focusPaneById(effectiveActivePaneId(tab), 'terminal'));
+    }
   } else {
     updatePaneChrome(tab);
   }
@@ -1212,6 +1215,32 @@ function triggerBack() {
 }
 
 function bindEvents() {
+  document.addEventListener('keydown', (event) => {
+    if (!event.altKey || event.ctrlKey || event.metaKey) return;
+    const tabs = (currentState && currentState.tabs) || [];
+    if (event.key.toLowerCase() === 't') {
+      event.preventDefault();
+      void newTab();
+      return;
+    }
+    if (/^[1-9]$/.test(event.key) && tabs.length) {
+      const index = event.key === '9' ? tabs.length - 1 : Number(event.key) - 1;
+      if (tabs[index]) { event.preventDefault(); void activateTab(tabs[index].id); }
+      return;
+    }
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const tab = activeTab();
+      if (!tab || !tab.panes.length) return;
+      const at = tab.panes.findIndex((pane) => pane.id === effectiveActivePaneId(tab));
+      const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      const next = tab.panes[(at + step + tab.panes.length) % tab.panes.length];
+      if (next) {
+        event.preventDefault();
+        void setActivePane(next.id);
+        focusPaneById(next.id, next.kind === 'browser' ? 'type' : 'terminal');
+      }
+    }
+  });
   window.addEventListener('dragover', (event) => {
     if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
   });

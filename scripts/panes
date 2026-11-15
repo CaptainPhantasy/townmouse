@@ -65,6 +65,7 @@ async function main() {
   panes pane url <pane-id> <url>
   panes pane run <pane-id> <command...>
   panes pane read <pane-id> [--lines N]
+  panes pane text <pane-id>
   panes pane input <pane-id> <text...>
   panes pane close <pane-id>
   panes active --tab <tab-id> [--pane <pane-id>]
@@ -89,6 +90,7 @@ Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID
     if (action === 'url') { print(await call('POST', `/panes/${a._[0]}/url`, { url: a._[1] })); return; }
     if (action === 'run') { print(await call('POST', `/panes/${a._[0]}/command`, { command: a._.slice(1).join(' ') })); return; }
     if (action === 'input') { print(await call('POST', `/panes/${a._[0]}/input`, { data: a._.slice(1).join(' ') })); return; }
+    if (action === 'text') { print(await call('GET', `/panes/${a._[0]}/browser/content`)); return; }
     if (action === 'read') {
       const data = await call('GET', `/panes/${a._[0]}/read?since=0`);
       const lines = Number(a.lines || 80);

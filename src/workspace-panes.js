@@ -330,6 +330,14 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!pane.titleLocked) pane.title = snap.title || pane.title;
     res.json(snap);
   }));
+  app.get('/api/panes/panes/:id/browser/content', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const browser = browserWorkspace.get(pane.browserId);
+    if (!browser) { res.status(404).json({ error: 'Browser pane no longer exists.' }); return; }
+    const text = await browser.page.evaluate(() => document.body.innerText);
+    res.json({ url: browser.page.url(), title: browser.title || pane.title, text: String(text || '').slice(0, 100000) });
+  }));
   app.get('/api/panes/panes/:id/stream', auth, (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'terminal') {

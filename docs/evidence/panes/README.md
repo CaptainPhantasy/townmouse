@@ -84,3 +84,14 @@ The archival tests are `codex-fixes-test.cjs`, `input-batch-test.cjs`, and
 - Restarted the server against the same state directory: the tab reappeared as
   the active tab with both panes, the terminal cwd and browser URL restored.
 - `tests/panes-persistence.test.cjs` covers this in the `test:panes` chain.
+
+## Keyboard/mobile/agent-read pass — 2026-11-15
+
+- `panes pane text <pane-id>` returns the browser page's readable text; verified
+  against a fixture containing "Readable Browser Pane".
+- Panes keyboard shortcuts: Alt+T creates a tab, Alt+1..9 selects a tab, and
+  Alt+Arrow moves focus between panes. Non-touch sessions focus the active
+  terminal after load/tab switch.
+- Mobile CSS: 44px pane header close targets, 16px address/type inputs (prevents
+  iOS focus zoom), and safe-area padding on the pane app/bar.
+- Archival test: `pane-text-test.cjs`.

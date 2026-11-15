@@ -136,7 +136,12 @@ const FIXTURE_PAGES = {
   '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' },
   '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" },
   '/dialog': { title: 'Dialog Fixture', heading: 'Dialog Fixture', script: "setTimeout(() => window.confirm('Proceed with paging?'), 150);" },
-  '/dialog-inline': { title: 'Inline Dialog', heading: 'Inline Dialog', script: "window.confirm('Answer before load?');" }
+  '/dialog-inline': { title: 'Inline Dialog', heading: 'Inline Dialog', script: "window.confirm('Answer before load?');" },
+  '/click': {
+    title: 'Click Fixture',
+    heading: 'Click Fixture',
+    body: '<button id="hit" style="position:absolute;left:100px;top:100px;width:200px;height:100px" onclick="document.body.textContent=\'CLICKED_TARGET\'">hit</button>'
+  }
 };
 
 function startFixtureServer() {
@@ -156,7 +161,7 @@ function startFixtureServer() {
       return;
     }
     res.statusCode = 200;
-    res.end(`<!doctype html><html><head><title>${page.title}</title></head><body><h1>${page.heading}</h1>${page.script ? `<script>${page.script}</script>` : ''}</body></html>`);
+    res.end(`<!doctype html><html><head><title>${page.title}</title></head><body><h1>${page.heading}</h1>${page.body || ''}${page.script ? `<script>${page.script}</script>` : ''}</body></html>`);
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -815,6 +820,21 @@ async function main() {
       ensure(content.status === 200, 'active-HTML pane content should be readable', content.body);
       ensure(!/PWNED|LEAK/.test(content.body.text || ''), 'uploaded HTML script must not execute or read the bootstrap', content.body.text);
       ensure(String(content.body.title || '') !== 'PWNED', 'uploaded HTML must not change the page title through script', content.body.title);
+    });
+
+    await check('browser: coordinate clicks land on the intended element', async () => {
+      const token = required('workspace token', context.token);
+      const tab = await request('POST', '/api/panes/tabs', { token, body: { title: 'Click', activate: false } });
+      const pane = await createPane(tab.body.id, { kind: 'browser', url: `${FIXTURE_BASE}/click` });
+      ensure(pane.status === 200, 'click fixture pane should create', pane.body);
+      await snapshotUntil(pane.body.id, (body) => body.title === 'Click Fixture');
+      const clicked = await request('POST', `/api/panes/panes/${pane.body.id}/browser/action`, {
+        token,
+        body: { action: 'click', x: 200, y: 150 }
+      });
+      ensure(clicked.status === 200, 'coordinate click should respond 200', clicked.body);
+      const content = await request('GET', `/api/panes/panes/${pane.body.id}/browser/content`, { token });
+      ensure(/CLICKED_TARGET/.test(content.body.text || ''), 'click should hit the button at 200,150', content.body.text);
     });
 
     await check('tabs: agent-created tabs stay in the background and carry provenance', async () => {

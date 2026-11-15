@@ -175,18 +175,21 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `src/browser-workspace.js:68-71,169`; `public/panes.mjs:889-892`; deadlock probe with repo Puppeteer 25.17.0.  
 
 - [ ] **P1-19 - Browser-pane touch gestures are incomplete: no pinch, no momentum, no horizontal scroll**
+  *Progress 2026-11-15:* wheel and one-finger touch now send both `deltaX` and `deltaY`, and the server accepts both. Still open: momentum, pinch zoom, drag-threshold click suppression, and the two-finger terminal scroller.
   *Expectation:* Swipe scrolls the remote page, pinch zooms it, and a two-finger drag scrolls terminal scrollback; gestures have momentum and do not turn into accidental clicks.  
   *Current:* HEAD `8f33c3b` added one-finger vertical `touchstart`/`touchmove`/`touchend` scrolling (`public/panes.mjs:784-800`; `queueBrowserScroll`), but there is no momentum, no two-finger pinch zoom, no horizontal delta, and no drag threshold/click suppression. `.browser-view` still sets `touch-action:none` (`public/panes.css:263-271`). Terminal panes still lack the two-finger momentum scroller that `index.html` implements (`public/index.html:875-964`). The audit at `4dc692f` observed no touch handlers at all; the remaining gaps need on-device verification.  
   *Fix:* Implement pointer/touch drag scrolling with momentum and a two-finger pinch-to-zoom gesture; send `deltaX` as well as `deltaY`; mirror `workspace.mjs` touch handling and add the two-finger terminal scroller; suppress the click after a drag. Test at 393x852 and 820x1180.  
   *Evidence:* `public/panes.mjs:784-800`; `public/panes.css:263-271`; `public/index.html:875-964`; `public/workspace.mjs:846-852`.  
 
 - [ ] **P1-20 - No Enter, Tab, Backspace, arrows, Esc, or live typing to the page**
+  *Progress 2026-11-15:* a focused browser image forwards physical keydown (printable text and Enter/Tab/Esc/Backspace/arrows), and the pane key bar switches to a browser set with those keys. Still open: opening the mobile software keyboard for the remote page and showing which remote field has focus; the separate type row remains the mobile text path.
   *Expectation:* Click a page field, type, and use Enter/Tab/arrows/Esc and normal browser shortcuts while the pane is focused.  
   *Current:* The only text path is the separate "Type into the page" input plus Send, which calls `keyboard.type` once (`public/panes.mjs:712-715,962-967`). It cannot send Enter, Tab, Backspace, arrows, Escape, or modifier shortcuts, and typed characters do not appear until submit. There is no keydown forwarding and no key bar; the standalone browser has Tab and Enter buttons and a keydown handler, which the pane UI dropped (`public/workspace.mjs:121,827-843`). The server already supports `action: 'key'` at `src/browser-workspace.js:119,220`.  
   *Fix:* Add a compact key bar (Enter, Tab, Esc, arrows, Backspace) and forward physical keydown events when a browser pane is focused (with an escape hatch for outer shortcuts). Keep Send for pasted text and show the target field/focus in the UI.  
   *Evidence:* `public/panes.mjs:712-715,962-967`; `src/browser-workspace.js:119,220`; `public/workspace.mjs:121,827-843`.  
 
 - [ ] **P1-21 - The page pointer model is click-only**
+  *Progress 2026-11-15:* `tests/panes-api.test.cjs` proves a 200,150 coordinate click lands on the button at that location. Still open: hover, mousedown/move/up drag, double/right/modifier click, and text selection.
   *Expectation:* Hover menus, drag sliders and kanban cards, select text, double-click, right-click, and Cmd/Ctrl-click like a normal browser.  
   *Current:* Only image click -> `mouse.click(x,y)` and wheel exist (`public/panes.mjs:773,893-905`). There is no mousemove/hover, mousedown-mousemove-mouseup drag, double-click, right-click, modifier click, or text selection. Pages whose menus open on hover, drag controls, or context-menu actions (Copy link, Save image, Open in new tab) cannot be used.  
   *Fix:* Add move/down/up/drag and double/right-click actions plus client gestures; forward hover via periodic mousemove; support modifier flags; add a small context menu for link/image actions and open-external. Test hover menu, drag, double-click, and right-click.  
@@ -248,6 +251,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `public/panes.mjs:778-804,893-905`; `src/browser-workspace.js:120,221`; `public/panes.css:269`.  
 
 - [ ] **P1-31 - Page content is pixels only: no selection, copy, find, or screen-reader access for the human**
+  *Progress 2026-11-15:* Reader now reads the active browser pane's page text through `/browser/content` and renders it as a word-wrapped transcript, so a human can read and select text without OCR. Still open: in-page selection/copy/find, link actions, and screen-reader semantics tied to the remote page.
   *Expectation:* Select and copy page text, use Ctrl/Cmd+F to find in the page, have a screen reader read it, and open a readable page view.  
   *Current:* The page is a single `<img>` with `alt="Snapshot of ..."` (`public/panes.mjs:709-710`). There is no selectable text layer; Ctrl+F searches the wrapper HTML (pane chrome only); clipboard writes inside the page go to the server's clipboard, not the user's device. The standalone browser has a Read page drawer (`public/workspace.mjs:108,775-790`), but the pane has no equivalent. HEAD has a `/browser/content` text route (`src/workspace-panes.js:333-340`), but no UI uses it.  
   *Fix:* Add a Read page drawer fed by the content route, a find overlay, a selectable text layer (or a copy-page-text action that writes to the client clipboard), and a screen-reader representation. Test selecting/copying a paragraph and Ctrl/Cmd+F finding a page word.  
@@ -652,9 +656,9 @@ All six P0 items and P1-7 through P1-14 (where listed), P1-16, P1-18, P1-33, P1-
 |---|---|---|---|
 | 1 | **P1-15** Pane terminal parity | Copy/paste, font, Reader, and links exist; search, themes, and OSC 52 do not. | Pane menu exposes the remaining terminal features the main surface has. |
 | 2 | **P1-19** Touch gestures | Browser panes lack pinch, momentum, and horizontal scroll. | One-finger momentum and two-finger zoom behave like a browser. |
-| 3 | **P1-20** Native select | `<select>` controls in browser panes cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
-| 4 | **P1-21** Pointer accuracy | Click mapping assumes the viewport image is unscaled/uncropped in every case. | Clicks land on the intended target at all pane sizes and zoom levels. |
-| 5 | **P1-22** Activation reflow | A newly active browser pane may show a stale viewport until a resize. | Activation triggers a measured viewport reflow and fresh snapshot. |
+| 3 | **P1-20** Page keyboard | Focused typing and Enter/Tab/Esc/arrows exist, but mobile typing and remote focus still need work. | Click a remote field, type/Enter, and see focus and key-bar state. |
+| 4 | **P1-21** Pointer model | Clicks work; hover, drag, double/right/modifier click, and selection do not. | The pointer model matches a normal browser. |
+| 5 | **P1-22** Native select | `<select>`/date/color controls cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
 | 6 | **P1-23** Popup tabs | Popups are folded into the current page and lose opener messaging. | Pane-owned popup tabs, or a safe refusal that preserves OAuth. |
 | 7 | **P1-24** Browser history | Forward exists; Back/Forward still are not disabled at history edges and there is no history menu. | Snapshot reports `canGoBack`/`canGoForward`, and the toolbar reflects it. |
 | 8 | **P1-31** Page content access | Browser content is pixels only: no selection, copy, find, or screen-reader access for the human. | Readable/selectable content or an accessible text surface alongside the image. |

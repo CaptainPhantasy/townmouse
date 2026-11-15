@@ -212,7 +212,10 @@ function installBrowserWorkspace(app) {
       }
       case 'type': await p.keyboard.type(String(data.text || '').slice(0, 10000)); break;
       case 'key': await p.keyboard.press(String(data.key)); break;
-      case 'scroll': await p.mouse.wheel({ deltaY: Math.max(-1500, Math.min(1500, Number(data.deltaY) || 0)) }); break;
+      case 'scroll': await p.mouse.wheel({
+        deltaX: Math.max(-1500, Math.min(1500, Number(data.deltaX) || 0)),
+        deltaY: Math.max(-1500, Math.min(1500, Number(data.deltaY) || 0))
+      }); break;
       default: deny('Unknown browser action.', 400);
     }
     s.title = await p.title();
@@ -323,7 +326,7 @@ function installBrowserWorkspace(app) {
       }
       case 'type': await p.keyboard.type(String(req.body.text||'').slice(0,10000));break;
       case 'key': await p.keyboard.press(String(req.body.key));break;
-      case 'scroll': await p.mouse.wheel({deltaY:Math.max(-1500,Math.min(1500,Number(req.body.deltaY)||0))});break;
+      case 'scroll': await p.mouse.wheel({deltaX:Math.max(-1500,Math.min(1500,Number(req.body.deltaX)||0)),deltaY:Math.max(-1500,Math.min(1500,Number(req.body.deltaY)||0))});break;
       default: deny('Unknown browser action.',400);
     }
     res.json(describe(s));

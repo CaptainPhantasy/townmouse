@@ -466,10 +466,26 @@ function activeTerminalRecord() {
   return record && record.kind === 'terminal' && !record.disposed ? record : null;
 }
 
-function refreshReaderView() {
-  const record = activeTerminalRecord();
+async function refreshReaderView() {
+  const paneId = effectiveActivePaneId();
+  const record = records.get(paneId);
   if (!els.readerText) return;
-  if (!record || !record.term) {
+  if (!record) {
+    els.readerText.textContent = 'No active pane.';
+    return;
+  }
+  if (record.kind === 'browser') {
+    els.readerText.textContent = 'Reading page text…';
+    try {
+      const page = await api(`/panes/${paneId}/browser/content`);
+      els.readerText.textContent = String(page.text || '').trim() || 'This page has no readable text.';
+    } catch (error) {
+      els.readerText.textContent = error.message || 'Could not read the page.';
+    }
+    els.readerText.scrollTop = 0;
+    return;
+  }
+  if (!record.term) {
     els.readerText.textContent = 'No active terminal.';
     return;
   }
@@ -489,7 +505,7 @@ function openReaderView() {
   if (!els.readerView) return;
   closeSheets();
   els.readerView.hidden = false;
-  refreshReaderView();
+  void refreshReaderView();
   els.readerClose.focus();
 }
 
@@ -560,31 +576,63 @@ function makePaneKey(label, options = {}) {
   return button;
 }
 
-function buildPaneKeybar() {
-  if (!els.keybar) return;
-  const keys = [
-    makePaneKey('ESC', { sequence: PANE_SEQ.esc, title: 'Escape' }),
-    makePaneKey('TAB', { sequence: PANE_SEQ.tab, title: 'Tab' }),
-    makePaneKey('CTRL', { toggle: 'ctrl', title: 'Ctrl (sticky)' }),
-    makePaneKey('ALT', { toggle: 'alt', title: 'Alt (sticky)' }),
-    makePaneKey('C', { literal: 'c', key: 'c', title: 'C; with CTRL active sends Ctrl+C' }),
-    makePaneKey('←', { sequence: PANE_SEQ.left, title: 'Left' }),
-    makePaneKey('↑', { sequence: PANE_SEQ.up, title: 'Up' }),
-    makePaneKey('↓', { sequence: PANE_SEQ.down, title: 'Down' }),
-    makePaneKey('→', { sequence: PANE_SEQ.right, title: 'Right' }),
-    makePaneKey('HOME', { sequence: PANE_SEQ.home, title: 'Home' }),
-    makePaneKey('END', { sequence: PANE_SEQ.end, title: 'End' }),
-    makePaneKey('PGUP', { sequence: PANE_SEQ.pgup, title: 'Page Up' }),
-    makePaneKey('PGDN', { sequence: PANE_SEQ.pgdn, title: 'Page Down' })
-  ];
+let keybarKind = '';
+
+function makeBrowserKey(label, key, title) {
+  const button = makePaneKey(label, { title });
+  button.addEventListener('click', () => {
+    const record = records.get(effectiveActivePaneId());
+    if (record && record.kind === 'browser') void browserAction(record, 'key', { key });
+  });
+  return button;
+}
+
+function buildPaneKeybar(kind = 'terminal') {
+  if (!els.keybar || keybarKind === kind) return;
+  keybarKind = kind;
+  const keys = kind === 'browser'
+    ? [
+      makeBrowserKey('ENTER', 'Enter', 'Enter'),
+      makeBrowserKey('TAB', 'Tab', 'Tab'),
+      makeBrowserKey('ESC', 'Escape', 'Escape'),
+      makeBrowserKey('←', 'ArrowLeft', 'Left'),
+      makeBrowserKey('↑', 'ArrowUp', 'Up'),
+      makeBrowserKey('↓', 'ArrowDown', 'Down'),
+      makeBrowserKey('→', 'ArrowRight', 'Right'),
+      makeBrowserKey('⌫', 'Backspace', 'Backspace')
+    ]
+    : [
+      makePaneKey('ESC', { sequence: PANE_SEQ.esc, title: 'Escape' }),
+      makePaneKey('TAB', { sequence: PANE_SEQ.tab, title: 'Tab' }),
+      makePaneKey('CTRL', { toggle: 'ctrl', title: 'Ctrl (sticky)' }),
+      makePaneKey('ALT', { toggle: 'alt', title: 'Alt (sticky)' }),
+      makePaneKey('C', { literal: 'c', key: 'c', title: 'C; with CTRL active sends Ctrl+C' }),
+      makePaneKey('←', { sequence: PANE_SEQ.left, title: 'Left' }),
+      makePaneKey('↑', { sequence: PANE_SEQ.up, title: 'Up' }),
+      makePaneKey('↓', { sequence: PANE_SEQ.down, title: 'Down' }),
+      makePaneKey('→', { sequence: PANE_SEQ.right, title: 'Right' }),
+      makePaneKey('HOME', { sequence: PANE_SEQ.home, title: 'Home' }),
+      makePaneKey('END', { sequence: PANE_SEQ.end, title: 'End' }),
+      makePaneKey('PGUP', { sequence: PANE_SEQ.pgup, title: 'Page Up' }),
+      makePaneKey('PGDN', { sequence: PANE_SEQ.pgdn, title: 'Page Down' })
+    ];
   els.keybar.replaceChildren(...keys);
 }
 
 function updateKeybar() {
   if (!els.keybar) return;
   const record = activeTerminalRecord();
-  els.keybar.hidden = !record;
-  if (els.menuReader) els.menuReader.disabled = !record;
+  const active = records.get(effectiveActivePaneId());
+  if (active && active.kind === 'browser') {
+    buildPaneKeybar('browser');
+    els.keybar.hidden = false;
+  } else if (record) {
+    buildPaneKeybar('terminal');
+    els.keybar.hidden = false;
+  } else {
+    els.keybar.hidden = true;
+  }
+  if (els.menuReader) els.menuReader.disabled = !active;
   if (els.menuFontUp) els.menuFontUp.disabled = !record;
   if (els.menuFontDown) els.menuFontDown.disabled = !record;
 }
@@ -1395,6 +1443,7 @@ function createBrowserPane(pane) {
     snapshotWanted: false,
     snapshotTimer: 0,
     wheelDelta: 0,
+    wheelDeltaX: 0,
     wheelTimer: 0,
     lastDialogAt: '',
     resizeObserver: null,
@@ -1446,19 +1495,24 @@ function createBrowserPane(pane) {
   });
   record.view.addEventListener('wheel', (event) => onBrowserWheel(record, event), { passive: false });
   let touchY = 0;
+  let touchX = 0;
   let touchActive = false;
   record.view.addEventListener('touchstart', (event) => {
     if (event.touches.length !== 1) return;
     touchActive = true;
     touchY = event.touches[0].clientY;
+    touchX = event.touches[0].clientX;
   }, { passive: true });
   record.view.addEventListener('touchmove', (event) => {
     if (!touchActive || event.touches.length !== 1) return;
     event.preventDefault();
     const nextY = event.touches[0].clientY;
+    const nextX = event.touches[0].clientX;
     const deltaY = touchY - nextY;
+    const deltaX = touchX - nextX;
     touchY = nextY;
-    if (deltaY) queueBrowserScroll(record, deltaY);
+    touchX = nextX;
+    if (deltaY || deltaX) queueBrowserScroll(record, deltaY, deltaX);
   }, { passive: false });
   record.view.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
 
@@ -1586,22 +1640,28 @@ function onBrowserImageClick(record, event) {
   void browserAction(record, 'click', { x, y });
 }
 
-function queueBrowserScroll(record, deltaY) {
-  const delta = Math.max(-1500, Math.min(1500, Number(deltaY) || 0));
-  if (!delta) return;
-  record.wheelDelta += delta;
+function queueBrowserScroll(record, deltaY, deltaX = 0) {
+  const dy = Math.max(-1500, Math.min(1500, Number(deltaY) || 0));
+  const dx = Math.max(-1500, Math.min(1500, Number(deltaX) || 0));
+  if (!dy && !dx) return;
+  record.wheelDelta += dy;
+  record.wheelDeltaX = (record.wheelDeltaX || 0) + dx;
   if (record.wheelTimer) return;
   record.wheelTimer = window.setTimeout(() => {
     record.wheelTimer = 0;
-    const total = Math.max(-1500, Math.min(1500, record.wheelDelta));
+    const totalY = Math.max(-1500, Math.min(1500, record.wheelDelta));
+    const totalX = Math.max(-1500, Math.min(1500, record.wheelDeltaX || 0));
     record.wheelDelta = 0;
-    if (total && !record.disposed) void browserAction(record, 'scroll', { deltaY: total });
+    record.wheelDeltaX = 0;
+    if ((totalY || totalX) && !record.disposed) {
+      void browserAction(record, 'scroll', { deltaY: totalY, deltaX: totalX });
+    }
   }, 70);
 }
 
 function onBrowserWheel(record, event) {
   event.preventDefault();
-  queueBrowserScroll(record, event.deltaY);
+  queueBrowserScroll(record, event.deltaY, event.deltaX);
 }
 
 async function browserAction(record, action, extra = {}) {

@@ -74,7 +74,9 @@ and neither should you.
 
 The `Dockerfile` uses `node:22-bookworm-slim`, installs Chromium, sets
 `PUPPETEER_SKIP_DOWNLOAD=1` and `TERMINALONE_CHROME=/usr/bin/chromium`, runs as
-the `node` user, exposes `11001`, and keeps its data in `/home/node/.townmouse`.
+the `node` user, exposes `11001`, and declares volumes for both
+`/home/node/.townmouse` (workspace, attachments, pane token) and
+`/home/node/.config/terminalone` (voice settings).
 It sets `HOST=0.0.0.0` for container port forwarding and
 `TOWNMOUSE_CHROMIUM_NO_SANDBOX=1` because the container has no Chromium sandbox
 setup; both are container-only choices. The host run keeps loopback binding and
@@ -84,7 +86,7 @@ Build and run:
 
 ```sh
 docker build -t townmouse .
-docker run --rm -p 127.0.0.1:11001:11001 -v townmouse-home:/home/node/.townmouse townmouse
+docker run --rm -p 127.0.0.1:11001:11001 -v townmouse-home:/home/node/.townmouse -v townmouse-config:/home/node/.config/terminalone townmouse
 ```
 
 Publish only to host loopback. Mount project directories explicitly; the

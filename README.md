@@ -98,6 +98,7 @@ townmouse --port 12000 --no-open
 docker build -t townmouse .
 docker run --rm -p 127.0.0.1:11001:11001 \
   -v townmouse-home:/home/node/.townmouse \
+  -v townmouse-config:/home/node/.config/terminalone \
   townmouse
 ```
 

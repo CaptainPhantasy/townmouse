@@ -25,10 +25,10 @@ COPY docs/panes.md docs/browser-workspace.md docs/PACKAGING.md ./docs/
 COPY bin ./bin
 COPY README.md TOWNMOUSE.md DESIGN.md LICENSE SECURITY.md CHANGELOG.md ./
 RUN chmod +x scripts/panes bin/townmouse \
-  && mkdir -p /home/node/.townmouse \
-  && chown -R node:node /home/node/.townmouse
+  && mkdir -p /home/node/.townmouse /home/node/.config/terminalone \
+  && chown -R node:node /home/node/.townmouse /home/node/.config/terminalone
 
 USER node
 EXPOSE 11001
-VOLUME ["/home/node/.townmouse"]
+VOLUME ["/home/node/.townmouse", "/home/node/.config/terminalone"]
 CMD ["node", "src/server.js"]

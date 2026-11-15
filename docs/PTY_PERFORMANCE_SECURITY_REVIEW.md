@@ -42,6 +42,21 @@ If the tree moves again, locate findings by the named function rather than by li
 
 **41 deduplicated findings: 6 critical, 11 high, 18 medium, 6 low.**
 
+### Remediation status (2026-11-15)
+
+Closed in the implementation pass:
+
+- Popup crash and unguarded dialog state: `followPopup()` owns the whole lifecycle in an async wrapper; dialogs are answerable and bounded.
+- SSE backpressure: a slow reader is ended into the polling fallback instead of buffering without limit.
+- Stream exhaustion: at most four long-lived terminal streams are open; additional panes poll, keeping HTTP/1.1 slots for input/state/close.
+- Chromium sandbox: enabled by default; containers/CI opt out explicitly.
+- Upload boundary: owner/pane-token auth, sandbox CSP, download disposition for active types, daily quotas, and age-based archival.
+- Process resilience: unhandled rejections are logged and uncaught exceptions shut down through the normal cleanup path.
+- Multi-window ownership: output fans out to every attached socket; closing one window no longer detaches or kills the shell.
+- Pane spawn size, deferred start, width-aware transcript replay, write-callback-gated resume, pane key bar, Ctrl+C, and large-paste surrogate handling.
+
+Still open after this pass: string-concatenation output rings, WebSocket/stream multiplexing, 1 Hz full-frame browser screenshots, voice-settings allowlisting, and per-pane scoped tokens (P1-35). Those remain the highest-value performance/security follow-ups.
+
 The day-to-day "PTYs get bogged down, slow, jittery" symptoms have four concrete roots:
 
 1. **Two independent PTY rings copy the entire retained buffer on every output chunk**, on the same event loop that serves input, heartbeats, state, and browser snapshots (`src/server.js:124-130`, `src/workspace-panes.js:115-119`). This is the single highest-impact performance defect.

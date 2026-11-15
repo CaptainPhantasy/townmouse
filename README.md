@@ -105,6 +105,12 @@ The image uses `node:22-bookworm-slim` and installs Chromium. The volume holds
 the workspace data. Mount project directories explicitly; the terminal starts
 in `/home/node`. `GET /health` returns `status: "ok"`.
 
+Inside the container the server listens on `0.0.0.0` so Docker can forward the
+port; the `-p 127.0.0.1:...` above is what keeps it off your network. Do not
+publish it on `0.0.0.0` without an authenticated HTTPS proxy. Chromium runs
+without its sandbox in this image because the container has no user namespace
+setup for it; treat the image as a trusted single-user boundary.
+
 ## Use it from a phone or tablet (Or: The tailnet is the front door)
 
 The app installs from the browser on iPad or iPhone. The workspace and terminal

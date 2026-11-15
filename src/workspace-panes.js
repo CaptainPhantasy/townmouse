@@ -10,6 +10,10 @@ const MAX_PANES_PER_TAB = 4;
 const MAX_TABS = 24;
 const MAX_TERMINAL_PANES = 24;
 const MAX_BUFFER = 200_000;
+// HTTP/1.1 browsers allow six connections per origin. Keep two slots free for
+// input/state/close so terminal streams cannot starve the controls. Panes over
+// this cap fall back to the polling API instead of holding a socket open.
+const MAX_ACTIVE_STREAMS = 4;
 
 function installWorkspacePanes(app, browserWorkspace, options = {}) {
   const port = options.port || Number(process.env.PORT) || 11357;
@@ -38,6 +42,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   let restored = false;
   let restorePromise = null;
   let saveTimer = null;
+  let activeStreams = 0;
 
   const id = (prefix) => prefix + '_' + crypto.randomBytes(6).toString('hex');
   const route = (fn) => async (req, res) => {
@@ -70,6 +75,30 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   const clampCols = (value) => Math.max(20, Math.min(400, Math.round(Number(value) || 100)));
   const clampRows = (value) => Math.max(5, Math.min(200, Math.round(Number(value) || 30)));
 
+  // A terminal can outrun a slow SSE reader. Honor write backpressure instead
+  // of letting Node queue every chunk in memory. Once a reader falls behind we
+  // end its stream; the client's polling fallback catches up from /read.
+  function sendStreamEvent(stream, event) {
+    if (stream._sseBlocked) {
+      stream._sseDropped = true;
+      return;
+    }
+    try {
+      if (!stream.write(event)) {
+        stream._sseBlocked = true;
+        stream.once('drain', () => {
+          stream._sseBlocked = false;
+          if (stream._sseDropped) {
+            try { stream.end(); } catch (_) { /* already gone */ }
+          }
+        });
+      }
+    } catch (_) {
+      stream._sseDropped = true;
+      try { stream.end(); } catch (_) { /* already gone */ }
+    }
+  }
+
   function startPanePty(pane) {
     const env = {
       ...process.env,
@@ -93,9 +122,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       if (pane.buffer.length > MAX_BUFFER) pane.buffer = pane.buffer.slice(-MAX_BUFFER);
       pane.bufferStart = pane.totalOffset - pane.buffer.length;
       const event = `data: ${JSON.stringify({ data, offset: pane.totalOffset })}\n\n`;
-      for (const stream of pane.streams) {
-        try { stream.write(event); } catch (_) { pane.streams.delete(stream); }
-      }
+      for (const stream of pane.streams) sendStreamEvent(stream, event);
     });
     child.onExit(() => { pane.exited = true; });
   }
@@ -381,6 +408,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       res.status(400).json({ error: 'Terminal pane required.' });
       return;
     }
+    if (activeStreams >= MAX_ACTIVE_STREAMS) {
+      res.status(429).json({ error: 'Terminal stream capacity reached; polling this pane.' });
+      return;
+    }
+    activeStreams++;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-store',
@@ -389,10 +421,12 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     });
     let since = Math.max(0, Number(req.query.since) || 0);
     if (since < pane.bufferStart) since = pane.bufferStart;
-    res.write(`data: ${JSON.stringify({ data: pane.buffer.slice(since - pane.bufferStart), offset: pane.totalOffset, exited: pane.exited })}\n\n`);
+    sendStreamEvent(res, `data: ${JSON.stringify({ data: pane.buffer.slice(since - pane.bufferStart), offset: pane.totalOffset, exited: pane.exited })}\n\n`);
     pane.streams.add(res);
     const ping = setInterval(() => {
-      try { res.write(': ping\n\n'); } catch (_) { /* client vanished */ }
+      if (!res._sseBlocked) {
+        try { res.write(': ping\n\n'); } catch (_) { /* client vanished */ }
+      }
     }, 15000);
     ping.unref?.();
     let closed = false;
@@ -401,6 +435,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       closed = true;
       clearInterval(ping);
       pane.streams.delete(res);
+      activeStreams = Math.max(0, activeStreams - 1);
     };
     req.on('close', end);
     res.on('close', end);

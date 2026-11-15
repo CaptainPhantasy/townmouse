@@ -10,9 +10,17 @@ function installBrowserWorkspace(app) {
   let opening=0;
   const engine = () => {
     if (!browserPromise) {
+      // Keep Chromium's renderer sandbox by default. Containers and CI runners
+      // without user namespaces need an explicit opt-out; it is never implied
+      // by running with elevated privileges or by opening an untrusted page.
+      const unsandboxed = process.env.CI === 'true' || process.env.TOWNMOUSE_CHROMIUM_NO_SANDBOX === '1';
       browserPromise = puppeteer.launch({
         headless: true,
-        args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'],
+        args:[
+          ...(unsandboxed ? ['--no-sandbox','--disable-setuid-sandbox'] : []),
+          '--disable-dev-shm-usage','--disable-gpu','--disable-background-timer-throttling',
+          '--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'
+        ],
         ...(process.env.TERMINALONE_CHROME ? { executablePath: process.env.TERMINALONE_CHROME } : {}),
       }).then((browser) => {
         browser.on('disconnected', () => { browserPromise = null; });
@@ -23,14 +31,20 @@ function installBrowserWorkspace(app) {
   };
   const human = req => req.get('X-Workspace-Key') === humanKey;
   const describe = s => ({ id:s.id, kind:s.kind, permission:s.permission, url:s.page.url(), title:s.title || 'New tab', dialog:s.dialog || null });
+  // Screenshot capture and viewport changes share one page. Serialize them or
+  // a resize can land mid-capture and label an old-size image with new
+  // dimensions, which makes pane click mapping land in the wrong place.
+  const enqueue = (s, task) => {
+    const work = (s.queue || Promise.resolve()).then(task, task);
+    s.queue = work.catch(() => {});
+    return work;
+  };
   const route = fn => async (req,res) => {
     res.set('Cache-Control','no-store');
     try {
       const s=sessions.get(req.params.id);
       if(s && /\/(snapshot|content|action|viewport)$/.test(req.path)) {
-        const work=(s.queue||Promise.resolve()).then(()=>fn(req,res));
-        s.queue=work.catch(()=>{});
-        await work;
+        await enqueue(s, () => fn(req, res));
       } else await fn(req,res);
     } catch (error) { res.status(error.status || 400).json({error:error.message}); }
   };
@@ -102,16 +116,18 @@ function installBrowserWorkspace(app) {
   async function snapshotTab(id) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
-    await s.page.bringToFront();
-    const client = await s.page.createCDPSession();
-    let capture;
-    try {
-      capture = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 75, captureBeyondViewport: false }, { timeout: 10000 });
-    } finally {
-      await client.detach();
-    }
-    s.title = await s.page.title();
-    return { ...describe(s), image: capture.data, width: s.width, height: s.height };
+    return enqueue(s, async () => {
+      await s.page.bringToFront();
+      const client = await s.page.createCDPSession();
+      let capture;
+      try {
+        capture = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 75, captureBeyondViewport: false }, { timeout: 10000 });
+      } finally {
+        await client.detach();
+      }
+      s.title = await s.page.title();
+      return { ...describe(s), image: capture.data, width: s.width, height: s.height };
+    });
   }
   async function navigateTab(id, url) {
     const s = sessions.get(id);
@@ -153,10 +169,12 @@ function installBrowserWorkspace(app) {
   async function setViewportTab(id, width, height) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
-    s.width = Math.max(320, Math.min(1920, Math.round(Number(width) || 1280)));
-    s.height = Math.max(240, Math.min(1200, Math.round(Number(height) || 800)));
-    await s.page.setViewport({ width: s.width, height: s.height });
-    return { width: s.width, height: s.height };
+    return enqueue(s, async () => {
+      s.width = Math.max(320, Math.min(1920, Math.round(Number(width) || 1280)));
+      s.height = Math.max(240, Math.min(1200, Math.round(Number(height) || 800)));
+      await s.page.setViewport({ width: s.width, height: s.height });
+      return { width: s.width, height: s.height };
+    });
   }
   app.get('/api/browser/bootstrap',route(async(req,res)=>{
     if(req.get('Authorization')) deny('Agent tokens cannot manage workspace permissions.');

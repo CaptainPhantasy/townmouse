@@ -20,6 +20,13 @@ function installAttachments(app) {
       // pane-control API from the Townmouse origin.
       res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'unsafe-inline'");
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+      // Never render an uploaded HTML/SVG/XML document as active content on
+      // the workspace origin. Downloads keep even a CSP bypass from reaching
+      // the bootstrap endpoints or the pane-control API.
+      const extension = path.extname(String(res.req?.path || '')).toLowerCase();
+      if (['.html', '.htm', '.xhtml', '.svg', '.xml'].includes(extension)) {
+        res.setHeader('Content-Disposition', 'attachment');
+      }
     }
   }));
 

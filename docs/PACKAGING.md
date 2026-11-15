@@ -75,6 +75,10 @@ and neither should you.
 The `Dockerfile` uses `node:22-bookworm-slim`, installs Chromium, sets
 `PUPPETEER_SKIP_DOWNLOAD=1` and `TERMINALONE_CHROME=/usr/bin/chromium`, runs as
 the `node` user, exposes `11001`, and keeps its data in `/home/node/.townmouse`.
+It sets `HOST=0.0.0.0` for container port forwarding and
+`TOWNMOUSE_CHROMIUM_NO_SANDBOX=1` because the container has no Chromium sandbox
+setup; both are container-only choices. The host run keeps loopback binding and
+the Chromium sandbox.
 
 Build and run:
 

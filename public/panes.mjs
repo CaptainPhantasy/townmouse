@@ -1,6 +1,7 @@
 import { Terminal } from '/node_modules/@xterm/xterm/lib/xterm.mjs';
 import { FitAddon } from '/node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
 import { WebLinksAddon } from '/node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs';
+import { chunkInput } from '/input-chunks.mjs';
 
 const API_ROOT = '/api/panes';
 const STATE_POLL_MS = 1200;
@@ -93,6 +94,19 @@ let pendingClose = null;
 const cursors = new Map();
 const histories = new Map();
 const records = new Map();
+// Input queues are keyed by pane id, not by the view record. A tab switch can
+// dispose and recreate a record while a paste is still being delivered; both
+// views must feed the same ordered queue.
+const inputPumps = new Map();
+
+function inputPumpFor(paneId) {
+  let pump = inputPumps.get(paneId);
+  if (!pump) {
+    pump = { paneId, pendingInput: '', inputTimer: 0, inputBusy: false, inputStopped: false };
+    inputPumps.set(paneId, pump);
+  }
+  return pump;
+}
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -569,19 +583,21 @@ function disposeRecord(record, { keepInput = false } = {}) {
     try { record.streamController.abort(); } catch (_) { /* already ended */ }
     record.streamController = null;
   }
-  if (keepInput && record.kind === 'terminal') {
+  const pump = record.kind === 'terminal' ? inputPumpFor(record.id) : null;
+  if (keepInput && pump) {
     // No timer and no request in flight means nothing would deliver what is
     // already queued; restart the flush before dropping the view.
-    if (record.pendingInput && !record.inputBusy && !record.inputTimer) {
-      record.inputTimer = window.setTimeout(() => {
-        record.inputTimer = 0;
-        void flushTerminalInput(record);
+    if (pump.pendingInput && !pump.inputBusy && !pump.inputTimer) {
+      pump.inputTimer = window.setTimeout(() => {
+        pump.inputTimer = 0;
+        void flushTerminalInput(pump);
       }, 12);
     }
-  } else {
-    record.inputStopped = true;
-    record.pendingInput = '';
-    if (record.inputTimer) { clearTimeout(record.inputTimer); record.inputTimer = 0; }
+  } else if (pump) {
+    pump.inputStopped = true;
+    pump.pendingInput = '';
+    if (pump.inputTimer) { clearTimeout(pump.inputTimer); pump.inputTimer = 0; }
+    inputPumps.delete(record.id);
   }
   if (record.snapshotTimer) { clearTimeout(record.snapshotTimer); record.snapshotTimer = 0; }
   if (record.wheelTimer) { clearTimeout(record.wheelTimer); record.wheelTimer = 0; }
@@ -769,36 +785,38 @@ function sendTerminalResize(record, cols, rows) {
 }
 
 function sendTerminalInput(record, data) {
-  if (record.inputStopped || !data) return;
+  const pump = inputPumpFor(record.id);
+  if (pump.inputStopped || !data) return;
   // Coalesce fast typing and pastes into one ordered request instead of one
   // HTTP round-trip per keystroke. This is the difference between smooth and
   // jittery input when the agent or a build is also producing output.
-  record.pendingInput += data;
-  if (record.inputTimer || record.inputBusy) return;
-  record.inputTimer = window.setTimeout(() => {
-    record.inputTimer = 0;
-    void flushTerminalInput(record);
+  pump.pendingInput += data;
+  if (pump.inputTimer || pump.inputBusy) return;
+  pump.inputTimer = window.setTimeout(() => {
+    pump.inputTimer = 0;
+    void flushTerminalInput(pump);
   }, 12);
 }
 
-async function flushTerminalInput(record) {
-  if (record.inputStopped || record.inputBusy || !record.pendingInput) return;
-  const payload = record.pendingInput;
-  record.pendingInput = '';
-  record.inputBusy = true;
+async function flushTerminalInput(pump) {
+  if (pump.inputStopped || pump.inputBusy || !pump.pendingInput) return;
+  const payload = pump.pendingInput;
+  pump.pendingInput = '';
+  pump.inputBusy = true;
   try {
     // Keep each request below the global JSON body limit so large pastes work.
-    for (let offset = 0; offset < payload.length && !record.inputStopped; offset += 24000) {
-      await api(`/panes/${record.id}/input`, { method: 'POST', body: { data: payload.slice(offset, offset + 24000) } });
+    for (const chunk of chunkInput(payload)) {
+      if (pump.inputStopped) break;
+      await api(`/panes/${pump.paneId}/input`, { method: 'POST', body: { data: chunk } });
     }
   } catch (error) {
-    if (!record.inputStopped) logStatus('Terminal input could not be sent.');
+    if (!pump.inputStopped) logStatus('Terminal input could not be sent.');
   } finally {
-    record.inputBusy = false;
-    if (!record.inputStopped && record.pendingInput) {
-      record.inputTimer = window.setTimeout(() => {
-        record.inputTimer = 0;
-        void flushTerminalInput(record);
+    pump.inputBusy = false;
+    if (!pump.inputStopped && pump.pendingInput) {
+      pump.inputTimer = window.setTimeout(() => {
+        pump.inputTimer = 0;
+        void flushTerminalInput(pump);
       }, 12);
     }
   }

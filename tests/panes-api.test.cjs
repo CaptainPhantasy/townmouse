@@ -343,6 +343,25 @@ async function main() {
         'attachment response should keep the sandbox CSP',
         served.headers.get('content-security-policy')
       );
+      const active = await fetch(`${BASE}/api/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/html', 'X-Filename': 'active.html', 'X-Townmouse-Token': token },
+        body: '<script>document.title="should-not-run"</script>',
+        signal: AbortSignal.timeout(5000)
+      });
+      const activeAttachment = await active.json();
+      ensure(active.status === 200, 'HTML attachment should upload', activeAttachment);
+      const activeServed = await fetch(activeAttachment.url, { signal: AbortSignal.timeout(5000) });
+      ensure(
+        String(activeServed.headers.get('content-disposition') || '').startsWith('attachment'),
+        'active HTML must download instead of rendering on the workspace origin',
+        activeServed.headers.get('content-disposition')
+      );
+      ensure(
+        String(activeServed.headers.get('content-security-policy') || '').startsWith('sandbox'),
+        'active HTML must retain the sandbox CSP',
+        activeServed.headers.get('content-security-policy')
+      );
     });
 
     await check('bootstrap: seeds one tab with a terminal orchestrator pane', async () => {

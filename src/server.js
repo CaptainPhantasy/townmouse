@@ -219,6 +219,7 @@ function wirePtyToSession(ptyProcess, session) {
     // before a reload updates lastCols but not this marker.
     session.lastDataCols = session.lastCols;
     session.lastDataRows = session.lastRows;
+    session.outputChars += data.length;
     // Always buffer so a subsequent resume can replay this output.
     bufferOutput(session, data);
     if (!session.sessionActive) return;
@@ -302,6 +303,7 @@ function spawnShell(session, cwd) {
   session.ptyProcess = ptyProcess;
   session.processExited = false;
   session.startedAt = Date.now();
+  session.resizeMarkers.push({ at: session.outputChars, cols, rows });
   activeSessions.set(id, session);
   wirePtyToSession(ptyProcess, session);
 
@@ -374,9 +376,20 @@ function resumeSession(target, ws, dims, placeholder) {
   if (target.outputBuffer) {
     const raw = target.outputBuffer;
     target.outputBuffer = '';
-    const buf = transcript
-      ? replayTranscript(raw, replayCols).replace(/\n/g, '\r\n')
-      : raw;
+    let buf = raw;
+    if (transcript) {
+      const rawStart = Math.max(0, target.outputChars - raw.length);
+      let initial = { cols: replayCols };
+      const segments = [];
+      for (const marker of target.resizeMarkers) {
+        if (marker.at <= rawStart) initial = marker;
+        else if (marker.at < target.outputChars) {
+          segments.push({ at: marker.at - rawStart, cols: marker.cols });
+        }
+      }
+      segments.unshift({ at: 0, cols: initial.cols });
+      buf = replayTranscript(raw, segments).replace(/\n/g, '\r\n');
+    }
     // Send in chunks to avoid a single oversized WS frame.
     const CHUNK = 16 * 1024;
     for (let i = 0; i < buf.length; i += CHUNK) {
@@ -394,7 +407,10 @@ function resumeSession(target, ws, dims, placeholder) {
   // Only after the replay is on the wire do we resize the live PTY to the new
   // client viewport. New output is therefore produced at the new width while
   // the old buffer remains coherent at the old width.
-  if (dims.cols !== target.lastCols || dims.rows !== target.lastRows) target.widthChanged = true;
+  if (dims.cols !== target.lastCols || dims.rows !== target.lastRows) {
+    target.widthChanged = true;
+    target.resizeMarkers.push({ at: target.outputChars, cols: dims.cols, rows: dims.rows });
+  }
   target.lastCols = dims.cols;
   target.lastRows = dims.rows;
   if (target.ptyProcess && !target.processExited) {
@@ -748,7 +764,10 @@ function handleMessage(session, ws, data) {
     }
     case 'resize': {
       const { cols, rows } = clampDims(data.cols, data.rows);
-      if (cols !== session.lastCols || rows !== session.lastRows) session.widthChanged = true;
+      if (cols !== session.lastCols || rows !== session.lastRows) {
+        session.widthChanged = true;
+        session.resizeMarkers.push({ at: session.outputChars, cols, rows });
+      }
       session.lastCols = cols;
       session.lastRows = rows;
       if (session.ptyProcess && !session.processExited) {
@@ -968,6 +987,8 @@ wss.on('connection', (ws) => {
     lastDataCols: null,
     lastDataRows: null,
     widthChanged: false,
+    outputChars: 0,
+    resizeMarkers: [],
     userClosed: false
   };
   activeSessions.set(sessionId, session);

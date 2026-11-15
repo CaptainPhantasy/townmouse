@@ -9,9 +9,13 @@ Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only
 ### Workspace
 
 - Four-pane workspace tabs: any mix of PTY terminals and real Chromium browsers, up to four panes per tab and 24 tabs.
-- Terminal agents receive `TOWNMOUSE_API`, `TOWNMOUSE_TOKEN`, `TOWNMOUSE_TAB_ID`, `TOWNMOUSE_PANE_ID`, and `TOWNMOUSE_PANES_CLI` in every pane; `scripts/panes` controls tabs, panes, URLs, input, and reads.
+- Terminal agents receive `TOWNMOUSE_API`, `TOWNMOUSE_TOKEN`, `TOWNMOUSE_TAB_ID`, `TOWNMOUSE_PANE_ID`, and `TOWNMOUSE_PANES_CLI` in every pane; `scripts/panes` controls tabs, panes, URLs, input, reads, named keys, bracketed send-text, waits, agent state, dialogs, attachments, and pane order.
+- Pane terminals start at the client's measured dimensions, expose `lastOutputAt`/`idleMs`/exit status, and accept agent-reported working/blocked/idle/done state.
 - Workspace state, tab titles, pane cwd, browser URLs, and active selection survive a server restart.
 - Visible tab strip, draggable terminal/browser separators, 7-second idle chrome collapse, and phone/tablet/desktop layouts.
+- Draggable pane dividers with per-tab ratios, keyboard resizing, double-click reset, pane headers that drag to reorder, and a maximize chord.
+- Phone key bar for panes (Esc, Tab, sticky Ctrl/Alt, Ctrl+C, arrows, Home/End, PgUp/PgDn), a word-wrapped Reader transcript, terminal context menus, and a shortcut sheet.
+- Restart epochs and a restored-layout notice; answerable page dialogs; browser Forward; software-keyboard inset handling.
 
 ### Attachments
 
@@ -21,17 +25,20 @@ Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only
 
 ### Fixed
 
-- Resuming a session at a different width no longer corrupts scrollback: buffered output replays at its original PTY dimensions, then the terminal fits the new viewport.
-- Blank browser panes survive restart instead of being discarded.
-- Queued terminal input survives a workspace tab switch.
-- A page popup can no longer crash the server or take down every PTY.
-- The attachment picker now inserts its path; the missing `sendData` hook was the silent failure.
+- Resuming at a different width replays a control-free transcript built from the width each output was produced at, so shell redraws cannot fragment commands.
+- Blank browser panes survive restart instead of being discarded; restarts mint an epoch and tell the client what was not restored.
+- Queued terminal input survives a workspace tab switch and reuses one queue per pane.
+- A page popup can no longer crash the server; a superseded window can no longer detach a live resumed shell; dead Chromium pages are pruned.
+- Slow terminal readers are disconnected into the polling fallback instead of growing server memory without bound; at most four SSE streams are open.
+- The attachment picker inserts its path and shows a copyable URL card; active HTML/SVG downloads instead of rendering.
+- Bare Ctrl+C always interrupts, even with a selection.
 
 ### Security
 
 - Owner bootstrap and attachment uploads require an HttpOnly SameSite owner capability minted on page navigation. Header-less local callers and pane-token callers receive 403.
 - Attachments are served with a sandbox CSP and `Cross-Origin-Resource-Policy: same-origin`.
-- Chromium runs with container-safe flags; session and pane APIs bind loopback only.
+- Chromium keeps its renderer sandbox by default; containers/CI opt out explicitly with `TOWNMOUSE_CHROMIUM_NO_SANDBOX=1`. Session and pane APIs bind loopback only unless Docker sets `HOST=0.0.0.0` for port forwarding.
+- Attachment uploads are owner- or pane-token gated, daily-quota bounded, archived by age, and served with a sandbox CSP plus download disposition for active document types.
 
 ### Packaging and tests
 

@@ -33,13 +33,26 @@ runaway agent runs out of room before it runs the machine out of memory.
 - **Menu**: add a terminal or browser pane to the active tab, or create a tab.
 - **Keyboard**: focus the active terminal; in a browser pane it focuses the
   page-type field.
-- Browser panes accept clicks, wheel scrolling, typing, Back, Reload, and an
-  address. The browser is a real Chromium page rendered by the server, and its
-  viewport reflows to the pane's actual size so text wraps at the pane edge.
-- Drop or paste files/images onto a terminal pane. The file is uploaded once to
-  `~/.townmouse/attachments/<YYYYMMDD>/` (25 MB limit) and a shell-quoted
-  absolute path is inserted into the PTY. The terminal never receives a base64
-  stream. Dropping onto a browser pane opens the attachment URL instead.
+- Drag a divider to resize panes, use Arrow/Home/End while a divider is focused,
+  or double-click it to reset. Ratios are remembered per tab.
+- The phone key bar above the bottom navigation provides Esc, Tab, sticky
+  Ctrl/Alt, C, arrows, Home/End, PgUp/PgDn. Ctrl then C sends SIGINT.
+- Right-click or long-press a terminal for Copy, Paste, Select all, Clear, and
+  Reader. Reader is a word-wrapped transcript; the live pane remains a cell
+  grid. Menu also has smaller/larger text, and a shortcut sheet.
+- Closing a pane or tab asks first. An answerable `alert`/`confirm`/`prompt`
+  appears as a card; a forgotten dialog is dismissed after 30 seconds.
+- Browser panes accept clicks, wheel scrolling, typing, Back, Forward, Reload,
+  and an address. The browser is a real Chromium page rendered by the server,
+  and its viewport reflows to the pane's actual size.
+- Drop or paste files/images onto a terminal pane. The file is uploaded once
+  into the state directory's `attachments/<YYYYMMDD>/` tree (25 MB per request,
+  2,000 files / 512 MB per day) and a shell-quoted absolute path is inserted
+  into the PTY. The terminal never receives a base64 stream. An attachment card
+  shows the path and URL with Copy/Open actions; dropping onto a browser pane
+  opens the loopback URL instead. Buckets older than
+  `TOWNMOUSE_ATTACHMENT_RETENTION_DAYS` (default 30) move to
+  `attachments-archive` instead of being deleted.
 
 ## Agent
 
@@ -65,8 +78,14 @@ No code is copied between the browser and the terminal. Run the CLI directly:
 "$TOWNMOUSE_PANES_CLI" pane url <pane-id> https://example.com
 "$TOWNMOUSE_PANES_CLI" pane run <pane-id> "npm test"
 "$TOWNMOUSE_PANES_CLI" pane input <pane-id> "echo hello"
+"$TOWNMOUSE_PANES_CLI" pane send-text <pane-id> "multi-line prompt"
+"$TOWNMOUSE_PANES_CLI" pane keys <pane-id> ctrl+c
+"$TOWNMOUSE_PANES_CLI" pane wait <pane-id> --match "PASS" --timeout 60000
+"$TOWNMOUSE_PANES_CLI" pane status <pane-id> --state blocked --message "approval?"
+"$TOWNMOUSE_PANES_CLI" pane dialog <pane-id> --accept
 "$TOWNMOUSE_PANES_CLI" pane read <pane-id> --lines 120
 "$TOWNMOUSE_PANES_CLI" pane close <pane-id>
+"$TOWNMOUSE_PANES_CLI" attach ./screenshot.png --pane <pane-id>
 "$TOWNMOUSE_PANES_CLI" active --tab <tab-id> --pane <pane-id>
 ```
 
@@ -81,6 +100,20 @@ any mix.
 and returns the last 4,000 characters of output after its wait. `pane input`
 writes raw text and does not append a newline. Both `pane run` and `pane input`
 require a terminal pane.
+
+`pane send-text` preserves literal text and wraps it in bracketed-paste markers
+by default; pass `--raw` to opt out. `pane keys` accepts logical names including
+`enter`, `esc`, `tab`, `ctrl+c`, `alt+x`, and arrows. `pane wait` long-polls for
+plain text, a regex, an idle interval, or an agent-reported state, and returns
+the matching output with `offset` and `elapsedMs`; the server caps a wait at 120
+seconds. `pane status` records `working`, `blocked`, `idle`, `done`, or `unknown`
+with an optional message; the pane header colors the badge and state responses
+carry `lastOutputAt`, `idleMs`, `exitCode`, and `exitSignal`. `pane dialog`
+answers a waiting page dialog. `attach` uploads a file with the scoped pane token
+and prints `path`, `url`, `localUrl`, and `relativeUrl`; use `--pane` to insert
+the quoted path as well. Pane order is changed with
+`POST /api/panes/tabs/<tab-id>/reorder` (`paneId`, `index`), or on the client by
+dragging a pane header or Alt+Shift+Arrow.
 
 The CLI reads `TOWNMOUSE_API` and `TOWNMOUSE_TOKEN` from the environment and
 falls back to `~/.townmouse/pane-token` when the token is absent. It sends the
@@ -108,6 +141,22 @@ the owner workspace.
 - Resize is `POST /api/panes/panes/<pane-id>/resize`. Terminal columns are
   clamped to 20-400 and rows to 5-200. Browser panes set a viewport clamped to
   320-1920 by 240-1200.
+- `POST /api/panes/panes/<pane-id>/start` spawns a deferred terminal at the
+  measured cols/rows; the UI creates terminals with `start:false` so the first
+  prompt is laid out at the visible width.
+- At most four terminal SSE streams are open at once; additional panes use the
+  polling fallback so input and state requests keep an HTTP connection. If a
+  reader stops draining, the server ends its stream instead of buffering output
+  without limit.
+- `POST /api/panes/panes/<pane-id>/keys` writes named keys; `GET .../wait`
+  supports `match`, `regex`, `idleMs`, and `state`; `POST .../status` records
+  agent lifecycle; `POST .../browser/dialog` answers a page dialog.
+- State includes an `epoch` minted per server boot and `restored`. After a
+  restart the client keeps tabs, pane kinds, titles, cwd, and browser URLs but
+  warns that terminal scrollback and running jobs are gone.
+- Owner bootstrap (`GET /api/panes/bootstrap`) requires the HttpOnly owner
+  cookie minted on page navigation. A pane token receives 403 there; the token
+  is accepted by the pane API and by attachment uploads.
 
 The workspace limits are real. The token is real. The panes are real. The old
 way copied a connection string between the browser and the terminal; this one

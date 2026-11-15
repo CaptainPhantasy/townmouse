@@ -150,22 +150,24 @@ before it gives the machine a funeral.
 ### For a person (Or: The controls you actually touch)
 
 **Tabs** in the bottom bar lists, switches, creates, and closes workspace tabs.
-**Menu** adds a terminal or browser pane to the active tab, or creates a tab.
-**Keyboard** focuses the active terminal; in a browser pane it focuses the
-page-type field. `Alt+T` creates a tab, `Alt+1..9` selects one, and `Alt+Arrow`
-moves focus between panes. Dragging a file onto a terminal attaches it. Dragging
-onto a browser opens it.
+**Menu** adds a terminal or browser pane, opens Reader, adjusts terminal text,
+or shows the shortcut sheet. **Keyboard** focuses the active terminal; in a
+browser pane it focuses the page-type field. `Alt+T` creates a tab, `Alt+1..9`
+selects one, `Alt+Arrow` moves pane focus, `Alt+Shift+Arrow` reorders a pane,
+`Alt+M` maximizes, and `Alt+W` asks before closing the active pane. Drag a pane
+header to reorder it, or drag the divider between panes to resize them.
 
 Browser panes accept clicks, wheel scrolling, touch-drag scrolling, typing,
-Back, Reload, and an address. The browser is a real Chromium page rendered by
-the server, and its viewport reflows to the pane's actual size so text wraps at
-the pane edge. Alert/confirm/prompt dialogs are recorded and dismissed instead
-of deadlocking the shared page.
+Back, Forward, Reload, and an address. The browser is a real Chromium page
+rendered by the server, and its viewport reflows to the pane's actual size so
+text wraps at the pane edge. `alert`/`confirm`/`prompt` dialogs wait for an
+answer in a pane card (or `panes pane dialog`) instead of deadlocking the page.
 
 Drop or paste a file or image onto a terminal pane. The file is uploaded once
-to `~/.townmouse/attachments/<date>/` (25 MB limit), and a shell-quoted absolute
-path is inserted into the PTY; the terminal never receives a base64 stream.
-Dropping onto a browser pane opens the attachment URL instead. This is the
+into the state directory's `attachments/<date>/` tree (25 MB per request; daily
+quota; old buckets archived), and a shell-quoted absolute path is inserted into
+the PTY; the terminal never receives a base64 stream. The attachment card shows
+the path and URL, and the browser pane can open the loopback URL. This is the
 drag-and-drop people have expected since roughly 1995.
 
 ### For an agent (Or: The environment is the handshake)
@@ -189,20 +191,29 @@ No code is copied between the browser and the terminal. Run the CLI directly:
 "$TOWNMOUSE_PANES_CLI" pane create --kind browser --url https://example.com
 "$TOWNMOUSE_PANES_CLI" pane url <pane-id> https://example.com
 "$TOWNMOUSE_PANES_CLI" pane run <pane-id> "npm test"
+"$TOWNMOUSE_PANES_CLI" pane send-text <pane-id> "multi-line prompt"
+"$TOWNMOUSE_PANES_CLI" pane keys <pane-id> ctrl+c
+"$TOWNMOUSE_PANES_CLI" pane wait <pane-id> --match "PASS" --timeout 60000
+"$TOWNMOUSE_PANES_CLI" pane status <pane-id> --state blocked
 "$TOWNMOUSE_PANES_CLI" pane read <pane-id> --lines 120
 "$TOWNMOUSE_PANES_CLI" pane text <pane-id>
+"$TOWNMOUSE_PANES_CLI" attach ./screenshot.png --pane <pane-id>
 ```
 
 `pane create` defaults to the current tab. The orchestrator can create as many
 tabs as the server allows; each tab holds up to four panes. A tab can be all
 terminals, all browsers, or any mix. `pane text` reads the browser page's
 readable content, because an agent should not have to guess what a pane is
-showing.
+showing. `pane wait` blocks on text, a regex, an idle interval, or an
+agent-reported state; `pane status` records working, blocked, idle, or done so
+the pane header and orchestrator agree. `attach` uploads with the scoped pane
+token and prints the path and URL.
 
 The workspace survives a server restart: tab titles, pane kinds, terminal
-working directories, browser URLs, and the active tab are saved in
+working directories, browser URLs, pane order, and the active tab are saved in
 `~/.townmouse/workspace.json`. The PTYs start fresh, because a shell process
-does not survive its server. The layout does.
+does not survive its server. The layout does; the client sees a new epoch and
+is told that scrollback and running jobs were not restored.
 
 ## The single-browser workspace (Or: The compatibility wing)
 

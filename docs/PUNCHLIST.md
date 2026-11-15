@@ -32,7 +32,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 | A. Attachments and file transfer | Drop, paste, file picker, upload security, storage | P2-91, P2-92 |
 | B. Terminal rendering and typography | Prose/status overflow and remaining typography polish | P2-62, P2-63 |
 | C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
-| D. Panes workspace: tabs, layout, lifecycle | Visible tabs, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
+| D. Panes workspace: tabs, layout, lifecycle | Rename, active pane, limits, focus, agent tab activation | P1-17, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | Search/copy/font/themes/links/OSC | P1-15 |
 | F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
@@ -352,6 +352,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `src/server.js:324-337,721-724,771-798`; `public/index.html:540,1121,1217`; `public/features/multi-window-sync.mjs`.  
 
 - [ ] **P1-47 - Restart or Chromium loss leaves unclosable ghost browser tabs**
+  *Progress 2026-11-15:* the server prunes a browser session when its page closes or Chromium disconnects, pane browsers stop reporting stale URLs/titles, and the human sidebar reconciles `GET /api/browser` every five seconds. Still open: an offline/reopen affordance and per-tab status in the list.
   *Expectation:* If browser contexts vanish, the UI reconciles the tab list, marks tabs offline, and allows close or reopen without reloading the page.  
   *Current:* The browser tab list is fetched once at startup and never refreshed (`public/workspace.mjs:922,927`). After a server restart or Chromium disconnect, every snapshot returns 404, `refresh()` only writes an error message (`:667-689`), and `closeTab()` awaits DELETE before removing the local tab (`:522-533`), so a 404 leaves the tab in the sidebar forever. Pane browser state keeps a stale URL/title after `browserWorkspace.get()` returns null (`src/workspace-panes.js:124-134`). The only recovery is a full page reload.  
   *Fix:* Fetch `GET /api/browser` on any 404/5xx or reconnect; remove the local tab on 404; add offline/reopen affordances; listen for page/context close/crash on the server and prune dead sessions; return per-tab status instead of failing the whole list.  

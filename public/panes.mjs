@@ -41,6 +41,8 @@ const els = {
   menuNewTab: byId('menu-new-tab'),
   menuAttach: byId('menu-attach'),
   menuReader: byId('menu-reader'),
+  menuShortcuts: byId('menu-shortcuts'),
+  shortcutsDialog: byId('shortcuts-dialog'),
   attachInput: byId('attach-input'),
   readerView: byId('reader-view'),
   readerText: byId('reader-text'),
@@ -559,6 +561,133 @@ function renderTabStrip() {
   els.tabStrip.replaceChildren(list, add);
 }
 
+const LAYOUT_PREFIX = 'townmouse.pane-layout.';
+
+function readPaneLayout(tabId) {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(LAYOUT_PREFIX + tabId) || '{}');
+    return {
+      x: Math.max(0.2, Math.min(0.8, Number(saved.x) || 0.5)),
+      y: Math.max(0.2, Math.min(0.8, Number(saved.y) || 0.5))
+    };
+  } catch (_) {
+    return { x: 0.5, y: 0.5 };
+  }
+}
+
+function savePaneLayout(tabId, layout) {
+  try {
+    window.localStorage.setItem(LAYOUT_PREFIX + tabId, JSON.stringify(layout));
+  } catch (_) { /* storage may be disabled */ }
+}
+
+function applyPaneLayout(tab) {
+  if (!els.grid || !currentState) return;
+  const panes = tab ? tab.panes : [];
+  els.grid.querySelectorAll('.pane-splitter').forEach((splitter) => splitter.remove());
+  els.grid.style.gridTemplateColumns = '';
+  els.grid.style.gridTemplateRows = '';
+  els.grid.style.gap = '';
+  for (const record of records.values()) record.root.style.gridArea = '';
+  if (!tab || panes.length < 2 || window.matchMedia('(max-width: 600px)').matches) return;
+
+  const count = panes.length;
+  const layout = readPaneLayout(tab.id);
+  const setTemplates = () => {
+    els.grid.style.gridTemplateColumns = `calc((100% - 6px) * ${layout.x}) 6px minmax(0, 1fr)`;
+    els.grid.style.gridTemplateRows = count === 2
+      ? 'minmax(0, 1fr)'
+      : `calc((100% - 6px) * ${layout.y}) 6px minmax(0, 1fr)`;
+    els.grid.style.gap = '0';
+    els.grid.querySelectorAll('.pane-splitter').forEach((splitter) => {
+      splitter.setAttribute('aria-valuenow', String(Math.round((splitter.classList.contains('vertical') ? layout.x : layout.y) * 100)));
+    });
+  };
+  const areas = count === 2
+    ? ['1 / 1 / 2 / 2', '1 / 3 / 2 / 4']
+    : count === 3
+      ? ['1 / 1 / 2 / 4', '3 / 1 / 4 / 2', '3 / 3 / 4 / 4']
+      : ['1 / 1 / 2 / 2', '1 / 3 / 2 / 4', '3 / 1 / 4 / 2', '3 / 3 / 4 / 4'];
+  panes.forEach((pane, index) => {
+    const record = records.get(pane.id);
+    if (record && areas[index]) record.root.style.gridArea = areas[index];
+  });
+
+  function makeSplitter(orientation, area) {
+    const splitter = document.createElement('div');
+    splitter.className = `pane-splitter ${orientation}`;
+    splitter.style.gridArea = area;
+    splitter.tabIndex = 0;
+    splitter.setAttribute('role', 'separator');
+    splitter.setAttribute('aria-orientation', orientation === 'vertical' ? 'vertical' : 'horizontal');
+    splitter.setAttribute('aria-label', orientation === 'vertical' ? 'Resize pane columns' : 'Resize pane rows');
+    splitter.setAttribute('aria-valuemin', '20');
+    splitter.setAttribute('aria-valuemax', '80');
+    splitter.setAttribute('aria-valuenow', String(Math.round((orientation === 'vertical' ? layout.x : layout.y) * 100)));
+    const value = () => orientation === 'vertical' ? layout.x : layout.y;
+    const apply = (clientX, clientY) => {
+      const rect = els.grid.getBoundingClientRect();
+      const ratio = orientation === 'vertical'
+        ? (clientX - rect.left) / rect.width
+        : (clientY - rect.top) / rect.height;
+      const clamped = Math.max(0.2, Math.min(0.8, ratio));
+      if (orientation === 'vertical') layout.x = clamped;
+      else layout.y = clamped;
+      setTemplates();
+      savePaneLayout(tab.id, layout);
+    };
+    splitter.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      splitter.setPointerCapture?.(event.pointerId);
+      splitter.classList.add('dragging');
+      const move = (moveEvent) => apply(moveEvent.clientX, moveEvent.clientY);
+      const end = () => {
+        splitter.classList.remove('dragging');
+        splitter.removeEventListener('pointermove', move);
+      };
+      splitter.addEventListener('pointermove', move);
+      splitter.addEventListener('pointerup', end, { once: true });
+      splitter.addEventListener('pointercancel', end, { once: true });
+    });
+    splitter.addEventListener('dblclick', () => {
+      layout.x = 0.5;
+      layout.y = 0.5;
+      setTemplates();
+      savePaneLayout(tab.id, layout);
+    });
+    splitter.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 0.1 : 0.02;
+      let next = value();
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next -= step;
+      else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next += step;
+      else if (event.key === 'Home') next = 0.2;
+      else if (event.key === 'End') next = 0.8;
+      else return;
+      event.preventDefault();
+      next = Math.max(0.2, Math.min(0.8, next));
+      if (orientation === 'vertical') layout.x = next;
+      else layout.y = next;
+      setTemplates();
+      savePaneLayout(tab.id, layout);
+    });
+    return splitter;
+  }
+
+  const splitters = [];
+  if (count === 2) {
+    splitters.push(makeSplitter('vertical', '1 / 2 / 2 / 3'));
+  } else if (count === 3) {
+    splitters.push(makeSplitter('horizontal', '2 / 1 / 3 / 4'));
+    splitters.push(makeSplitter('vertical', '3 / 2 / 4 / 3'));
+  } else {
+    splitters.push(makeSplitter('vertical', '1 / 2 / 2 / 3'));
+    splitters.push(makeSplitter('horizontal', '2 / 1 / 3 / 4'));
+    splitters.push(makeSplitter('vertical', '3 / 2 / 4 / 3'));
+  }
+  els.grid.append(...splitters);
+  setTemplates();
+}
+
 function rebuild(tab) {
   const nextTabId = tab ? tab.id : null;
   const panes = tab ? tab.panes : [];
@@ -600,6 +729,7 @@ function rebuild(tab) {
     els.grid.append(node);
   }
   updatePaneChrome(tab);
+  applyPaneLayout(tab);
 }
 
 function updateEmptyState(tab) {
@@ -1514,6 +1644,7 @@ function openSheets(dialog) {
 function closeSheets() {
   if (els.tabsDialog.open) els.tabsDialog.close();
   if (els.menuDialog.open) els.menuDialog.close();
+  if (els.shortcutsDialog?.open) els.shortcutsDialog.close();
 }
 
 function openTabsDialog() {
@@ -1577,10 +1708,41 @@ function triggerBack() {
 function bindEvents() {
   document.addEventListener('keydown', (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
+    if (document.querySelector('dialog[open]')) return;
+    const target = event.target;
+    if (target && target.closest && target.closest('input:not(.xterm-helper-textarea), textarea:not(.xterm-helper-textarea), [contenteditable="true"]')) return;
     const tabs = (currentState && currentState.tabs) || [];
     if (event.key.toLowerCase() === 't') {
       event.preventDefault();
       void newTab();
+      return;
+    }
+    if (event.key.toLowerCase() === 'w') {
+      const tab = activeTab();
+      const paneId = effectiveActivePaneId(tab);
+      const record = records.get(paneId);
+      if (record) {
+        event.preventDefault();
+        requestClose('pane', paneId, record.titleEl.textContent || 'pane');
+      }
+      return;
+    }
+    if (event.key === '[' || event.key === ']') {
+      if (!tabs.length) return;
+      const index = Math.max(0, tabs.findIndex((tab) => tab.id === currentState.activeTabId));
+      const next = tabs[(index + (event.key === ']' ? 1 : -1) + tabs.length) % tabs.length];
+      if (next) { event.preventDefault(); void activateTab(next.id); }
+      return;
+    }
+    if (event.key.toLowerCase() === 'm') {
+      const paneId = effectiveActivePaneId();
+      const record = records.get(paneId);
+      if (!record) return;
+      event.preventDefault();
+      const maximize = !els.grid.classList.contains('is-maximized');
+      els.grid.classList.toggle('is-maximized', maximize);
+      for (const [id, candidate] of records) candidate.root.classList.toggle('is-maximized', maximize && id === paneId);
+      logStatus(maximize ? 'Pane maximized.' : 'Pane restored.');
       return;
     }
     if (/^[1-9]$/.test(event.key) && tabs.length) {
@@ -1656,6 +1818,10 @@ function bindEvents() {
   els.menuAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.menuAttach.addEventListener('click', () => { closeSheets(); els.attachInput.click(); });
   els.menuReader.addEventListener('click', openReaderView);
+  els.menuShortcuts.addEventListener('click', () => {
+    closeSheets();
+    if (!els.shortcutsDialog.open) els.shortcutsDialog.showModal();
+  });
   els.readerRefresh.addEventListener('click', refreshReaderView);
   els.readerClose.addEventListener('click', closeReaderView);
   els.readerView.addEventListener('keydown', (event) => {
@@ -1757,6 +1923,15 @@ window.__panes = {
 Object.defineProperty(window.__panes, '__debug', {
   value: { histories, cursors, records },
   enumerable: false
+});
+
+let layoutResizeFrame = 0;
+window.addEventListener('resize', () => {
+  if (layoutResizeFrame) cancelAnimationFrame(layoutResizeFrame);
+  layoutResizeFrame = requestAnimationFrame(() => {
+    layoutResizeFrame = 0;
+    applyPaneLayout(activeTab());
+  });
 });
 
 buildPaneKeybar();

@@ -545,6 +545,10 @@
   let fitAddon = null;
   let reconnectAttempts = 0;
   let reconnectTimer = null;
+  // No resize may reach the server before the first ready/shell handshake. A
+  // fit on the fresh page would otherwise overwrite the old PTY dimensions and
+  // hide the fact that resume is crossing widths.
+  let sessionReady = false;
   let userInitiatedClose = false;
   let currentSessionId = null;
   let currentTheme = DEFAULT_THEME;
@@ -1083,6 +1087,7 @@
 
   function initTerminal() {
    cleanupTerminalResources();
+   sessionReady = false;
    resumeReplay = null;
    replayEnded = false;
    replayPending = 0;
@@ -1163,8 +1168,10 @@
 
    addTerminalResource(term.onResize(({ cols, rows }) => {
     // While replaying, xterm is deliberately at the old PTY width. Sending
-    // that as a resize would yank the live PTY back to the old width.
-    if (resumeReplay) return;
+    // that as a resize would yank the live PTY back to the old width. Before
+    // the first ready, a resize would also destroy the old dimensions resume
+    // needs to detect a width change.
+    if (!sessionReady || resumeReplay) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
@@ -1178,6 +1185,7 @@
   function handleServerMessage(msg) {
    switch (msg.type) {
     case 'ready': {
+     sessionReady = true;
      currentSessionId = msg.sessionId;
      lsSet(LS_SESSION, msg.sessionId);
      if (msg.resumed) {

@@ -332,6 +332,26 @@ async function dispatchFile(page, selector, name, type, eventName) {
       );
     }
 
+    // Shortcut help and the Alt chords documented in it.
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-shortcuts', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-shortcuts').click());
+    await page.waitForFunction('document.querySelector("#shortcuts-dialog").open', { timeout: 5000 });
+    const shortcutText = await page.evaluate(() => document.querySelector('#shortcuts-dialog').textContent);
+    assert(shortcutText.includes('Alt + W') && shortcutText.includes('Alt + M'), 'shortcut help should list the pane chords');
+    await page.evaluate(() => document.querySelector('#shortcuts-dialog [data-close]').click());
+    await page.waitForFunction('!document.querySelector("#shortcuts-dialog").open', { timeout: 5000 });
+
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', altKey: true, bubbles: true, cancelable: true })));
+    await page.waitForFunction('document.querySelector("#pane-grid").classList.contains("is-maximized")', { timeout: 5000 });
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', altKey: true, bubbles: true, cancelable: true })));
+    await page.waitForFunction('!document.querySelector("#pane-grid").classList.contains("is-maximized")', { timeout: 5000 });
+
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true, bubbles: true, cancelable: true })));
+    await page.waitForFunction('document.querySelector("#close-confirm").open', { timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#close-cancel').click());
+    await page.waitForFunction('!document.querySelector("#close-confirm").open', { timeout: 5000 });
+
     // The active tab stays visible and switchable once a second tab exists.
     const firstTabId = await page.evaluate(() => window.__panes.state().activeTabId);
     await page.evaluate(() => document.querySelector('#menu-button').click());
@@ -359,6 +379,75 @@ async function dispatchFile(page, selector, name, type, eventName) {
     const selected = await page.evaluate(() => Array.from(document.querySelectorAll('#tabstrip [role="tab"]'))
       .filter((tab) => tab.getAttribute('aria-selected') === 'true').length);
     assert(selected === 1, 'switching tabs should keep one selected tab');
+
+    // Desktop: two panes get a draggable, keyboard-resizable divider.
+    await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-add-terminal', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-add-terminal').click());
+    await page.waitForSelector('.pane-splitter.vertical', { visible: true, timeout: 20000 });
+    await page.waitForFunction(() => document.querySelectorAll('.pane-grid > .pane').length === 2, { timeout: 20000 });
+    const beforeSplit = await page.evaluate(() => {
+      const panes = [...document.querySelectorAll('.pane-grid > .pane')];
+      return {
+        widths: panes.map((pane) => pane.getBoundingClientRect().width),
+        value: Number(document.querySelector('.pane-splitter.vertical').getAttribute('aria-valuenow'))
+      };
+    });
+    const splitBox = await page.evaluate(() => {
+      const rect = document.querySelector('.pane-splitter.vertical').getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    });
+    await page.mouse.move(splitBox.x, splitBox.y);
+    await page.mouse.down();
+    await page.mouse.move(splitBox.x + 200, splitBox.y, { steps: 8 });
+    await page.mouse.up();
+    await wait(150);
+    const afterSplit = await page.evaluate(() => {
+      const panes = [...document.querySelectorAll('.pane-grid > .pane')];
+      return {
+        widths: panes.map((pane) => pane.getBoundingClientRect().width),
+        value: Number(document.querySelector('.pane-splitter.vertical').getAttribute('aria-valuenow'))
+      };
+    });
+    assert(afterSplit.widths[0] > beforeSplit.widths[0] + 100, `dragging should widen the first pane: ${JSON.stringify(beforeSplit)} -> ${JSON.stringify(afterSplit)}`);
+    assert(afterSplit.value > beforeSplit.value, 'divider aria-valuenow should follow the drag');
+
+    await page.evaluate(() => {
+      document.querySelector('.pane-splitter.vertical').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+    await wait(150);
+    const reset = await page.evaluate(() => Number(document.querySelector('.pane-splitter.vertical').getAttribute('aria-valuenow')));
+    assert(reset === 50, `double-click should reset the split (${reset})`);
+
+    await page.focus('.pane-splitter.vertical');
+    await page.keyboard.press('ArrowRight');
+    await wait(100);
+    const keyboardValue = await page.evaluate(() => Number(document.querySelector('.pane-splitter.vertical').getAttribute('aria-valuenow')));
+    assert(keyboardValue > reset, 'ArrowRight should move the divider');
+
+    for (const expected of [3, 4]) {
+      await page.evaluate(() => document.querySelector('#menu-button').click());
+      await page.waitForSelector('#menu-add-terminal', { visible: true, timeout: 5000 });
+      await page.evaluate(() => document.querySelector('#menu-add-terminal').click());
+      await page.waitForFunction(
+        (count) => document.querySelectorAll('.pane-grid > .pane').length === count,
+        { timeout: 20000 },
+        expected
+      );
+    }
+    const fourPane = await page.evaluate(() => ({
+      panes: document.querySelectorAll('.pane-grid > .pane').length,
+      splitters: document.querySelectorAll('.pane-splitter').length,
+      vertical: document.querySelectorAll('.pane-splitter.vertical').length,
+      horizontal: document.querySelectorAll('.pane-splitter.horizontal').length
+    }));
+    assert(fourPane.panes === 4, `four-pane tab should hold four panes: ${JSON.stringify(fourPane)}`);
+    assert(fourPane.splitters === 3 && fourPane.vertical === 2 && fourPane.horizontal === 1,
+      `four panes need two column dividers and one row divider: ${JSON.stringify(fourPane)}`);
+
+    await page.setViewport({ width: 393, height: 852, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+    await page.waitForFunction('document.querySelectorAll(".pane-splitter").length === 0', { timeout: 5000 });
 
     assert(pageErrors.length === 0, `page errors: ${pageErrors.join(' | ')}`);
     console.log('PASS attachments UI: picker, paste, outside drop ignored, terminal drop');

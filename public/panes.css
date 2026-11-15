@@ -1005,3 +1005,46 @@ button { cursor: pointer; }
   line-height: 1.55;
   tab-size: 4;
 }
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.shortcut-list dt { font-family: var(--font-mono); color: var(--mint); }
+.shortcut-list dd { margin: 0; color: var(--muted); }
+
+/* Maximize one pane without destroying the four-pane tab. */
+.pane-grid.is-maximized { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important; }
+.pane-grid.is-maximized > .pane:not(.is-maximized) { display: none; }
+
+/* Draggable pane dividers. The grid tracks are set inline by panes.mjs so a
+   tab's column/row ratios survive switches in localStorage. */
+.pane-splitter {
+  position: relative;
+  z-index: 6;
+  background: var(--line);
+  touch-action: none;
+}
+.pane-splitter.vertical { cursor: col-resize; }
+.pane-splitter.horizontal { cursor: row-resize; }
+.pane-splitter::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+  background: var(--line-strong);
+  opacity: 0.9;
+}
+.pane-splitter.vertical::after { left: 2px; top: 12%; width: 2px; height: 76%; }
+.pane-splitter.horizontal::after { top: 2px; left: 12%; height: 2px; width: 76%; }
+.pane-splitter:hover::after,
+.pane-splitter:focus-visible::after,
+.pane-splitter.dragging::after { background: var(--mint); opacity: 1; }
+.pane-splitter:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+.pane-grid.is-maximized .pane-splitter { display: none; }
+
+@media (max-width: 600px) {
+  .pane-splitter { display: none; }
+}

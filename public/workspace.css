@@ -1098,3 +1098,14 @@ body.split-dragging { user-select: none; }
   line-height: 1.55;
   tab-size: 4;
 }
+
+/* Software keyboard: lift the fixed navigation and reserve its height so the
+   focused field and terminal stay above the keyboard. */
+@media (max-width: 699px) {
+  body.workspace.keyboard-open {
+    padding-bottom: calc(84px + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom));
+  }
+  body.workspace.keyboard-open .workspace-nav {
+    bottom: calc(env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
+  }
+}

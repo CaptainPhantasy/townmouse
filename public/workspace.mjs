@@ -1056,6 +1056,16 @@ export async function init(T1) {
     }
   }
 
+  const syncKeyboardInset = () => {
+    const viewport = window.visualViewport;
+    const inset = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
+    document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
+    body.classList.toggle('keyboard-open', inset > 80);
+  };
+  window.visualViewport?.addEventListener('resize', syncKeyboardInset);
+  window.visualViewport?.addEventListener('scroll', syncKeyboardInset);
+  syncKeyboardInset();
+
   $('workspace-server').textContent = location.host ? 'Local server · ' + location.host : 'Local server';
 
   // The voice feature appends its group after the key bar is built. Move it into

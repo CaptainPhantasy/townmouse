@@ -215,6 +215,10 @@ function wirePtyToSession(ptyProcess, session) {
   const { id } = session;
 
   ptyProcess.onData((data) => {
+    // Remember the width this output was actually produced at. A resize just
+    // before a reload updates lastCols but not this marker.
+    session.lastDataCols = session.lastCols;
+    session.lastDataRows = session.lastRows;
     // Always buffer so a subsequent resume can replay this output.
     bufferOutput(session, data);
     if (!session.sessionActive) return;
@@ -331,12 +335,12 @@ function resumeSession(target, ws, dims, placeholder) {
   // The buffer was produced at the old PTY width. Replay it into an xterm set
   // to those dimensions, then fit the client to the new viewport. Replaying
   // old cursor-addressed output at a new width splits words and loses lines.
-  const replayCols = target.lastCols || dims.cols;
-  const replayRows = target.lastRows || dims.rows;
+  const replayCols = target.lastDataCols || target.lastCols || dims.cols;
+  const replayRows = target.lastDataRows || target.lastRows || dims.rows;
   // Same-width resume can replay colors and cursor addressing safely. A width
   // change cannot: xterm's reflow of old shell redraws splits command lines.
   // Use a control-code-free transcript of the final screen text instead.
-  const transcript = replayCols !== dims.cols || replayRows !== dims.rows;
+  const transcript = target.widthChanged || replayCols !== dims.cols || replayRows !== dims.rows;
 
   // Retire the placeholder connection session (the one created at connect).
   activeSessions.delete(placeholder.id);
@@ -390,6 +394,7 @@ function resumeSession(target, ws, dims, placeholder) {
   // Only after the replay is on the wire do we resize the live PTY to the new
   // client viewport. New output is therefore produced at the new width while
   // the old buffer remains coherent at the old width.
+  if (dims.cols !== target.lastCols || dims.rows !== target.lastRows) target.widthChanged = true;
   target.lastCols = dims.cols;
   target.lastRows = dims.rows;
   if (target.ptyProcess && !target.processExited) {
@@ -743,6 +748,7 @@ function handleMessage(session, ws, data) {
     }
     case 'resize': {
       const { cols, rows } = clampDims(data.cols, data.rows);
+      if (cols !== session.lastCols || rows !== session.lastRows) session.widthChanged = true;
       session.lastCols = cols;
       session.lastRows = rows;
       if (session.ptyProcess && !session.processExited) {
@@ -957,6 +963,11 @@ wss.on('connection', (ws) => {
     ws,
     startedAt: Date.now(),
     outputBuffer: '',
+    lastCols: 120,
+    lastRows: 40,
+    lastDataCols: null,
+    lastDataRows: null,
+    widthChanged: false,
     userClosed: false
   };
   activeSessions.set(sessionId, session);

@@ -220,6 +220,18 @@ async function dispatchFile(page, selector, name, type, eventName) {
     await page.evaluate(() => document.querySelector('#reader-close').click());
     await page.waitForFunction('document.querySelector("#reader-view").hidden', { timeout: 5000 });
 
+    const fontBefore = await page.evaluate(() => window.__panes.fontSize());
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-font-up', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-font-up').click());
+    await page.waitForFunction((size) => window.__panes.fontSize() > size, { timeout: 5000 }, fontBefore);
+    const fontAfter = await page.evaluate(() => ({
+      size: window.__panes.fontSize(),
+      stored: Number(window.localStorage.getItem('townmouse.paneFontSize'))
+    }));
+    assert.strictEqual(fontAfter.size, fontAfter.stored, 'pane font override should persist and apply');
+    await page.evaluate(() => document.querySelector('#menu-dialog [data-close]').click());
+
     const keybar = await page.evaluate(() => {
       const bar = document.querySelector('#pane-keybar');
       const keys = Array.from(document.querySelectorAll('#pane-keybar .pane-key'));

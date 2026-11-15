@@ -1085,3 +1085,9 @@ button { cursor: pointer; }
 @media (pointer: coarse), (max-width: 699px) {
   .context-menu button { min-height: 44px; }
 }
+
+.browser-image:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+
+@media (max-width: 699px) {
+  body.keyboard-open .panes-app { bottom: var(--keyboard-inset, 0px); }
+}

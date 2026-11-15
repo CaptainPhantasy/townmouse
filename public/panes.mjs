@@ -43,6 +43,8 @@ const els = {
   menuAttach: byId('menu-attach'),
   menuReader: byId('menu-reader'),
   menuShortcuts: byId('menu-shortcuts'),
+  menuFontUp: byId('menu-font-up'),
+  menuFontDown: byId('menu-font-down'),
   shortcutsDialog: byId('shortcuts-dialog'),
   attachInput: byId('attach-input'),
   readerView: byId('reader-view'),
@@ -117,6 +119,26 @@ const records = new Map();
 // dispose and recreate a record while a paste is still being delivered; both
 // views must feed the same ordered queue.
 const inputPumps = new Map();
+
+const PANE_FONT_KEY = 'townmouse.paneFontSize';
+
+function paneFontOverride() {
+  const value = Number(window.localStorage.getItem(PANE_FONT_KEY));
+  return value >= 8 && value <= 24 ? value : 0;
+}
+
+function adjustPaneFont(delta) {
+  const record = activeTerminalRecord();
+  const current = paneFontOverride() || (record?.term?.options.fontSize) || 11;
+  const next = Math.max(8, Math.min(24, current + delta));
+  try { window.localStorage.setItem(PANE_FONT_KEY, String(next)); } catch (_) { /* storage disabled */ }
+  for (const candidate of records.values()) {
+    if (candidate.kind !== 'terminal' || !candidate.term) continue;
+    candidate.term.options.fontSize = next;
+    safeFit(candidate);
+  }
+  showNotice(`Terminal text ${next}px`, 'info', 1800);
+}
 
 function inputPumpFor(paneId) {
   let pump = inputPumps.get(paneId);
@@ -563,6 +585,8 @@ function updateKeybar() {
   const record = activeTerminalRecord();
   els.keybar.hidden = !record;
   if (els.menuReader) els.menuReader.disabled = !record;
+  if (els.menuFontUp) els.menuFontUp.disabled = !record;
+  if (els.menuFontDown) els.menuFontDown.disabled = !record;
 }
 
 function paneCountLabel(count) {
@@ -1119,7 +1143,8 @@ function mountTerminal(record) {
   const applyFontSize = () => {
     if (record.disposed || !record.term) return;
     const width = record.host.getBoundingClientRect().width;
-    const size = width >= 560 ? 13 : width >= 430 ? 12 : width >= 320 ? 11 : 10;
+    const override = paneFontOverride();
+    const size = override || (width >= 560 ? 13 : width >= 430 ? 12 : width >= 320 ? 11 : 10);
     if (record.term.options.fontSize !== size) {
       record.term.options.fontSize = size;
       safeFit(record);
@@ -1319,6 +1344,7 @@ function createBrowserPane(pane) {
     '<div class="pane-body">' +
       '<div class="browser-toolbar">' +
         `<button type="button" class="browser-icon-button browser-back" aria-label="Back">${BACK_ICON}</button>` +
+        '<button type="button" class="browser-icon-button browser-forward" aria-label="Forward"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>' +
         `<button type="button" class="browser-icon-button browser-reload" aria-label="Reload">${RELOAD_ICON}</button>` +
         '<form class="address-form" novalidate>' +
           '<input class="address-input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter an address" aria-label="Address">' +
@@ -1326,7 +1352,7 @@ function createBrowserPane(pane) {
         '</form>' +
       '</div>' +
       '<div class="browser-view">' +
-        '<img class="browser-image" alt="" draggable="false">' +
+        '<img class="browser-image" alt="" draggable="false" tabindex="0">' +
       '</div>' +
       '<form class="browser-type-row" novalidate>' +
         '<input class="browser-type-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type into the page" aria-label="Type into the page">' +
@@ -1348,6 +1374,7 @@ function createBrowserPane(pane) {
     view: root.querySelector('.browser-view'),
     image: root.querySelector('.browser-image'),
     backButton: root.querySelector('.browser-back'),
+    forwardButton: root.querySelector('.browser-forward'),
     reloadButton: root.querySelector('.browser-reload'),
     width: 1280,
     height: 800,
@@ -1373,6 +1400,7 @@ function createBrowserPane(pane) {
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
   record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
   record.backButton.addEventListener('click', () => { void browserAction(record, 'back'); });
+  record.forwardButton.addEventListener('click', () => { void browserAction(record, 'forward'); });
   record.reloadButton.addEventListener('click', () => { void browserAction(record, 'reload'); });
   record.addressForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1390,7 +1418,22 @@ function createBrowserPane(pane) {
     event.preventDefault();
     submitBrowserType(record);
   });
-  record.image.addEventListener('click', (event) => onBrowserImageClick(record, event));
+  record.image.addEventListener('click', (event) => {
+    record.image.focus({ preventScroll: true });
+    onBrowserImageClick(record, event);
+  });
+  record.image.addEventListener('keydown', (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key.length === 1) {
+      event.preventDefault();
+      void browserAction(record, 'type', { text: event.key });
+      return;
+    }
+    const named = ['Enter', 'Backspace', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+    if (!named.includes(event.key)) return;
+    event.preventDefault();
+    void browserAction(record, 'key', { key: event.key });
+  });
   record.view.addEventListener('wheel', (event) => onBrowserWheel(record, event), { passive: false });
   let touchY = 0;
   let touchActive = false;
@@ -1995,6 +2038,8 @@ function bindEvents() {
   els.menuAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.menuAttach.addEventListener('click', () => { closeSheets(); els.attachInput.click(); });
   els.menuReader.addEventListener('click', openReaderView);
+  els.menuFontUp.addEventListener('click', () => adjustPaneFont(1));
+  els.menuFontDown.addEventListener('click', () => adjustPaneFont(-1));
   els.menuShortcuts.addEventListener('click', () => {
     closeSheets();
     if (!els.shortcutsDialog.open) els.shortcutsDialog.showModal();
@@ -2091,6 +2136,10 @@ window.__panes = {
     const record = records.get(paneId || effectiveActivePaneId());
     return record && record.term ? record.term.getSelection() : '';
   },
+  fontSize: (paneId) => {
+    const record = records.get(paneId || effectiveActivePaneId());
+    return record && record.term ? record.term.options.fontSize : null;
+  },
   render: (next) => {
     if (next && Array.isArray(next.tabs)) {
       applyState(next, { force: true });
@@ -2105,6 +2154,16 @@ Object.defineProperty(window.__panes, '__debug', {
   value: { histories, cursors, records },
   enumerable: false
 });
+
+const syncKeyboardInset = () => {
+  const viewport = window.visualViewport;
+  const inset = viewport ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop) : 0;
+  document.documentElement.style.setProperty('--keyboard-inset', `${Math.round(inset)}px`);
+  document.body.classList.toggle('keyboard-open', inset > 80);
+};
+window.visualViewport?.addEventListener('resize', syncKeyboardInset);
+window.visualViewport?.addEventListener('scroll', syncKeyboardInset);
+syncKeyboardInset();
 
 let layoutResizeFrame = 0;
 window.addEventListener('resize', () => {

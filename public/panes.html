@@ -143,6 +143,14 @@
 
 <input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
 
+<div class="context-menu" id="pane-context-menu" role="menu" aria-label="Terminal actions" hidden>
+  <button type="button" role="menuitem" data-context="copy">Copy selection</button>
+  <button type="button" role="menuitem" data-context="paste">Paste</button>
+  <button type="button" role="menuitem" data-context="select-all">Select all</button>
+  <button type="button" role="menuitem" data-context="clear">Clear screen</button>
+  <button type="button" role="menuitem" data-context="reader">Reader view</button>
+</div>
+
 <section class="reader-view" id="reader-view" role="dialog" aria-modal="true" aria-labelledby="reader-title" hidden>
   <header class="reader-header">
     <div><small>Word-wrapped transcript</small><h2 id="reader-title">Reader</h2></div>

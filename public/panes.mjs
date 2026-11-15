@@ -55,6 +55,7 @@ const els = {
   closeCancel: byId('close-cancel'),
   closeApprove: byId('close-approve'),
   keybar: byId('pane-keybar'),
+  contextMenu: byId('pane-context-menu'),
   pageDialog: byId('page-dialog'),
   pageDialogMessage: byId('page-dialog-message'),
   pageDialogField: byId('page-dialog-field'),
@@ -107,6 +108,7 @@ let pendingClose = null;
 let pageDialogRecordId = null;
 let pageDialogId = null;
 let pageDialogType = '';
+let contextRecordId = null;
 
 const cursors = new Map();
 const histories = new Map();
@@ -306,6 +308,50 @@ function showAttachmentNotice(attachment, file) {
   // The URL is part of the message, not a filename that disappears. Tapping
   // the notice copies it; agents can get the same URL from `panes attach`.
   showNotice(`Attached ${file.name} · ${attachment.url}`, 'info', 8000, attachment.url);
+}
+
+function hideContextMenu() {
+  contextRecordId = null;
+  if (els.contextMenu) els.contextMenu.hidden = true;
+}
+
+function showContextMenu(record, clientX, clientY) {
+  if (!els.contextMenu || !record || record.kind !== 'terminal') return;
+  contextRecordId = record.id;
+  els.contextMenu.hidden = false;
+  const rect = els.contextMenu.getBoundingClientRect();
+  const left = Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX));
+  const top = Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY));
+  els.contextMenu.style.left = `${left}px`;
+  els.contextMenu.style.top = `${top}px`;
+  els.contextMenu.querySelector('[role="menuitem"]')?.focus();
+}
+
+function wirePaneContext(root, record) {
+  root.addEventListener('contextmenu', (event) => {
+    if (event.target.closest('input, button')) return;
+    event.preventDefault();
+    void setActivePane(record.id);
+    showContextMenu(record, event.clientX, event.clientY);
+  });
+  const body = root.querySelector('.pane-body');
+  if (!body) return;
+  let timer = 0;
+  let startX = 0;
+  let startY = 0;
+  body.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse') return;
+    startX = event.clientX;
+    startY = event.clientY;
+    clearTimeout(timer);
+    timer = window.setTimeout(() => showContextMenu(record, startX, startY), 550);
+  });
+  body.addEventListener('pointermove', (event) => {
+    if (Math.hypot(event.clientX - startX, event.clientY - startY) > 10) clearTimeout(timer);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+    body.addEventListener(type, () => clearTimeout(timer));
+  }
 }
 
 function hidePageDialog() {
@@ -575,7 +621,7 @@ function updateChrome() {
   const tabs = (currentState && currentState.tabs) || [];
   els.tabCount.textContent = String(tabs.length);
   els.tabsButton.setAttribute('aria-label', tabs.length === 1 ? 'Workspace tabs, 1 tab' : `Workspace tabs, ${tabs.length} tabs`);
-  els.hostName.textContent = (currentState && currentState.host) || location.hostname || location.host || 'localhost';
+  updateHostContext();
   const limits = currentState && currentState.limits;
   if (limits) {
     els.tabsLimits.textContent = `Up to ${limits.maxTabs} tabs, ${limits.maxPanesPerTab} panes per tab.`;
@@ -1003,6 +1049,7 @@ function createTerminalPane(pane) {
   records.set(pane.id, record);
   wireDrop(root, pane.id);
   wirePaneReorder(root, pane.id);
+  wirePaneContext(root, record);
   requestAnimationFrame(() => {
     if (!record.disposed && root.isConnected) mountTerminal(record);
   });
@@ -1877,6 +1924,36 @@ function bindEvents() {
   els.emptyAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.emptyNewTab.addEventListener('click', () => { void newTab(); });
 
+  els.contextMenu.addEventListener('click', async (event) => {
+    const action = event.target.closest('[data-context]')?.dataset.context;
+    const record = records.get(contextRecordId);
+    hideContextMenu();
+    if (!action || !record || !record.term) return;
+    try {
+      if (action === 'copy') {
+        if (!record.term.hasSelection()) { showNotice('Select terminal text first.', 'info', 2200); return; }
+        await navigator.clipboard.writeText(record.term.getSelection());
+        showNotice('Selection copied.', 'info', 2200);
+      } else if (action === 'paste') {
+        const text = await navigator.clipboard.readText();
+        if (text) sendTerminalInput(record, text);
+      } else if (action === 'select-all') {
+        record.term.selectAll();
+      } else if (action === 'clear') {
+        record.term.clear();
+      } else if (action === 'reader') {
+        openReaderView();
+      }
+    } catch (error) {
+      showNotice(error.message || 'Clipboard is unavailable in this browser.', 'error');
+    }
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!els.contextMenu.hidden && !els.contextMenu.contains(event.target)) hideContextMenu();
+  }, true);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.contextMenu.hidden) { event.preventDefault(); hideContextMenu(); }
+  }, true);
   els.pageDialogDismiss.addEventListener('click', () => { void answerPageDialog('dismiss'); });
   els.pageDialogAccept.addEventListener('click', () => { void answerPageDialog('accept'); });
   els.pageDialogInput.addEventListener('keydown', (event) => {
@@ -2009,6 +2086,10 @@ window.__panes = {
   selectAll: (paneId) => {
     const record = records.get(paneId || effectiveActivePaneId());
     if (record && record.term) record.term.selectAll();
+  },
+  selection: (paneId) => {
+    const record = records.get(paneId || effectiveActivePaneId());
+    return record && record.term ? record.term.getSelection() : '';
   },
   render: (next) => {
     if (next && Array.isArray(next.tabs)) {

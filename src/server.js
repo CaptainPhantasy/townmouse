@@ -644,6 +644,9 @@ function finalizeVoice(session) {
 /** @param {Session} session @param {import('ws').WebSocket} ws @param {object} data */
 function handleMessage(session, ws, data) {
   if (!session.sessionActive && data.type !== 'resume' && data.type !== 'shell') return;
+  // A superseded socket must not close, re-shell, or re-adopt the session out
+  // from under the window that currently owns it.
+  if (session.ws && session.ws !== ws && ['close', 'shell', 'resume'].includes(data.type)) return;
 
   switch (data.type) {
     case 'shell': {
@@ -808,6 +811,9 @@ function bindWsToSession(ws, session) {
       activeSessions.delete(s.id);
       return;
     }
+    // A socket that was superseded by a newer resume must not detach the new
+    // window or start a grace timer underneath it.
+    if (s.ws && s.ws !== ws) return;
     // Unexpected drop: keep the PTY alive and start the resume grace window.
     if (s.ptyProcess && !s.processExited) {
       s.ws = null;
@@ -831,8 +837,9 @@ function bindWsToSession(ws, session) {
     const s = ws.__sessionRef;
     error(s ? s.id : null, 'WebSocket error', { err: err.message || String(err) });
     // An error does not necessarily kill the socket; mark inactive and let the
-    // close handler decide grace vs cleanup.
-    if (s) s.sessionActive = false;
+    // close handler decide grace vs cleanup. Never let a superseded socket
+    // mark the live owner inactive.
+    if (s && (!s.ws || s.ws === ws)) s.sessionActive = false;
   });
 }
 
@@ -961,7 +968,7 @@ wss.on('connection', (ws) => {
 // ─── Graceful shutdown ─────────────────────────────────────────────────────
 
 /** @param {string} signal */
-async function shutdown(signal) {
+async function shutdown(signal, exitCode = 0) {
   info(null, `Received ${signal}, starting graceful shutdown`, { activeSessions: activeSessions.size });
   server.close();
   await paneWorkspace.closeAll().catch(err => error(null, 'Pane shutdown failed', {err:err.message}));
@@ -974,8 +981,20 @@ async function shutdown(signal) {
   });
   await Promise.race([Promise.all(promises), new Promise((r) => setTimeout(r, 5_000))]);
   info(null, 'Shutdown complete', { activeSessions: activeSessions.size });
-  process.exit(0);
+  process.exit(exitCode);
 }
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.stack || reason.message : String(reason);
+  error(null, 'Unhandled promise rejection', { err: message });
+});
+
+process.on('uncaughtException', (err) => {
+  error(null, 'Uncaught exception — shutting down', { err: err?.stack || String(err) });
+  const force = setTimeout(() => process.exit(1), 6000);
+  force.unref?.();
+  shutdown('uncaughtException', 1).catch(() => process.exit(1));
+});
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

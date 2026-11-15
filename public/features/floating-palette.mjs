@@ -73,13 +73,13 @@ export function init(T1) {
 
   const actionsEl = sheet.querySelector('.t1-tablet-actions');
   const ACTIONS = [
-    { label: 'Search', action: 'search' },
+    { label: 'Search', action: 'toggle-search' },
     { label: 'Command Palette', action: 'command-palette' },
     { label: 'Clear', action: 'clear' },
     { label: 'Select All', action: 'select-all' },
     { label: 'Copy', action: 'copy' },
     { label: 'Paste', action: 'paste' },
-    { label: 'Theme', action: 'theme' },
+    { label: 'Theme', action: 'theme-settings' },
     { label: 'Font +', action: 'font-increase' },
     { label: 'Font -', action: 'font-decrease' }
   ];
@@ -91,6 +91,11 @@ export function init(T1) {
       b.type = 'button';
       b.textContent = label;
       b.addEventListener('click', () => {
+        if (action === 'theme-settings') {
+          document.querySelector('#settingsBtn')?.click();
+          close();
+          return;
+        }
         window.dispatchEvent(new CustomEvent('t1:action', { detail: { action } }));
         close();
       });

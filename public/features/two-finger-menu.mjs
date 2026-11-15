@@ -59,16 +59,28 @@ export function init(T1) {
     firstTouch = null;
   }, { passive: false });
 
-  menu.addEventListener('click', (e) => {
+  menu.addEventListener('click', async (e) => {
     const action = e.target.dataset.action;
     if (!action) return;
     hide();
     const term = T1.term;
-    if (action === 'copy') document.execCommand('copy');
-    if (action === 'paste') document.execCommand('paste');
-    if (action === 'select-all' && term) term.selectAll();
-    if (action === 'clear' && term) term.clear();
-    if (action === 'search') window.dispatchEvent(new CustomEvent('t1:action', { detail: { action: 'search' } }));
+    try {
+      if (action === 'copy') {
+        const selection = term?.getSelection?.() || '';
+        if (!selection) { T1.toast('Select terminal text first', 'warn'); return; }
+        await navigator.clipboard.writeText(selection);
+        T1.toast('Selection copied');
+      }
+      if (action === 'paste') {
+        const text = await navigator.clipboard.readText();
+        if (text) T1.sendData(text);
+      }
+      if (action === 'select-all' && term) term.selectAll();
+      if (action === 'clear' && term) term.clear();
+      if (action === 'search') window.dispatchEvent(new CustomEvent('t1:action', { detail: { action: 'toggle-search' } }));
+    } catch (_) {
+      T1.toast('Clipboard is unavailable in this browser', 'warn');
+    }
   });
 
   window.__terminalOneTwoFingerMenu = { menu, hide };

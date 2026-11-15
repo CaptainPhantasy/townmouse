@@ -191,6 +191,20 @@ async function dispatchFile(page, selector, name, type, eventName) {
     }
 
     await wait(1500);
+    await page.evaluate(() => {
+      const body = document.querySelector('.pane-terminal .pane-body');
+      const rect = body.getBoundingClientRect();
+      body.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, clientX: rect.left + 40, clientY: rect.top + 40
+      }));
+    });
+    await page.waitForFunction('!document.querySelector("#pane-context-menu").hidden', { timeout: 5000 });
+    const menuItems = await page.evaluate(() => [...document.querySelectorAll('#pane-context-menu [role="menuitem"]')].map((button) => button.textContent));
+    assert(menuItems.includes('Copy selection') && menuItems.includes('Select all'), `context menu is missing actions: ${JSON.stringify(menuItems)}`);
+    await page.evaluate(() => document.querySelector('#pane-context-menu [data-context="select-all"]').click());
+    const selection = await page.evaluate(() => window.__panes.selection());
+    assert(selection.length > 0, 'Select all from the context menu should select terminal text');
+
     await page.evaluate(() => document.querySelector('#menu-button').click());
     await page.waitForSelector('#menu-reader', { visible: true, timeout: 5000 });
     await page.evaluate(() => document.querySelector('#menu-reader').click());

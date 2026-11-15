@@ -162,6 +162,24 @@ async function run() {
     await sleep(200);
     const paletteClosed = await ppage.evaluate(() => !document.querySelector('.t1palette')?.classList.contains('open'));
     assert(paletteClosed === true, 'command palette closes on Escape');
+
+    const shortcuts = await ppage.evaluate(() => {
+      const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
+      let clears = 0;
+      window.addEventListener('t1:action', (event) => {
+        if ((event.detail || {}).action === 'clear') clears++;
+      });
+      const bare = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(bare);
+      const afterBare = clears;
+      const appChord = isMac
+        ? new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true })
+        : new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(appChord);
+      return { isMac, afterBare, afterApp: clears };
+    });
+    assert(shortcuts.afterBare === 0, 'bare Ctrl+K reaches the shell instead of clearing');
+    assert(shortcuts.afterApp === 1, `the platform clear chord fires (mac=${shortcuts.isMac})`);
     await ppage.close();
 
     // ── Tablet floating palette actions are wired ────────────────────────────

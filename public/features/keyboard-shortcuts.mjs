@@ -8,6 +8,9 @@ const KEY = 'terminalone.shortcuts';
 export function init(T1) {
   const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
   const meta = (e) => (isMac ? e.metaKey : e.ctrlKey);
+  // Bare Ctrl+K/Ctrl+B belong to readline on Windows/Linux. Use shifted chords
+  // there so kill-line and backward-char still reach the shell.
+  const appChord = (e) => (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey);
 
   function dispatch(name) {
     window.dispatchEvent(new CustomEvent('t1:action', { detail: { action: name }, bubbles: true }));
@@ -39,8 +42,8 @@ export function init(T1) {
       e.preventDefault(); dispatch('font-decrease'); return;
     }
 
-    // Ctrl/Cmd + K clear terminal screen.
-    if ((e.key === 'k' || e.key === 'K') && meta(e)) {
+    // Cmd+K on macOS; Ctrl+Shift+K elsewhere (bare Ctrl+K is readline).
+    if ((e.key === 'k' || e.key === 'K') && appChord(e)) {
       e.preventDefault(); dispatch('clear'); return;
     }
 
@@ -49,8 +52,8 @@ export function init(T1) {
       e.preventDefault(); dispatch('command-palette'); return;
     }
 
-    // Ctrl/Cmd + B toggle snippets.
-    if ((e.key === 'b' || e.key === 'B') && meta(e)) {
+    // Cmd+B on macOS; Ctrl+Shift+B elsewhere (bare Ctrl+B is backward-char).
+    if ((e.key === 'b' || e.key === 'B') && appChord(e)) {
       e.preventDefault(); dispatch('toggle-snippets'); return;
     }
 

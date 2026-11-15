@@ -46,12 +46,14 @@ export function init(T1) {
   overlay.querySelector('.close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
+  const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
   const COMMON = [
-    { keys: 'Ctrl/Cmd + K', desc: 'Open command palette' },
-    { keys: 'Ctrl/Cmd + Shift + P', desc: 'Open action palette' },
-    { keys: 'Ctrl/Cmd + F', desc: 'Search scrollback' },
-    { keys: 'Ctrl/Cmd + = / -', desc: 'Increase / decrease font size' },
-    { keys: 'Ctrl + L', desc: 'Clear screen' },
+    { keys: isMac ? 'Cmd + Shift + P' : 'Ctrl + Shift + P', desc: 'Open command palette' },
+    { keys: isMac ? 'Cmd + Shift + F' : 'Ctrl + Shift + F', desc: 'Search scrollback' },
+    { keys: isMac ? 'Cmd + K' : 'Ctrl + Shift + K', desc: 'Clear screen' },
+    { keys: isMac ? 'Cmd + B' : 'Ctrl + Shift + B', desc: 'Toggle snippets' },
+    { keys: 'Cmd/Ctrl + = / -', desc: 'Increase / decrease font size' },
+    { keys: 'Ctrl + L', desc: 'Clear screen from the shell' },
     { keys: 'Ctrl + Z / Ctrl + Y', desc: 'Recall previous / next command' }
   ];
   const TOUCH = [

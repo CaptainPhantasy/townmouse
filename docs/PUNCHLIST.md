@@ -366,7 +366,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Fetch `GET /api/browser` on any 404/5xx or reconnect; remove the local tab on 404; add offline/reopen affordances; listen for page/context close/crash on the server and prune dead sessions; return per-tab status instead of failing the whole list.  
   *Evidence:* `public/workspace.mjs:522-533,667-689,922,927`; `src/browser-workspace.js:25,142-151,230-231`; `src/workspace-panes.js:124-134`.  
 
-- [ ] **P1-48 - Global shortcuts steal Ctrl+K and Ctrl+B on Windows/Linux and the help sheet does not match the handlers**
+- [x] **P1-48 - Global shortcuts steal Ctrl+K and Ctrl+B on Windows/Linux and the help sheet does not match the handlers**
+  *Resolved 2026-11-15:* clear and snippets use Cmd+K/Cmd+B on macOS and Ctrl+Shift+K/Ctrl+Shift+B elsewhere; bare Ctrl+K/Ctrl+B reach the shell. The help sheet is platform-aware and lists the actual command-palette, search, clear, snippets and font chords. `tests/feature-behavior-test.js` verifies bare Ctrl+K does not dispatch clear and the platform clear chord does.
   *Expectation:* Shortcuts must not shadow readline/emacs keys, and the help sheet must match the actual bindings.  
   *Current:* `public/features/keyboard-shortcuts.mjs` treats `meta(e)` as `ctrlKey` on non-Mac (`:9-10`) and preventDefaults Ctrl+K to clear (`:43-45`) and Ctrl+B to toggle snippets (`:53-55`), so kill-line and backward-char never reach the shell on Windows/Linux. `public/features/shortcut-help.mjs` advertises Ctrl/Cmd+K as command palette and Ctrl/Cmd+F as search (`:50-53`), while the handlers use Cmd+K for clear and Cmd+Shift+F for search (`:43-60`).  
   *Fix:* Use Cmd-only chords on macOS and non-conflicting Ctrl+Shift+... chords elsewhere; never bind bare Ctrl+K or Ctrl+B; generate the help list from the same table as the handlers or add a test asserting they match. Test with a platform override.  

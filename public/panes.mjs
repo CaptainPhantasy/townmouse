@@ -406,6 +406,7 @@ function disposeRecord(record) {
   if (!record || record.disposed) return;
   record.disposed = true;
   if (record.readTimer) { clearTimeout(record.readTimer); record.readTimer = 0; }
+  if (record.inputTimer) { clearTimeout(record.inputTimer); record.inputTimer = 0; }
   if (record.snapshotTimer) { clearTimeout(record.snapshotTimer); record.snapshotTimer = 0; }
   if (record.wheelTimer) { clearTimeout(record.wheelTimer); record.wheelTimer = 0; }
   if (record.fitFrame) { cancelAnimationFrame(record.fitFrame); record.fitFrame = 0; }
@@ -447,7 +448,9 @@ function createTerminalPane(pane) {
     resizeObserver: null,
     fitFrame: 0,
     readTimer: 0,
-    inputChain: Promise.resolve(),
+    pendingInput: '',
+    inputTimer: 0,
+    inputBusy: false,
     offset: cursors.get(pane.id) || 0,
     lastResize: '',
     exited: false,
@@ -546,15 +549,36 @@ function sendTerminalResize(record, cols, rows) {
 }
 
 function sendTerminalInput(record, data) {
-  // Serialize keystrokes so fast input reaches the PTY in order.
-  record.inputChain = record.inputChain.then(async () => {
-    if (record.disposed) return;
-    try {
-      await api(`/panes/${record.id}/input`, { method: 'POST', body: { data } });
-    } catch (error) {
-      if (!record.disposed) logStatus('Terminal input could not be sent.');
+  if (record.disposed || !data) return;
+  // Coalesce fast typing and pastes into one ordered request instead of one
+  // HTTP round-trip per keystroke. This is the difference between smooth and
+  // jittery input when the agent or a build is also producing output.
+  record.pendingInput += data;
+  if (record.inputTimer || record.inputBusy) return;
+  record.inputTimer = window.setTimeout(() => {
+    record.inputTimer = 0;
+    void flushTerminalInput(record);
+  }, 12);
+}
+
+async function flushTerminalInput(record) {
+  if (record.disposed || record.inputBusy || !record.pendingInput) return;
+  const payload = record.pendingInput;
+  record.pendingInput = '';
+  record.inputBusy = true;
+  try {
+    await api(`/panes/${record.id}/input`, { method: 'POST', body: { data: payload } });
+  } catch (error) {
+    if (!record.disposed) logStatus('Terminal input could not be sent.');
+  } finally {
+    record.inputBusy = false;
+    if (!record.disposed && record.pendingInput) {
+      record.inputTimer = window.setTimeout(() => {
+        record.inputTimer = 0;
+        void flushTerminalInput(record);
+      }, 12);
     }
-  });
+  }
 }
 
 function startTerminalRead(record) {

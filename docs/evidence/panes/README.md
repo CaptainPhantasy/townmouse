@@ -37,3 +37,10 @@ The acceptance script is archived here as `panes-ui-test.cjs`.
 - `tests/panes-api.test.cjs` still passes 16/16; the four-pane UI acceptance
   still renders 4 panes / 2 terminals / 2 browsers with no console errors.
 - The archival attachment test is `panes-attach-test.cjs`.
+
+## Input coalescing pass — 2026-11-15
+
+Typing `echo BATCH_OK` and pressing Enter (13 keystrokes) produced **one**
+POST to `/api/panes/panes/:id/input`, and the shell executed it correctly.
+The panes UI now buffers keystrokes for 12 ms and flushes one ordered request
+instead of one HTTP round-trip per keystroke.

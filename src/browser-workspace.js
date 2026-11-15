@@ -146,10 +146,19 @@ function installBrowserWorkspace(app) {
       s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private', internal: true };
       attachDialog(s);
       page.on('popup', (popup) => followPopup(popup, page));
-      if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
-      s.title = await page.title();
+      // Register before navigation. A page that opens a dialog on load would
+      // otherwise block goto while the pane is invisible and impossible to
+      // answer; the snapshot route can now return the dialog immediately.
       sessions.set(s.id, s);
       page.once('close', () => sessions.delete(s.id));
+      if (url) {
+        s.navigation = page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 30000 })
+          .then(() => page.title())
+          .then((title) => { s.title = title; })
+          .catch(() => { /* the snapshot route reports the failure */ });
+      } else {
+        s.title = await page.title();
+      }
       return describe(s);
     } catch (error) {
       if (s) sessions.delete(s.id);

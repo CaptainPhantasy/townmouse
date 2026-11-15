@@ -19,6 +19,16 @@ test('replayTranscript applies backspace and overwrite without duplicate charact
   assert.equal(replayTranscript('echo helloo\b \r\n'), 'echo hello\n');
 });
 
+test('replayTranscript applies each segment at the width that produced it', () => {
+  const first = 'Mac-mini:~ floyd$ echo BEGIN_RESUME_MARKER_0123456789_AB \rCDEFGHIJ_END\r\nBEGIN_RESUME_MARKER_0123456789_ABCDEFGHIJ_END\r\n';
+  const second = 'Mac-mini:~ floyd$ echo SECOND_AT_WIDE\r\nSECOND_AT_WIDE\r\n';
+  const raw = first + second;
+  const text = replayTranscript(raw, [{ at: 0, cols: 56 }, { at: first.length, cols: 134 }]);
+  const flat = text.replace(/\n/g, '');
+  assert.ok(flat.includes('echo BEGIN_RESUME_MARKER_0123456789_ABCDEFGHIJ_END'), flat);
+  assert.ok(flat.includes('SECOND_AT_WIDE'), flat);
+});
+
 test('replayTranscript keeps a wrapped command and its output in order', () => {
   const marker = 'BEGIN_RESUME_MARKER_0123456789_ABCDEFGHIJ_END';
   // Captured from bash readline at 56 columns: the space after `_AB` forces

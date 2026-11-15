@@ -174,7 +174,11 @@ Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID
     return;
   }
   if (scope === 'state') { print(await call('GET', '/state')); return; }
-  if (scope === 'active') { print(await call('POST', '/active', { tabId: a.tab, paneId: a.pane })); return; }
+  if (scope === 'active') {
+    const activeArgs = args([action, ...rest].filter((value) => value !== undefined));
+    print(await call('POST', '/active', { tabId: activeArgs.tab, paneId: activeArgs.pane }));
+    return;
+  }
   if (scope === 'tab') {
     if (action === 'list') { const s = await call('GET', '/state'); print(s.tabs); return; }
     if (action === 'create') { print(await call('POST', '/tabs', { title: a.title, activate: a.activate === true })); return; }

@@ -736,7 +736,13 @@ export async function init(T1) {
   $('new-browser-inline').onclick = safe(createBrowser);
   $('workspace-browser').onclick = safe(openBrowser);
   $('agent-browser').onclick = safe(openAgent);
-  $('workspace-panes').onclick = () => location.assign('/panes.html');
+  $('workspace-panes').onclick = () => {
+    // Keep the main terminal's WebSocket alive; navigating this window away
+    // would leave its shell in the five-minute resume grace and then kill it.
+    const opened = window.open('/panes.html', 'townmouse-panes');
+    if (opened) opened.opener = null;
+    else location.assign('/panes.html');
+  };
 
   let readerView = null;
   let readerText = null;

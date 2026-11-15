@@ -135,7 +135,8 @@ const FIXTURE_PAGES = {
   '/': { title: 'Pane Fixture', heading: 'Pane Fixture' },
   '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' },
   '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" },
-  '/dialog': { title: 'Dialog Fixture', heading: 'Dialog Fixture', script: "setTimeout(() => window.confirm('Proceed with paging?'), 150);" }
+  '/dialog': { title: 'Dialog Fixture', heading: 'Dialog Fixture', script: "setTimeout(() => window.confirm('Proceed with paging?'), 150);" },
+  '/dialog-inline': { title: 'Inline Dialog', heading: 'Inline Dialog', script: "window.confirm('Answer before load?');" }
 };
 
 function startFixtureServer() {
@@ -770,6 +771,38 @@ async function main() {
       ensure(paneCount === 1, 'state should shrink to the single initial pane', response.body.state);
       ensure(response.body.state.activeTabId === initialTabId, 'initial tab should become active', response.body.state);
       ensure(response.body.state.activePaneId === context.initialPaneId, 'initial pane should become active', response.body.state);
+    });
+
+    await check('browser: an inline dialog on first load stays answerable', async () => {
+      const token = required('workspace token', context.token);
+      const tab = await request('POST', '/api/panes/tabs', { token, body: { title: 'Inline Dialog', activate: false } });
+      ensure(tab.status === 200, 'inline tab should be created', tab.body);
+      const started = Date.now();
+      const pane = await createPane(tab.body.id, { kind: 'browser', url: `${FIXTURE_BASE}/dialog-inline` });
+      ensure(pane.status === 200, 'inline browser pane should be created', pane.body);
+      ensure(Date.now() - started < 5000, 'creation must not wait for the blocked navigation', Date.now() - started);
+      const dialog = await snapshotUntil(pane.body.id, (body) => body.dialog && body.dialog.id);
+      ensure(dialog && dialog.status === 200, 'snapshot should expose the inline dialog', dialog ? dialog.body : 'no response');
+      ensure(/Answer before load/.test(dialog.body.dialog.message), 'inline dialog message should be exposed', dialog.body.dialog);
+      const answered = await request('POST', `/api/panes/panes/${pane.body.id}/browser/dialog`, {
+        token,
+        body: { action: 'accept' }
+      });
+      ensure(answered.status === 200, 'inline dialog should be answerable', answered.body);
+      const cleared = await snapshotUntil(pane.body.id, (body) => !body.dialog);
+      ensure(cleared && cleared.status === 200, 'inline dialog should clear after answering', cleared ? cleared.body : 'no response');
+    });
+
+    await check('workspace: an intentionally empty workspace stays empty', async () => {
+      const token = required('workspace token', context.token);
+      const before = await request('GET', '/api/panes/state', { token });
+      for (const tab of before.body.tabs || []) {
+        await request('DELETE', `/api/panes/tabs/${tab.id}`, { token });
+      }
+      const empty = await request('GET', '/api/panes/state', { token });
+      ensure(empty.status === 200 && empty.body.tabs.length === 0, 'state should report zero tabs', empty.body);
+      const again = await request('GET', '/api/panes/state', { token });
+      ensure(again.body.tabs.length === 0, 'a state poll must not reseed the workspace', again.body);
     });
   } finally {
     await stopChild(child);

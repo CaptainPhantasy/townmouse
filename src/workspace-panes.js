@@ -41,8 +41,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   let activeTabId = null;
   let activePaneId = null;
   let restored = false;
+  let savedWorkspace = false;
   let restorePromise = null;
   let saveTimer = null;
+  let shuttingDown = false;
   let activeStreams = 0;
 
   const id = (prefix) => prefix + '_' + crypto.randomBytes(6).toString('hex');
@@ -190,7 +192,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
         throw Object.assign(new Error('A workspace tab holds at most four panes.'), { status: 409 });
       }
       pane.browserId = browser.id;
-      pane.url = browser.url;
+      pane.url = browser.url && browser.url !== 'about:blank' ? browser.url : (opts.url || '');
       pane.title = opts.title || browser.title || 'Browser';
     } else {
       pane.title = opts.title || `Terminal ${tab.panes.length + 1}`;
@@ -206,7 +208,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
 
   function scheduleSave() {
-    if (!restored) return;
+    if (!restored || shuttingDown) return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
@@ -249,6 +251,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     try { saved = JSON.parse(await fs.promises.readFile(stateFile, 'utf8')); }
     catch (_) { return; }
     if (!saved || !Array.isArray(saved.tabs)) return;
+    savedWorkspace = true;
     for (const savedTab of saved.tabs.slice(0, MAX_TABS)) {
       const tab = createTab(typeof savedTab.title === 'string' ? savedTab.title : 'Workspace');
       for (const savedPane of (savedTab.panes || []).slice(0, MAX_PANES_PER_TAB)) {
@@ -282,7 +285,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (pane.kind === 'browser' && pane.browserId) {
       const browser = browserWorkspace.get(pane.browserId);
       if (browser) {
-        pane.url = browser.page.url();
+        const liveUrl = browser.page.url();
+        if (liveUrl && liveUrl !== 'about:blank') pane.url = liveUrl;
         if (!pane.titleLocked) pane.title = browser.title || pane.title;
       } else {
         pane.url = '';
@@ -320,15 +324,20 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
   function ensureInitial() {
     if (!restorePromise) {
-      restorePromise = restoreState().catch(() => { /* corrupt state is not fatal */ }).then(() => { restored = true; });
+      // Seed exactly once. An intentionally empty workspace (the user closed
+      // the last tab) must stay empty across state polls.
+      restorePromise = restoreState()
+        .catch(() => { /* corrupt state is not fatal */ })
+        .then(async () => {
+          restored = true;
+          if (savedWorkspace || tabs.size) return;
+          const tab = createTab('Workspace 1');
+          const pane = await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
+          activeTabId = tab.id;
+          activePaneId = pane.id;
+        });
     }
-    return restorePromise.then(async () => {
-      if (tabs.size) return;
-      const tab = createTab('Workspace 1');
-      const pane = await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
-      activeTabId = tab.id;
-      activePaneId = pane.id;
-    });
+    return restorePromise;
   }
   function killPty(pane) {
     if (!pane.pty) return;
@@ -634,7 +643,9 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }));
 
   async function closeAll() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     if (restored) await saveState().catch(() => { /* best effort on shutdown */ });
+    shuttingDown = true;
     for (const pane of [...panes.values()]) {
       killPty(pane);
       if (pane.kind === 'browser' && pane.browserId) {

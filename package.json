@@ -1,25 +1,26 @@
 {
-  "name": "terminalone",
-  "version": "1.0.3",
-  "description": "A browser-based terminal emulator — your shell, in your browser, with 39 feature modules and PWA install. Free. No subscription. No catch.",
+  "name": "townmouse",
+  "version": "0.1.0",
+  "description": "A terminal and agent browser workspace built on TerminalOne.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CaptainPhantasy/TerminalOne.git"
+    "url": "https://github.com/CaptainPhantasy/townmouse.git"
   },
   "homepage": "https://floydslabs.com",
   "bugs": {
-    "url": "https://github.com/CaptainPhantasy/TerminalOne/issues"
+    "url": "https://github.com/CaptainPhantasy/townmouse/issues"
   },
   "keywords": [
     "terminal",
-    "emulator",
     "browser",
+    "agent",
+    "workspace",
     "pty",
     "websocket",
     "xterm",
     "pwa",
-    "shell"
+    "automation"
   ],
   "main": "src/server.js",
   "packageManager": "npm@10.9.3",
@@ -35,6 +36,7 @@
     "test:behavior": "scripts/node-runtime.sh exec tests/feature-behavior-test.js",
     "test:voice": "scripts/node-runtime.sh exec tests/voice-input.test.js",
     "test:responsive": "scripts/node-runtime.sh exec tests/responsive-test.js",
+    "test:workspace": "scripts/node-runtime.sh exec tests/workspace-journeys.cjs",
     "postinstall": "sh scripts/prepare-native.sh",
     "test:security": "node --test tests/request-boundary.test.js tests/request-boundary-integration.test.js"
   },
@@ -58,6 +60,9 @@
     "scripts/node-runtime.sh",
     "scripts/prepare-native.sh",
     "README.md",
+    "TOWNMOUSE.md",
+    "DESIGN.md",
+    "docs/",
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",

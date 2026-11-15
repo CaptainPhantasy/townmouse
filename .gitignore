@@ -2,6 +2,7 @@
 node_modules/
 .DS_Store
 .work/
+/evidence/
 
 # Harness control-plane — never ship (infra topology, governance state)
 # `**/.supercache` catches symlinks too (root `.supercache/` only matches dirs)

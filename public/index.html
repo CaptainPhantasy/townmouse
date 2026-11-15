@@ -6,15 +6,15 @@
  <meta name="apple-mobile-web-app-capable" content="yes">
  <meta name="mobile-web-app-capable" content="yes">
  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
- <meta name="apple-mobile-web-app-title" content="TerminalOne">
- <title>TerminalOne</title>
+ <meta name="apple-mobile-web-app-title" content="Townmouse">
+ <meta name="description" content="Townmouse is a terminal and agent browser workspace built on TerminalOne.">
+ <title>Townmouse</title>
  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
  <link rel="manifest" href="/manifest.json">
  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
- <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
- <meta name="theme-color" content="#14171b">
+ <meta name="theme-color" content="#eef1f5">
  <link rel="preconnect" href="https://fonts.googleapis.com">
  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -414,7 +414,7 @@
 
  <div class="app-shell">
   <header class="terminal-header">
-   <div class="terminal-title">TerminalOne</div>
+   <div class="terminal-title">Townmouse</div>
    <div class="terminal-actions">
     <button id="settingsBtn" type="button" title="Settings">Settings</button>
     <button id="reconnectBtn" type="button">Reconnect</button>
@@ -450,7 +450,7 @@
    <div class="settings-row">
     <label for="styleSelect">Terminal style</label>
     <select id="styleSelect">
-     <option value="default">TerminalOne (default)</option>
+     <option value="default">Townmouse (default)</option>
      <option value="floyd">Floyd TTY Bridge</option>
     </select>
    </div>
@@ -603,6 +603,12 @@
    const isIPhone = /iPhone|iPod/.test(ua);
    if (isIPad) return 'ipad';
    if (isIPhone) return 'iphone';
+   // Viewport/input fallback for touch browsers whose UA is not Apple.
+   if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    const short = Math.min(window.innerWidth, window.innerHeight);
+    if (short < 700) return 'iphone';
+    if (short < 1100) return 'ipad';
+   }
    return 'desktop';
   }
 
@@ -786,52 +792,83 @@
    // iPhone: compact single row — essentials only.
    iphone.innerHTML = '';
    if (device === 'iphone') {
-    iphone.appendChild(makeGroup([
+    const modifiers = makeGroup([
      makeKey('ESC', { seq: SEQ.esc, title: 'Escape' }),
      makeKey('TAB', { seq: SEQ.tab, title: 'Tab' }),
      makeKey('ENTER', { seq: SEQ.enter, title: 'Enter' }),
      makeKey('Ctrl+b', { seq: SEQ.ctrlB, title: 'Send Ctrl+b to herdr' }),
      makeKey('CTRL', { kind: 'toggle', mod: 'ctrl', title: 'Ctrl (sticky)' })
-    ]));
-    iphone.appendChild(makeGroup([
+    ]);
+    modifiers.dataset.kb = 'mod';
+    const arrows = makeGroup([
      makeKey('←', { seq: SEQ.left }),
      makeKey('↓', { seq: SEQ.down }),
      makeKey('↑', { seq: SEQ.up }),
      makeKey('→', { seq: SEQ.right })
-    ]));
-    iphone.appendChild(makeGroup([
+    ]);
+    arrows.dataset.kb = 'arrows';
+    const symbols = makeGroup([
      makeKey('~', { literal: '~' }),
      makeKey('/', { literal: '/' }),
      makeKey('|', { literal: '|' }),
      makeKey('-', { literal: '-' })
-    ]));
+    ]);
+    symbols.dataset.kb = 'symbols';
+    iphone.append(modifiers, arrows, symbols);
    }
 
-   // iPad: wide — modifiers + navigation + arrow pad + symbols + DEL.
+   // iPad: two deliberate rows — modifiers/navigation, then arrows/symbols.
    ipad.innerHTML = '';
    if (device === 'ipad') {
-    ipad.appendChild(makeGroup([
+    const row1 = document.createElement('div');
+    row1.className = 'kb-grid-row';
+    const modifiers = makeGroup([
      makeKey('ESC', { seq: SEQ.esc, title: 'Escape' }),
      makeKey('TAB', { seq: SEQ.tab, title: 'Tab' }),
      makeKey('ENTER', { seq: SEQ.enter, title: 'Enter' }),
      makeKey('Ctrl+b', { seq: SEQ.ctrlB, title: 'Send Ctrl+b to herdr' }),
      makeKey('CTRL', { kind: 'toggle', mod: 'ctrl', title: 'Ctrl (sticky)' }),
      makeKey('ALT', { kind: 'toggle', mod: 'alt', title: 'Alt / Meta (sticky)' })
-    ]));
-    ipad.appendChild(makeGroup([
+    ]);
+    modifiers.dataset.kb = 'mod';
+    const navigation = makeGroup([
      makeKey('HOME', { seq: SEQ.home }),
      makeKey('END', { seq: SEQ.end }),
      makeKey('PGUP', { seq: SEQ.pgup }),
      makeKey('PGDN', { seq: SEQ.pgdn })
-    ]));
-    ipad.appendChild(makeGroup([ makeArrowPad() ]));
-    ipad.appendChild(makeGroup([
+    ]);
+    navigation.dataset.kb = 'nav';
+    row1.append(modifiers, navigation);
+
+    const row2 = document.createElement('div');
+    row2.className = 'kb-grid-row';
+    const arrows = document.createElement('div');
+    arrows.className = 'kb-arrow-cluster';
+    arrows.dataset.kb = 'arrows';
+    const blank = () => {
+     const spacer = document.createElement('span');
+     spacer.className = 'kb-arrow-empty';
+     spacer.setAttribute('aria-hidden', 'true');
+     return spacer;
+    };
+    arrows.append(
+     blank(),
+     makeKey('↑', { seq: SEQ.up, title: 'Up' }),
+     blank(),
+     makeKey('←', { seq: SEQ.left, title: 'Left' }),
+     makeKey('↓', { seq: SEQ.down, title: 'Down' }),
+     makeKey('→', { seq: SEQ.right, title: 'Right' })
+    );
+    const symbols = makeGroup([
      makeKey('~', { literal: '~' }),
      makeKey('/', { literal: '/' }),
      makeKey('|', { literal: '|' }),
      makeKey('-', { literal: '-' }),
      makeKey('DEL', { kind: 'special', special: 'del', title: 'Delete' })
-    ]));
+    ]);
+    symbols.dataset.kb = 'symbols';
+    row2.append(arrows, symbols);
+    ipad.append(row1, row2);
    }
   }
 
@@ -909,7 +946,9 @@
     if (!scrolling) return;
     if (e.touches && e.touches.length >= 2) return; // still two fingers down
     scrolling = false;
-    momentumRaf = requestAnimationFrame(momentumStep);
+    if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+     momentumRaf = requestAnimationFrame(momentumStep);
+    }
    };
    screen.addEventListener('touchstart', onTouchStart, { passive: true });
    screen.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -1019,6 +1058,9 @@
       setFooter(`${msg.command} · ${msg.cwd}`);
      }
      setSessionInfo(`session ${msg.sessionId.slice(0, 8)}`);
+     window.dispatchEvent(new CustomEvent('t1:session-ready', {
+      detail: { command: msg.command, cwd: msg.cwd, resumed: !!msg.resumed }
+     }));
      break;
     }
     case 'output': {
@@ -1159,6 +1201,21 @@
    updateStatus('Closed', 'neutral');
    setFooter('Connection closed');
    setSessionInfo('');
+  }
+
+  function restartConnection(sessionId) {
+   userInitiatedClose = true;
+   reconnectAttempts = 0;
+   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+   if (ws) {
+    try { ws.onclose = null; ws.close(); } catch (_) {}
+    ws = null;
+   }
+   currentSessionId = null;
+   if (sessionId) lsSet(LS_SESSION, sessionId);
+   else lsDel(LS_SESSION);
+   userInitiatedClose = false;
+   connect();
   }
 
   // ── Settings UI ─────────────────────────────────────────────────────────────
@@ -1437,6 +1494,9 @@
    setTheme: applyTheme,
    setStyle: applyStyle,
    termTheme: () => term && term.options.theme,
+   close: closeConnection,
+   newSession: () => restartConnection(null),
+   switchSession: (id) => restartConnection(id),
    // Test hooks for the key bar + resume.
    detectDevice,
    visibleKeyBar: () => {
@@ -1457,7 +1517,7 @@
   if ('serviceWorker' in navigator) {
    window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js').catch((e) => {
-     console.warn('TerminalOne SW registration failed:', e);
+     console.warn('Townmouse service worker registration failed:', e);
     });
    });
   }

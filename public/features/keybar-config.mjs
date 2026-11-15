@@ -44,11 +44,10 @@ export function init(T1) {
     const ipad = document.getElementById('keybarIpad');
     [iphone, ipad].forEach((bar) => {
       if (!bar) return;
-      const groups = bar.querySelectorAll(':scope > .kb-group');
-      groups.forEach((g, idx) => {
-        // Heuristic: iPhone layout has 4 groups; iPad has 5.
-        const key = ['mod', 'ctrl', 'arrows', 'symbols', 'nav'][idx];
-        if (!key) return;
+      const groups = bar.querySelectorAll('[data-kb]');
+      groups.forEach((g) => {
+        const key = g.dataset.kb;
+        if (!key || !(key in cfg)) return;
         g.style.display = cfg[key] ? '' : 'none';
       });
     });

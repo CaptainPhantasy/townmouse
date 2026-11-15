@@ -127,7 +127,10 @@ async function waitForHealth(timeoutMs = 20000) {
 async function closePageSession(pg, timeoutMs = 3000) {
   if (!pg.isClosed()) {
     try {
-      await pg.evaluate(() => document.querySelector('#closeBtn')?.click());
+      await pg.evaluate(() => {
+        if (window.__terminalOne?.close) window.__terminalOne.close();
+        else document.querySelector('#closeBtn')?.click();
+      });
     } catch (_) { /* page may have failed before the UI initialized */ }
     await pg.close();
   }

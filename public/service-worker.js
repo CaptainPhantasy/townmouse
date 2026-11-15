@@ -1,18 +1,21 @@
-/* TerminalOne service worker — offline shell only. */
-const CACHE_NAME = 'terminalone-shell-v3';
+/* Townmouse service worker — offline shell only. */
+const CACHE_NAME = 'townmouse-shell-v1';
 const OFFLINE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
   '/icon.svg',
-  '/favicon.ico',
   '/favicon-16x16.png',
   '/favicon-32x32.png',
   '/apple-touch-icon.png',
   '/icon-180.png',
   '/icon-192.png',
   '/icon-512.png',
+  '/icon-512-maskable.png',
+  '/brand/townmouse-aristocrat.webp',
+  '/brand/townmouse-monocled.webp',
+  '/brand/floydslabs-credit.webp',
   '/input-guard.mjs',
   '/node_modules/@xterm/xterm/css/xterm.css',
   '/node_modules/@xterm/xterm/lib/xterm.mjs',
@@ -27,7 +30,12 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    // Retire caches from the TerminalOne-branded shell.
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith('terminalone-shell-')).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {

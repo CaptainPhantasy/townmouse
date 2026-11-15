@@ -1,83 +1,85 @@
-# TerminalOne
+# Townmouse
 
-![TerminalOne — Floyd’s Labs](assets/hero.jpg)
+<img src="public/brand/townmouse-monocled.webp" alt="Townmouse, the monocled colonial mouse holding a terminal sign" width="260">
 
-**Your shell. A browser. Some breathing room.**
+Townmouse is a terminal and agent browser workspace. It runs a real shell and real browser pages on your machine, in one workspace, so you or an agent can work in both.
 
-A local browser terminal with a real PTY, session resume, themes, keyboard tools, and a responsive interface. Built at Floyd’s Labs: one garage, two black cats, and tools that have to earn the desk space.
+The monocled colonial mouse is the brand character: the terminal is the house, the browser is the town. Townmouse embeds TerminalOne as its terminal engine. TerminalOne remains the standalone PTY; Townmouse owns the browser workspace, the agent browser, sharing grants, and the workspace interface.
 
-[Download v1.0.2](https://github.com/CaptainPhantasy/TerminalOne/releases/tag/v1.0.2) · [Report a bug](https://github.com/CaptainPhantasy/TerminalOne/issues) · [Floyd’s Labs](https://floydslabs.com)
+## What it does
 
-## Get it running
+- **Terminal.** A real PTY through TerminalOne: your shell, session resume, key bar, themes, and the existing feature modules. The session pill opens a switcher with every named shell and a New session action; the footer shows the shell, working directory, and uptime.
+- **Browser tabs.** Each tab is an isolated Chromium context on the terminal host. Human tabs start private. A tab can be shared read-only or with control through a bearer token.
+- **Agent browser.** A separate context that keeps running when its view is hidden. Copy its connection into your terminal agent.
+- **Three layouts.** Desktop sidebar, tablet rail, phone bottom navigation. Phone shows one task surface at a time; its key bar collapses to one row and expands on demand.
+- **Installable.** Add it to your home screen on iPad or iPhone; the shell and workspace load from the local server.
 
-Requirements: **Node.js 22.x and npm; macOS or Linux**.
+## Requirements
 
-Download `terminalone-1.0.2.tgz`, unpack it, and install dependencies:
+Node.js 22.x and npm on macOS or Linux. Puppeteer is a production dependency because browser tabs are real Chromium pages; `npm ci` downloads a compatible Chromium. Set `TERMINALONE_CHROME` to use an operator-installed binary.
+
+## Run it
 
 ```sh
-mkdir terminalone && tar -xzf terminalone-1.0.2.tgz -C terminalone
-cd terminalone/package
-npm ci --omit=dev
-npm run doctor
+git clone https://github.com/CaptainPhantasy/townmouse.git
+cd townmouse
+npm ci
 npm start
 ```
 
-Open `http://localhost:11001`. The server binds to `127.0.0.1` and rejects untrusted Host headers and cross-site HTTP/WebSocket origins. A terminal can run commands with your account's permissions. Keep it local. Network access requires a separately configured authenticated tunnel or proxy; the package does not provide remote authentication.
+Open `http://localhost:11001`. The server binds to `127.0.0.1` by default. A terminal can run commands with your account's permissions.
 
-### Connect from a tablet or phone
+### Use it from a phone or tablet
 
-First configure an HTTPS tunnel or proxy that requires you to sign in before it forwards **any** request, including WebSocket connections. Then start TerminalOne with its exact public address:
+Put an HTTPS proxy or tunnel in front that requires you to sign in before it forwards **any** request, including WebSocket connections. Then start Townmouse with the exact public address:
 
 ```sh
-TERMINALONE_TRUSTED_ORIGINS=https://terminal.example.com npm start
+TERMINALONE_TRUSTED_ORIGINS=https://townmouse.example.com npm start
 ```
 
-Open that address on your tablet or phone and sign in through your proxy. The proxy must forward to `http://127.0.0.1:11001`, preserve the public `Host` header and browser `Origin`, and support WebSocket upgrades. Separate multiple allowed HTTPS addresses with commas. Wildcards and plain HTTP remote addresses are rejected. The server still listens only on this computer; this setting allows an address and does not add a sign-in system. With no setting, only local addresses are allowed. Use `TERMINALONE_HEALTH_URL=http://localhost:11001/health` with `t1` when its browser URL points through a sign-in page.
+The proxy must forward to `http://127.0.0.1:11001`, preserve the public `Host` header and browser `Origin`, and support WebSocket upgrades. This setting allows an address; it does not add authentication. Keep the server on loopback and front it with authentication before exposing it.
 
-Session resume keeps detached shells for up to five minutes. Browser settings persist locally. Voice transcription is optional and requires a compatible external STT command; it is not a bundled speech model. If a native module needs repair, run `npm run repair`.
+## Browser workspace
 
-For herdr on iPhone or iPad, tap **Ctrl+b** in the bottom key bar to send Control plus lowercase b immediately. You can also open **Snippets** and tap **Ctrl+b** there. No keyboard switch or Enter press is needed.
+Open **Browser** or a new tab. Enter a web address, search phrase, or localhost URL. Navigation, clicks, typing, and scrolling happen in the real page on the terminal host, not in an iframe.
 
-### Open it like a desktop app (macOS)
+On a phone or tablet, use **Share** to reach agent access, Copy connection, Read page, and Close tab. On a phone, the tab strip, address bar, and Share sit together at the bottom above the remote keyboard; the address bar carries back, forward, reload, and Go.
 
-From a source checkout on macOS, run `bash scripts/install-service.sh` to install the `t1` launcher and TerminalOne.app. The launcher opens the UI only after health is confirmed, then falls back to direct local startup if launchd is unavailable. Startup diagnostics go to `~/Library/Logs/TerminalOne/local-launch.err.log`.
+Human tabs start Private. Choose View only or Allow control, then Copy connection. Changing the permission rotates the token. Choosing Private rejects subsequent token requests. Closing a tab destroys its context.
 
-## A little more room
+The agent browser is a separate context with control granted. Hide view keeps it running headless; reopen Agent to observe the same context.
 
-![TerminalOne in Graphite Studio on a phone in landscape](docs/screenshots/phone-landscape.png)
+## Security
 
-On short touch screens, **Tools** opens the secondary controls without taking over the shell. **Ctrl+b** and **Voice** stay in the bottom key bar. Paper and graphite palettes keep the chrome quiet; the terminal does the talking.
+- The terminal runs with your account's permissions. Keep the server on loopback.
+- Browser tabs are isolated Chromium contexts, not your personal Safari or Chrome profile. They are not a security boundary against a process that already has unrestricted access to the host.
+- Grants protect cooperative API clients. They do not protect against a hostile process with host access.
+- Browser sessions and grants are in memory; restarting the server closes them.
+- Browser audio, file upload/download dialogs, extensions, and password-manager integration are not provided.
+- At most eight browser contexts can remain open.
 
-## What is in the box
+## Relationship to TerminalOne
 
-The release includes `terminalone-1.0.2.tgz`, source where applicable, and `SHA256SUMS.txt`. Use the tagged release's named assets for installation; GitHub's automatic source archives are snapshots. Verify a download with `shasum -a 256 -c SHA256SUMS.txt` after downloading the matching files.
+TerminalOne is the canonical terminal engine and stays a small, standalone PTY. Townmouse adds the workspace and browser layers. Browser-workspace features do not go upstream into TerminalOne. See [TOWNMOUSE.md](TOWNMOUSE.md) for the product boundary and origin.
 
-## Show the work
+## Development
 
-`npm ci` installs development dependencies. `npm test` covers request boundaries, input handling, browser smoke behavior, resume/mobile features, voice transport, and responsive layouts. A fresh release install is separately started and checked through HTTP and WebSocket. External STT and remote access are not verified integrations.
+```sh
+npm start              # run the workspace
+npm test               # engine suite: boundaries, input, smoke, features, voice, responsive
+npm run test:workspace # browser workspace journeys (starts its own preview site)
+```
 
-## Contribute or get help
+Design notes live in [DESIGN.md](DESIGN.md). The product uses the Legacy Design Studio's Frontend Design workflow with the Open Design anti-AI-slop review as its supplemental checklist.
 
-Open an issue with your platform, version, command, and a minimal reproduction. Keep credentials and personal transcripts out of reports. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+## Status
 
-## Why We Use the MIT License
+Version 0.1.0, the first product cut. The terminal engine is TerminalOne; the workspace and browser layers are new. Known limits are listed under Security.
 
-TerminalOne is MIT licensed, while our standalone engines and runtimes (LGCY, FatChin,
-RATBAG, JEVRuntime and wsdash) use the AGPL-3.0. If you are comparing our repositories,
-here is the line we draw:
+## Credits
 
-- **Drop-In Primitive:** TerminalOne is a small, self-contained terminal surface: a real
-  PTY behind a browser interface. You can run it as is, fork it, or wire it into your
-  own desktop, web or CLI setup, open source or commercial, without license boundary
-  friction.
-- **Clear Line Between Primitives and Engines:** At Floyd's Labs / Legacy AI, we release
-  thin integration primitives and interface building blocks under MIT so you can use
-  them anywhere. Our standalone engines and foundational runtimes use the AGPL-3.0, so
-  hosted commercial forks contribute their improvements back.
+Built at [Floyd’s Labs](https://floydslabs.com). The creator credit in the app uses the Floyd’s Labs neon-cats mark.
 
-Keep the copyright and license notice with your copy and you are set. See
-[`LICENSE`](LICENSE) for the full terms.
+## License
 
----
-
-Built with intent. Bella checks the keyboard. Bowser watches the router.
+MIT. TerminalOne's license and copyright notices remain with the portions it supplies.

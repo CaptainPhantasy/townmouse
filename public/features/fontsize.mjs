@@ -11,6 +11,13 @@ export function init(T1) {
   if (!tb) return;
 
   T1.ui.addStyle(`
+    .t1font-group {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .t1font-group .t1button { flex: 1; }
     .t1font-label {
       flex: 0 0 auto;
       min-width: 32px;
@@ -44,9 +51,10 @@ export function init(T1) {
   const minus = T1.ui.makeButton('A-', 'Decrease font size', () => bump(-STEP));
   const plus = T1.ui.makeButton('A+', 'Increase font size', () => bump(STEP));
 
-  tb.appendChild(minus);
-  tb.appendChild(label);
-  tb.appendChild(plus);
+  const group = document.createElement('div');
+  group.className = 't1font-group';
+  group.append(minus, label, plus);
+  tb.appendChild(group);
 
   render();
   // The terminal is recreated on every (re)connect — re-apply the stored size.

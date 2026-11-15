@@ -34,14 +34,14 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 | C. Sessions, reconnect, and scrollback | Reconnect, input loss, spawn failure, paste safety | P2-58, P2-59, P2-60, P2-61 |
 | D. Panes workspace: tabs, layout, lifecycle | Rename, active pane, limits, focus, agent tab activation | P1-17, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | Search/copy/font/themes/links/OSC | P1-15 |
-| F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
+| F. Browser panes: interaction and input | Touch, keyboard, pointer, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
 | H. Browser panes: rendering, freshness, error states | Polling, DPR, offline state, media/PDF | P2-71, P2-72, P2-73, P2-74 |
 | I. Agent orchestration and CLI | Browser control, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
 | J. Security and permissions | Token scoping | P1-35 |
-| K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, long-press, idle chrome, palette, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-42, P1-43, P1-44, P2-77, P2-78, P2-79, P2-80, P2-81 |
-| L. Settings, shortcuts, notifications, links, accessibility | Shortcut conflicts/help, bell/OSC/unread, stored settings, link routing, screen reader, reduced motion | P1-48, P2-64, P2-65, P2-66, P2-67, P2-68 |
-| M. Packaging, release, and tests | Docker, uninstall/version, evidence/SSOT, automated coverage | P1-45, P2-88, P2-89, P2-90 |
+| K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, long-press, idle chrome, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-42, P2-77, P2-78, P2-79, P2-80, P2-81 |
+| L. Settings, shortcuts, notifications, links, accessibility | Bell/OSC/unread, stored settings, link routing, screen reader, reduced motion | P2-64, P2-65, P2-66, P2-67, P2-68 |
+| M. Packaging, release, and tests | Uninstall/version, evidence/SSOT, automated coverage | P2-88, P2-89, P2-90 |
 
 ## P0 - Breaks a basic expectation or loses data
 

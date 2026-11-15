@@ -58,6 +58,7 @@ const els = {
   closeApprove: byId('close-approve'),
   keybar: byId('pane-keybar'),
   contextMenu: byId('pane-context-menu'),
+  browserContextMenu: byId('browser-context-menu'),
   browserControl: byId('browser-control'),
   browserControlLabel: byId('browser-control-label'),
   browserControlSelect: byId('browser-control-select'),
@@ -117,6 +118,7 @@ let pageDialogRecordId = null;
 let pageDialogId = null;
 let pageDialogType = '';
 let contextRecordId = null;
+let browserContextRecordId = null;
 let browserControlRecordId = null;
 let browserControlPoint = null;
 let browserControlKind = '';
@@ -343,7 +345,45 @@ function showAttachmentNotice(attachment, file) {
 
 function hideContextMenu() {
   contextRecordId = null;
+  browserContextRecordId = null;
   if (els.contextMenu) els.contextMenu.hidden = true;
+  if (els.browserContextMenu) els.browserContextMenu.hidden = true;
+}
+
+function showBrowserContextMenu(record, clientX, clientY) {
+  if (!els.browserContextMenu || !record || record.kind !== 'browser') return;
+  hideContextMenu();
+  browserContextRecordId = record.id;
+  record.suppressClickUntil = Date.now() + 700;
+  els.browserContextMenu.hidden = false;
+  const rect = els.browserContextMenu.getBoundingClientRect();
+  els.browserContextMenu.style.left = `${Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX))}px`;
+  els.browserContextMenu.style.top = `${Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY))}px`;
+  els.browserContextMenu.querySelector('[role="menuitem"]')?.focus();
+}
+
+function wireBrowserContext(record) {
+  record.image.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    void setActivePane(record.id);
+    showBrowserContextMenu(record, event.clientX, event.clientY);
+  });
+  let timer = 0;
+  let startX = 0;
+  let startY = 0;
+  record.view.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse') return;
+    startX = event.clientX;
+    startY = event.clientY;
+    clearTimeout(timer);
+    timer = window.setTimeout(() => showBrowserContextMenu(record, startX, startY), 550);
+  });
+  record.view.addEventListener('pointermove', (event) => {
+    if (Math.hypot(event.clientX - startX, event.clientY - startY) > 10) clearTimeout(timer);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+    record.view.addEventListener(type, () => clearTimeout(timer));
+  }
 }
 
 function showContextMenu(record, clientX, clientY) {
@@ -1578,6 +1618,7 @@ function createBrowserPane(pane) {
   records.set(pane.id, record);
   wireDrop(root, pane.id);
   wirePaneReorder(root, pane.id);
+  wireBrowserContext(record);
   const resizeBrowser = () => {
     if (record.disposed || !record.root.isConnected) return;
     const rect = record.view.getBoundingClientRect();
@@ -1688,6 +1729,7 @@ function applySnapshot(record, snapshot) {
 
 async function onBrowserImageClick(record, event) {
   if (event.button !== undefined && event.button !== 0) return;
+  if (record.suppressClickUntil && Date.now() < record.suppressClickUntil) return;
   const rect = record.image.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
   const width = record.width || record.image.naturalWidth;
@@ -2132,8 +2174,29 @@ function bindEvents() {
       showNotice(error.message || 'Clipboard is unavailable in this browser.', 'error');
     }
   });
+  els.browserContextMenu.addEventListener('click', async (event) => {
+    const action = event.target.closest('[data-browser-context]')?.dataset.browserContext;
+    const record = records.get(browserContextRecordId);
+    hideContextMenu();
+    if (!action || !record) return;
+    if (action === 'copy-url') {
+      try {
+        await navigator.clipboard.writeText(record.currentUrl || '');
+        showNotice('Page URL copied.', 'info', 2200);
+      } catch (_) {
+        showNotice('Copy blocked by the browser.', 'error');
+      }
+      return;
+    }
+    if (action === 'open') {
+      if (record.currentUrl) window.open(record.currentUrl, '_blank');
+      return;
+    }
+    if (['back', 'forward', 'reload'].includes(action)) void browserAction(record, action);
+  });
   document.addEventListener('pointerdown', (event) => {
     if (!els.contextMenu.hidden && !els.contextMenu.contains(event.target)) hideContextMenu();
+    if (!els.browserContextMenu.hidden && !els.browserContextMenu.contains(event.target)) hideContextMenu();
   }, true);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !els.contextMenu.hidden) { event.preventDefault(); hideContextMenu(); }

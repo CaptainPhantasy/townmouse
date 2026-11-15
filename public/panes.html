@@ -151,6 +151,14 @@
 
 <input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
 
+<div class="context-menu" id="browser-context-menu" role="menu" aria-label="Browser actions" hidden>
+  <button type="button" role="menuitem" data-browser-context="copy-url">Copy URL</button>
+  <button type="button" role="menuitem" data-browser-context="back">Back</button>
+  <button type="button" role="menuitem" data-browser-context="forward">Forward</button>
+  <button type="button" role="menuitem" data-browser-context="reload">Reload</button>
+  <button type="button" role="menuitem" data-browser-context="open">Open in host browser</button>
+</div>
+
 <div class="context-menu" id="pane-context-menu" role="menu" aria-label="Terminal actions" hidden>
   <button type="button" role="menuitem" data-context="copy">Copy selection</button>
   <button type="button" role="menuitem" data-context="paste">Paste</button>

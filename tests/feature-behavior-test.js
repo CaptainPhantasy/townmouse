@@ -164,6 +164,28 @@ async function run() {
     assert(paletteClosed === true, 'command palette closes on Escape');
     await ppage.close();
 
+    // ── Tablet floating palette actions are wired ────────────────────────────
+    console.log('\nFloating palette actions:');
+    const tabletPage = await browser.newPage();
+    await tabletPage.setViewport({ width: 820, height: 1180, isMobile: true, hasTouch: true });
+    await tabletPage.goto(BASE_URL, { waitUntil: 'networkidle2', timeout: 15000 });
+    await tabletPage.waitForFunction('window.__t1Features && window.__t1Features.includes("floating-palette")', { timeout: 10000 });
+    await tabletPage.evaluate(() => window.__terminalOneFloatingPalette.open());
+    await tabletPage.evaluate(() => {
+      const button = Array.from(document.querySelectorAll('.t1-tablet-actions button')).find((candidate) => candidate.textContent === 'Search');
+      button.click();
+    });
+    await tabletPage.waitForFunction('document.querySelector(".t1search-box")?.classList.contains("open")', { timeout: 5000 });
+    assert(true, 'floating palette Search opens the search box');
+    await tabletPage.evaluate(() => window.__terminalOneFloatingPalette.open());
+    await tabletPage.evaluate(() => {
+      const button = Array.from(document.querySelectorAll('.t1-tablet-actions button')).find((candidate) => candidate.textContent === 'Copy');
+      button.click();
+    });
+    await tabletPage.waitForFunction(() => Array.from(document.querySelectorAll('.t1toast')).some((toast) => /No text selected/i.test(toast.textContent)), { timeout: 5000 });
+    assert(true, 'floating palette Copy reports the empty selection');
+    await tabletPage.close();
+
     // ── Voice transcript insertion is final-only and review-before-run ─────
     console.log('\nVoice transcript insertion:');
     const vpage = await browser.newPage();

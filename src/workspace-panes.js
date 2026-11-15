@@ -74,6 +74,30 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
 
   const clampCols = (value) => Math.max(20, Math.min(400, Math.round(Number(value) || 100)));
   const clampRows = (value) => Math.max(5, Math.min(200, Math.round(Number(value) || 30)));
+  const KEY_SEQUENCES = {
+    enter: '\r', return: '\r', esc: '\x1b', escape: '\x1b', tab: '\t',
+    backspace: '\x7f', delete: '\x1b[3~', space: ' ',
+    up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D',
+    home: '\x1b[H', end: '\x1b[F', pgup: '\x1b[5~', pgdn: '\x1b[6~',
+    pageup: '\x1b[5~', pagedown: '\x1b[6~'
+  };
+
+  function keySequence(name) {
+    const raw = String(name || '').trim();
+    if (!raw || raw.length > 40) throw Object.assign(new Error('Invalid key name.'), { status: 400 });
+    const parts = raw.toLowerCase().split('+').filter(Boolean);
+    const key = parts.pop();
+    let sequence = KEY_SEQUENCES[key];
+    if (!sequence && key.length === 1) sequence = key;
+    if (!sequence) throw Object.assign(new Error(`Unknown key: ${raw}`), { status: 400 });
+    const ctrl = parts.includes('ctrl') || parts.includes('control');
+    const alt = parts.includes('alt') || parts.includes('option');
+    const shift = parts.includes('shift');
+    if (key === 'tab' && shift) sequence = '\x1b[Z';
+    else if (ctrl && key.length === 1) sequence = String.fromCharCode(key.charCodeAt(0) & 0x1f);
+    if (alt) sequence = '\x1b' + sequence;
+    return sequence;
+  }
 
   // A terminal can outrun a slow SSE reader. Honor write backpressure instead
   // of letting Node queue every chunk in memory. Once a reader falls behind we
@@ -117,6 +141,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     });
     pane.pty = child;
     child.onData((data) => {
+      pane.lastOutputAt = Date.now();
       pane.buffer += data;
       pane.totalOffset += data.length;
       if (pane.buffer.length > MAX_BUFFER) pane.buffer = pane.buffer.slice(-MAX_BUFFER);
@@ -124,7 +149,12 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       const event = `data: ${JSON.stringify({ data, offset: pane.totalOffset })}\n\n`;
       for (const stream of pane.streams) sendStreamEvent(stream, event);
     });
-    child.onExit(() => { pane.exited = true; });
+    child.onExit((event = {}) => {
+      pane.exited = true;
+      pane.exitCode = Number.isFinite(Number(event.exitCode)) ? Number(event.exitCode) : null;
+      pane.exitSignal = event.signal ?? null;
+      pane.lastOutputAt = Date.now();
+    });
   }
 
   async function createPane(tabId, kind, opts = {}) {
@@ -141,7 +171,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       title: opts.title || '', titleLocked: Boolean(opts.title), url: '', browserId: null, pty: null,
       cwd: opts.cwd || null,
       buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
-      cols: clampCols(opts.cols), rows: clampRows(opts.rows), exited: false, createdAt: Date.now()
+      cols: clampCols(opts.cols), rows: clampRows(opts.rows), exited: false,
+      exitCode: null, exitSignal: null, lastOutputAt: Date.now(), createdAt: Date.now()
     };
     if (pane.kind === 'browser') {
       const browser = await browserWorkspace.create('agent', opts.url);
@@ -255,6 +286,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       id: pane.id, tabId: pane.tabId, kind: pane.kind, title: pane.title,
       url: pane.url, browserId: pane.browserId, cols: pane.cols, rows: pane.rows,
       status: pane.exited ? 'exited' : (pane.kind === 'terminal' && !pane.pty ? 'starting' : 'running'),
+      lastOutputAt: pane.lastOutputAt,
+      idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
+      exitCode: pane.exitCode,
+      exitSignal: pane.exitSignal,
       active: pane.id === activePaneId
     };
   }
@@ -413,6 +448,19 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       return;
     }
     activeStreams++;
+    let ping = null;
+    let closed = false;
+    const end = () => {
+      if (closed) return;
+      closed = true;
+      if (ping) clearInterval(ping);
+      pane.streams.delete(res);
+      activeStreams = Math.max(0, activeStreams - 1);
+    };
+    // Register cleanup before the first write so a client that vanishes during
+    // the handshake cannot leak a stream slot forever.
+    req.on('close', end);
+    res.on('close', end);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-store',
@@ -423,22 +471,12 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (since < pane.bufferStart) since = pane.bufferStart;
     sendStreamEvent(res, `data: ${JSON.stringify({ data: pane.buffer.slice(since - pane.bufferStart), offset: pane.totalOffset, exited: pane.exited })}\n\n`);
     pane.streams.add(res);
-    const ping = setInterval(() => {
+    ping = setInterval(() => {
       if (!res._sseBlocked) {
         try { res.write(': ping\n\n'); } catch (_) { /* client vanished */ }
       }
     }, 15000);
     ping.unref?.();
-    let closed = false;
-    const end = () => {
-      if (closed) return;
-      closed = true;
-      clearInterval(ping);
-      pane.streams.delete(res);
-      activeStreams = Math.max(0, activeStreams - 1);
-    };
-    req.on('close', end);
-    res.on('close', end);
   });
   app.get('/api/panes/panes/:id/read', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
@@ -452,6 +490,67 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!pane || pane.kind !== 'terminal' || !pane.pty) { res.status(400).json({ error: 'Terminal pane required.' }); return; }
     pane.pty.write(String(req.body.data ?? ''));
     res.json({ ok: true });
+  }));
+  app.post('/api/panes/panes/:id/keys', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal' || !pane.pty) { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const keys = Array.isArray(req.body.keys) ? req.body.keys : [req.body.key];
+    if (!keys.length || keys.length > 32) { res.status(400).json({ error: 'Send between 1 and 32 keys.' }); return; }
+    const sequence = keys.map(keySequence).join('');
+    if (sequence.length > 4096) { res.status(400).json({ error: 'Key sequence is too large.' }); return; }
+    pane.pty.write(sequence);
+    res.json({ ok: true, bytes: sequence.length });
+  }));
+  app.get('/api/panes/panes/:id/wait', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const timeout = Math.max(100, Math.min(120000, Number(req.query.timeout) || 30000));
+    const since = req.query.since === undefined ? pane.totalOffset : Math.max(0, Number(req.query.since) || 0);
+    const match = typeof req.query.match === 'string' ? req.query.match : '';
+    const pattern = typeof req.query.regex === 'string' ? req.query.regex : '';
+    const idleMs = Math.max(0, Math.min(120000, Number(req.query.idleMs) || 0));
+    if (!match && !pattern && !idleMs) {
+      res.status(400).json({ error: 'Provide match, regex, or idleMs.' });
+      return;
+    }
+    let matcher = null;
+    if (pattern) {
+      try { matcher = new RegExp(pattern, 'im'); }
+      catch (error) { res.status(400).json({ error: `Invalid regex: ${error.message}` }); return; }
+    }
+    const started = Date.now();
+    const result = await new Promise((resolve) => {
+      let timer = null;
+      let finished = false;
+      const finish = (payload) => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearInterval(timer);
+        resolve(payload);
+      };
+      const snapshot = (matched, reason) => {
+        const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
+        finish({
+          matched, reason,
+          data: data.slice(-100000),
+          offset: pane.totalOffset,
+          idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
+          elapsedMs: Date.now() - started
+        });
+      };
+      const check = () => {
+        const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
+        if (match && data.includes(match)) return snapshot(true, 'match');
+        if (matcher && matcher.test(data)) return snapshot(true, 'match');
+        if (idleMs && Date.now() - pane.lastOutputAt >= idleMs) return snapshot(true, 'idle');
+        if (Date.now() - started >= timeout) return snapshot(false, 'timeout');
+      };
+      timer = setInterval(check, 100);
+      timer.unref?.();
+      check();
+      res.on('close', () => finish({ aborted: true }));
+    });
+    if (!res.writableEnded) res.json(result);
   }));
   app.post('/api/panes/panes/:id/resize', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);

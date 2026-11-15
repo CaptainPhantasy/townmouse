@@ -69,7 +69,8 @@ async function assertPortFree() {
     await wait(1000);
 
     const narrow = await page.evaluate(() => window.__terminalOne.dimensions());
-    assert(narrow.cols < 60, `expected a narrow PTY before reload, got ${narrow.cols} cols`);
+    assert(narrow.cols < 80, `expected a narrow PTY before reload, got ${narrow.cols} cols`);
+    assert(narrow.cols >= 50, `phone default font produced too few columns: ${narrow.cols}`);
 
     await page.click('#terminal');
     await page.keyboard.type(`echo ${MARKER}`);

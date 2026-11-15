@@ -335,6 +335,11 @@ async function main() {
       ensure(uploaded.status === 200, 'pane token should upload an attachment', attachment);
       ensure(typeof attachment.url === 'string' && attachment.url.includes('/attachments/'), 'attachment should return a URL', attachment);
       ensure(typeof attachment.path === 'string' && attachment.path.endsWith('agent-note.txt'), 'attachment should return a path', attachment);
+      ensure(
+        typeof attachment.localUrl === 'string' && attachment.localUrl.startsWith('http://127.0.0.1:'),
+        'attachment should return a loopback URL for pane navigation',
+        attachment
+      );
       const served = await fetch(attachment.url, { signal: AbortSignal.timeout(5000) });
       ensure(served.status === 200, 'attachment URL should serve the upload', served.status);
       ensure((await served.text()) === 'agent attachment body', 'attachment URL should return the uploaded bytes');
@@ -485,6 +490,37 @@ async function main() {
         read.body
       );
       ensure(typeof read.body.offset === 'number' && read.body.offset > 0, 'read should report a buffer offset', read.body);
+    });
+
+    await check('terminal: send-keys submits input and wait observes output', async () => {
+      const token = required('workspace token', context.token);
+      const paneId = required('terminal pane', context.terminalA);
+      const input = await request('POST', `/api/panes/panes/${paneId}/input`, {
+        token,
+        body: { data: 'echo WAIT_KEY_OK' }
+      });
+      ensure(input.status === 200, 'input endpoint should accept the command text', input.body);
+      const keys = await request('POST', `/api/panes/panes/${paneId}/keys`, {
+        token,
+        body: { keys: ['enter'] }
+      });
+      ensure(keys.status === 200, 'keys endpoint should accept a named key', keys.body);
+      const waited = await request('GET', `/api/panes/panes/${paneId}/wait?match=WAIT_KEY_OK&since=0&timeout=8000`, { token });
+      ensure(waited.status === 200, 'wait endpoint should respond 200', waited.body);
+      ensure(waited.body.matched === true, 'wait should match the command output', waited.body);
+      ensure(
+        typeof waited.body.data === 'string' && waited.body.data.includes('WAIT_KEY_OK'),
+        'wait should return the matched output',
+        waited.body
+      );
+      const idle = await request('GET', `/api/panes/panes/${paneId}/wait?idleMs=250&timeout=8000`, { token });
+      ensure(idle.status === 200 && idle.body.matched === true, 'idle wait should resolve', idle.body);
+      ensure(idle.body.reason === 'idle', 'idle wait should report the idle reason', idle.body);
+      const bad = await request('POST', `/api/panes/panes/${paneId}/keys`, {
+        token,
+        body: { keys: ['not-a-real-key'] }
+      });
+      ensure(bad.status === 400, 'unknown key names should be rejected', bad.body);
     });
 
     await check('browser: snapshot has a base64 image, fixture url and title', async () => {

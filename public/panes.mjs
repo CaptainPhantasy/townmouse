@@ -136,7 +136,9 @@ async function attachFiles(record, files) {
         record.term.paste(`${shellQuote(attachment.path)} `);
         showAttachmentNotice(attachment, file);
       } else if (record.kind === 'browser') {
-        await api(`/panes/${record.id}/url`, { method: 'POST', body: { url: attachment.url } });
+        // Navigate the local browser straight at loopback; a forwarded host is
+        // for human-facing links, not the pane's own Chromium.
+        await api(`/panes/${record.id}/url`, { method: 'POST', body: { url: attachment.localUrl || attachment.url } });
         record.lastViewport = '';
         requestSnapshot(record, 120);
         showNotice(`Opened ${file.name} in the browser pane`, 'info', 2600);
@@ -420,24 +422,55 @@ function renderTabStrip() {
   const tabs = (currentState && currentState.tabs) || [];
   els.tabStrip.hidden = tabs.length < 2;
   if (tabs.length < 2) { els.tabStrip.replaceChildren(); return; }
-  const fragment = document.createDocumentFragment();
+  const list = document.createElement('div');
+  list.className = 'tabstrip-tabs';
+  list.setAttribute('role', 'tablist');
+  list.setAttribute('aria-label', 'Workspace tabs');
   for (const tab of tabs) {
+    const active = tab.id === currentState.activeTabId;
+    const item = document.createElement('div');
+    item.className = 'tabstrip-item' + (active ? ' is-active' : '');
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'tabstrip-tab' + (tab.id === currentState.activeTabId ? ' is-active' : '');
+    button.className = 'tabstrip-tab' + (active ? ' is-active' : '');
     button.textContent = tab.title;
-    if (tab.id === currentState.activeTabId) button.setAttribute('aria-current', 'page');
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+    button.setAttribute('aria-controls', 'pane-grid');
+    button.tabIndex = active ? 0 : -1;
     button.addEventListener('click', () => { void activateTab(tab.id); });
-    fragment.append(button);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tabstrip-close';
+    close.textContent = '×';
+    close.setAttribute('aria-label', `Close tab ${tab.title}`);
+    close.addEventListener('click', (event) => {
+      event.stopPropagation();
+      requestClose('tab', tab.id, tab.title);
+    });
+    item.append(button, close);
+    list.append(item);
   }
+  list.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...list.querySelectorAll('[role="tab"]')];
+    const index = buttons.indexOf(document.activeElement);
+    if (index < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? buttons.length - 1
+        : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+    const tab = tabs[next];
+    if (tab) void activateTab(tab.id);
+  });
   const add = document.createElement('button');
   add.type = 'button';
   add.className = 'tabstrip-add';
   add.textContent = '+ Tab';
   add.setAttribute('aria-label', 'New workspace tab');
   add.addEventListener('click', () => { void newTab(); });
-  fragment.append(add);
-  els.tabStrip.replaceChildren(fragment);
+  els.tabStrip.replaceChildren(list, add);
 }
 
 function rebuild(tab) {
@@ -1607,6 +1640,10 @@ window.__panes = {
   dimensions: (paneId) => {
     const record = records.get(paneId || effectiveActivePaneId());
     return record && record.term ? { cols: record.term.cols, rows: record.term.rows } : null;
+  },
+  selectAll: (paneId) => {
+    const record = records.get(paneId || effectiveActivePaneId());
+    if (record && record.term) record.term.selectAll();
   },
   render: (next) => {
     if (next && Array.isArray(next.tabs)) {

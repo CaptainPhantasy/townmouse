@@ -555,6 +555,9 @@
   // stays at the PTY's old dimensions so wrapped lines and cursor addressing
   // survive; fitting waits until the replay-end marker arrives.
   let resumeReplay = null;
+  let replayEnded = false;
+  let replayPending = 0;
+  let postReplayOutput = [];
   let terminalResourceDisposers = [];
 
   // Module-level input sender. initTerminal() (which owns the dictation guard
@@ -771,6 +774,21 @@
     if (!fitAddon || !term || resumeReplay) return;
     try { fitAddon.fit(); } catch (_) {}
    }, delay);
+  }
+
+  // term.write() parses asynchronously. Fit only after every replay chunk has
+  // actually landed, or xterm reflows bytes that were still queued for the old
+  // width. Output that arrived after replay-end is buffered until the fit.
+  function finishReplayIfReady() {
+   if (!resumeReplay || !replayEnded || replayPending > 0) return;
+   resumeReplay = null;
+   replayEnded = false;
+   if (fitAddon && term) {
+    try { fitAddon.fit(); } catch (_) {}
+   }
+   const queued = postReplayOutput;
+   postReplayOutput = [];
+   for (const chunk of queued) term?.write(chunk);
   }
 
   // ── On-screen key bar ─────────────────────────────────────────────────────
@@ -1048,9 +1066,27 @@
   }
 
   // ── Terminal ────────────────────────────────────────────────────────────────
+  // A phone at 14px gets about 41 columns, which splits ordinary prose inside
+  // words. Use a narrower default on narrow screens unless the user chose a
+  // size with A-/A+, the shortcut, or pinch.
+  function defaultTerminalFontSize() {
+   const stored = lsGet('terminalone.fontSize', null);
+   if (stored) {
+    const parsed = parseInt(stored, 10);
+    if (Number.isFinite(parsed)) return parsed;
+   }
+   const width = window.innerWidth;
+   if (width <= 430) return 11;
+   if (width <= 820) return 12;
+   return 14;
+  }
+
   function initTerminal() {
    cleanupTerminalResources();
    resumeReplay = null;
+   replayEnded = false;
+   replayPending = 0;
+   postReplayOutput = [];
    if (term) {
     try { term.dispose(); } catch (_) {}
    }
@@ -1058,7 +1094,7 @@
    term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block',
-    fontSize: 14,
+    fontSize: defaultTerminalFontSize(),
     lineHeight: 1.2,
     fontFamily: STYLES[currentStyle],
     theme: THEMES[currentTheme].xterm,
@@ -1076,6 +1112,10 @@
    // If resume already selected the old replay dimensions, do not fit to the
    // new viewport here; replay-end owns that transition.
    requestAnimationFrame(() => { if (!resumeReplay) fitAddon.fit(); });
+   // Web-font metrics can land after the first paint; refit once they settle.
+   if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => scheduleFit()).catch(() => {});
+   }
 
 
    addTerminalResource(initTouchScroll());
@@ -1146,6 +1186,9 @@
       // cursor-addressed lines are reflowed into fragments.
       if (term && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
        resumeReplay = { cols: msg.cols, rows: msg.rows };
+       replayEnded = false;
+       replayPending = 0;
+       postReplayOutput = [];
        try {
         term.resize(msg.cols, msg.rows);
        } catch (_) {
@@ -1156,6 +1199,9 @@
       setFooter(`Resumed · ${msg.cwd}`);
      } else {
       resumeReplay = null;
+      replayEnded = false;
+      replayPending = 0;
+      postReplayOutput = [];
       updateStatus('Connected', 'connected');
       setFooter(`${msg.command} · ${msg.cwd}`);
      }
@@ -1166,14 +1212,26 @@
      break;
     }
     case 'output': {
+     if (resumeReplay) {
+      if (replayEnded) {
+       postReplayOutput.push(msg.data);
+       break;
+      }
+      replayPending += 1;
+      term?.write(msg.data, () => {
+       replayPending = Math.max(0, replayPending - 1);
+       finishReplayIfReady();
+      });
+      break;
+     }
      term?.write(msg.data);
      break;
     }
     case 'replay-end': {
-     // The old-width buffer is fully written. Fit to the real viewport now;
-     // the resulting resize event tells the PTY its new dimensions.
-     resumeReplay = null;
-     scheduleFit();
+     // The old-width buffer has been queued. Wait for xterm to parse it before
+     // fitting; the resulting resize event tells the PTY its new dimensions.
+     replayEnded = true;
+     finishReplayIfReady();
      break;
     }
     case 'exit': {
@@ -1192,6 +1250,9 @@
     case 'resume-failed': {
      // Target session gone/expired — fall back to a fresh shell on this open ws.
      resumeReplay = null;
+     replayEnded = false;
+     replayPending = 0;
+     postReplayOutput = [];
      scheduleFit();
      infoResumeFail(msg);
      lsDel(LS_SESSION);

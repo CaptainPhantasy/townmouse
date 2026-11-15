@@ -4,7 +4,14 @@
  * (the terminal instance is disposed and recreated on resume).
  */
 const KEY = 'terminalone.fontSize';
-const MIN = 8, MAX = 28, STEP = 1, DEFAULT = 14;
+const MIN = 8, MAX = 28, STEP = 1;
+
+function responsiveDefault() {
+  const width = window.innerWidth;
+  if (width <= 430) return 11;
+  if (width <= 820) return 12;
+  return 14;
+}
 
 export function init(T1) {
   const tb = T1.ui.toolbar();
@@ -30,7 +37,10 @@ export function init(T1) {
   `);
 
   const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
-  let size = clamp(parseInt(T1.storage.get(KEY, String(DEFAULT)), 10) || DEFAULT);
+  const stored = T1.storage.get(KEY, null);
+  let size = stored !== null && stored !== undefined && stored !== ''
+    ? clamp(parseInt(stored, 10) || responsiveDefault())
+    : responsiveDefault();
 
   const label = document.createElement('span');
   label.className = 't1font-label';

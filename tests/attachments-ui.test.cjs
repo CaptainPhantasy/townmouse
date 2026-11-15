@@ -167,6 +167,22 @@ async function dispatchFile(page, selector, name, type, eventName) {
     assert(paneNotice.text.includes('/attachments/'), `pane notice should expose the attachment URL: ${paneNotice.text}`);
     assert(paneNotice.copyUrl.includes('/attachments/'), 'pane notice should carry a copyable URL');
 
+    const targets = await page.evaluate(() => {
+      const selectors = ['.pane-close', '.bar-button', '.pane-key'];
+      return selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+        .filter((element) => element.offsetParent !== null)
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { label: element.getAttribute('aria-label') || element.textContent.trim(), width: rect.width, height: rect.height };
+        });
+    });
+    for (const target of targets) {
+      assert(
+        target.width >= 44 && target.height >= 44,
+        `touch target ${target.label} is below 44x44 (${target.width}x${target.height})`
+      );
+    }
+
     const keybar = await page.evaluate(() => {
       const bar = document.querySelector('#pane-keybar');
       const keys = Array.from(document.querySelectorAll('#pane-keybar .pane-key'));
@@ -196,6 +212,29 @@ async function dispatchFile(page, selector, name, type, eventName) {
       if (!ctrlC) await wait(50);
     }
     assert(ctrlC, `Ctrl+C from the pane key bar did not reach the PTY: ${JSON.stringify(paneInputs)}`);
+
+    // Bare Ctrl+C must still interrupt when text is selected.
+    const beforeSelectionCtrlC = paneInputs.length;
+    const activePaneId = await page.evaluate(() => {
+      const state = window.__panes.state();
+      return state.activePaneId;
+    });
+    await page.evaluate((paneId) => {
+      window.__panes.selectAll(paneId);
+      const textarea = document.querySelector('.pane-terminal .xterm-helper-textarea');
+      textarea.focus();
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'c', code: 'KeyC', keyCode: 67, which: 67, ctrlKey: true, bubbles: true, cancelable: true
+      }));
+    }, activePaneId);
+    let selectionCtrlC = false;
+    for (let i = 0; i < 60 && !selectionCtrlC; i++) {
+      selectionCtrlC = paneInputs.slice(beforeSelectionCtrlC).some((body) =>
+        (body && body.parsed && body.parsed.data === '\u0003') ||
+        (body && typeof body.raw === 'string' && body.raw.includes('\\u0003')));
+      if (!selectionCtrlC) await wait(50);
+    }
+    assert(selectionCtrlC, `Ctrl+C with a selection did not interrupt: ${JSON.stringify(paneInputs.slice(beforeSelectionCtrlC))}`);
 
     // A UI-created terminal must spawn at its measured dimensions, not 100x30.
     const firstPaneId = await page.evaluate(() => {
@@ -252,6 +291,58 @@ async function dispatchFile(page, selector, name, type, eventName) {
       const state = window.__panes.state();
       return !state.tabs.some((tab) => tab.panes.some((pane) => pane.id === paneId));
     }, { timeout: 10000 }, spawned.pane.id);
+
+    // Menu and tab-sheet controls keep the same 44px contract.
+    const measureOpenDialog = async (openSelector, selectors) => {
+      await page.evaluate((selector) => document.querySelector(selector).click(), openSelector);
+      await page.waitForFunction('document.querySelector("dialog[open]")', { timeout: 5000 });
+      const measured = await page.evaluate((list) => list.flatMap((selector) =>
+        Array.from(document.querySelectorAll(selector))
+      ).filter((element) => element.offsetParent !== null).map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { label: element.getAttribute('aria-label') || element.textContent.trim(), width: rect.width, height: rect.height };
+      }), selectors);
+      await page.evaluate(() => {
+        document.querySelectorAll('dialog[open] [data-close], dialog[open] .icon-button').forEach((button) => button.click());
+      });
+      return measured;
+    };
+    const menuTargets = await measureOpenDialog('#menu-button', ['.menu-item']);
+    const tabTargets = await measureOpenDialog('#tabs-button', ['.tab-select', '.tab-close']);
+    for (const target of [...menuTargets, ...tabTargets]) {
+      assert(
+        target.width >= 44 && target.height >= 44,
+        `dialog target ${target.label} is below 44x44 (${target.width}x${target.height})`
+      );
+    }
+
+    // The active tab stays visible and switchable once a second tab exists.
+    const firstTabId = await page.evaluate(() => window.__panes.state().activeTabId);
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-new-tab', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-new-tab').click());
+    await page.waitForFunction('window.__panes.state().tabs.length === 2', { timeout: 10000 });
+    const strip = await page.evaluate(() => {
+      const bar = document.querySelector('#tabstrip');
+      const tabs = Array.from(bar.querySelectorAll('[role="tab"]'));
+      return {
+        hidden: bar.hidden,
+        tabs: tabs.map((tab) => ({ text: tab.textContent, selected: tab.getAttribute('aria-selected') })),
+        closeButtons: bar.querySelectorAll('.tabstrip-close').length
+      };
+    });
+    assert(!strip.hidden, 'tab strip should be visible with two tabs');
+    assert(strip.tabs.length === 2, `tab strip should expose two tabs: ${JSON.stringify(strip)}`);
+    assert(strip.tabs.filter((tab) => tab.selected === 'true').length === 1, 'exactly one tab is selected');
+    assert(strip.closeButtons === 2, 'each visible tab needs a close control');
+    await page.evaluate(() => {
+      const tab = Array.from(document.querySelectorAll('#tabstrip [role="tab"]')).find((button) => button.getAttribute('aria-selected') !== 'true');
+      tab.click();
+    });
+    await page.waitForFunction((tabId) => window.__panes.state().activeTabId === tabId, { timeout: 10000 }, firstTabId);
+    const selected = await page.evaluate(() => Array.from(document.querySelectorAll('#tabstrip [role="tab"]'))
+      .filter((tab) => tab.getAttribute('aria-selected') === 'true').length);
+    assert(selected === 1, 'switching tabs should keep one selected tab');
 
     assert(pageErrors.length === 0, `page errors: ${pageErrors.join(' | ')}`);
     console.log('PASS attachments UI: picker, paste, outside drop ignored, terminal drop');

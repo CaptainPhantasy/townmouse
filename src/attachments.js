@@ -49,16 +49,37 @@ function installAttachments(app) {
       const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const dir = path.join(root, day);
       await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+      // Bound one day's uploads so a runaway agent cannot fill the disk a
+      // request at a time. Older day directories are left for the owner to
+      // inspect or remove; nothing is silently deleted.
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      const files = entries.filter((entry) => entry.isFile());
+      if (files.length >= 2000) {
+        res.status(413).json({ error: 'Daily attachment count limit reached.' });
+        return;
+      }
+      let dayBytes = 0;
+      for (const entry of files) {
+        try { dayBytes += (await fs.promises.stat(path.join(dir, entry.name))).size; } catch (_) { /* vanished */ }
+      }
+      if (dayBytes + data.length > 512 * 1024 * 1024) {
+        res.status(413).json({ error: 'Daily attachment storage limit reached.' });
+        return;
+      }
       const stored = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${base}`;
       const target = path.join(dir, stored);
       await fs.promises.writeFile(target, data, { mode: 0o600 });
       const relative = `/attachments/${day}/${encodeURIComponent(stored)}`;
-      const host = req.get('host') || `127.0.0.1:${process.env.PORT || 11001}`;
+      const forwardedHost = String(req.get('X-Forwarded-Host') || '').split(',')[0].trim();
+      const forwardedProto = String(req.get('X-Forwarded-Proto') || '').split(',')[0].trim();
+      const host = forwardedHost || req.get('host') || `127.0.0.1:${process.env.PORT || 11001}`;
+      const protocol = forwardedProto === 'https' ? 'https' : req.protocol;
       res.set('Cache-Control', 'no-store');
       res.json({
         name: original,
         path: target,
-        url: `${req.protocol}://${host}${relative}`,
+        url: `${protocol}://${host}${relative}`,
+        localUrl: `http://127.0.0.1:${process.env.PORT || 11001}${relative}`,
         relativeUrl: relative,
         mime: String(req.get('Content-Type') || 'application/octet-stream'),
         bytes: data.length

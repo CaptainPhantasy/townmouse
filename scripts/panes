@@ -65,6 +65,39 @@ async function main() {
     }
     return;
   }
+  if (scope === 'pane' && action === 'send-text') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane send-text requires a pane id.');
+    let textParts = rest.slice(1);
+    let bracketed = true;
+    if (textParts[0] === '--raw') { bracketed = false; textParts = textParts.slice(1); }
+    let text = textParts.join(' ');
+    if (bracketed) text = '\x1b[200~' + text + '\x1b[201~';
+    print(await call('POST', `/panes/${paneId}/input`, { data: text }));
+    return;
+  }
+  if (scope === 'pane' && action === 'keys') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane keys requires a pane id.');
+    const keys = rest.slice(1);
+    if (!keys.length) throw new Error('pane keys requires at least one key name.');
+    print(await call('POST', `/panes/${paneId}/keys`, { keys }));
+    return;
+  }
+  if (scope === 'pane' && action === 'wait') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane wait requires a pane id.');
+    const options = args(rest.slice(1));
+    const query = new URLSearchParams();
+    if (options.match !== undefined) query.set('match', String(options.match));
+    if (options.regex !== undefined) query.set('regex', String(options.regex));
+    if (options.idle !== undefined) query.set('idleMs', String(options.idle));
+    if (options.timeout !== undefined) query.set('timeout', String(options.timeout));
+    if (options.since !== undefined) query.set('since', String(options.since));
+    if (!query.toString()) throw new Error('pane wait requires --match, --regex, or --idle.');
+    print(await call('GET', `/panes/${paneId}/wait?${query.toString()}`));
+    return;
+  }
   const a = args(rest);
   if (scope === 'attach') {
     const attachArgs = args([action, ...rest].filter((value) => value !== undefined));
@@ -105,6 +138,10 @@ async function main() {
   panes pane read <pane-id> [--lines N]
   panes pane text <pane-id>
   panes pane input <pane-id> <text...>
+  panes pane send-text <pane-id> [--raw] <text...>
+  panes pane keys <pane-id> <key...>        (enter, esc, tab, ctrl+c, alt+x, arrows)
+  panes pane wait <pane-id> [--match TEXT | --regex PATTERN | --idle MS]
+                            [--since OFFSET] [--timeout MS]
   panes pane close <pane-id>
   panes attach <file> [--pane <pane-id>] [--type MIME]
   panes active --tab <tab-id> [--pane <pane-id>]

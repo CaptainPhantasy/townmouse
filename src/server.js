@@ -114,6 +114,13 @@ function wsError(ws, code, message, id) {
   }
 }
 
+/** Send one JSON message to one socket if it is open. */
+function sendToSocket(ws, payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try { ws.send(JSON.stringify(payload)); return true; }
+  catch (_) { return false; }
+}
+
 /** Send a JSON message to every window currently attached to a session. */
 function sendToSession(session, payload) {
   const sockets = session.sockets && session.sockets.size
@@ -375,7 +382,7 @@ function resumeSession(target, ws, dims, placeholder) {
   // Acknowledge resume with the dimensions the buffered output was rendered
   // at. The client resizes its xterm to these before writing any replay bytes
   // and waits for `replay-end` before fitting to the viewport.
-  sendToSession(target, {
+  sendToSocket(ws, {
     type: 'ready',
     sessionId: id,
     command: target.command || resolveShell(),
@@ -411,11 +418,11 @@ function resumeSession(target, ws, dims, placeholder) {
         const last = buf.charCodeAt(end - 1);
         if (last >= 0xD800 && last <= 0xDBFF) end -= 1;
       }
-      sendToSession(target, { type: 'output', data: buf.slice(i, end) });
+      sendToSocket(ws, { type: 'output', data: buf.slice(i, end) });
       i = end - CHUNK;
     }
   }
-  sendToSession(target, { type: 'replay-end' });
+  sendToSocket(ws, { type: 'replay-end' });
 
   // Only after the replay is on the wire do we resize the live PTY to the new
   // client viewport. New output is therefore produced at the new width while

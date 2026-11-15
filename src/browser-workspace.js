@@ -23,7 +23,12 @@ function installBrowserWorkspace(app) {
         ],
         ...(process.env.TERMINALONE_CHROME ? { executablePath: process.env.TERMINALONE_CHROME } : {}),
       }).then((browser) => {
-        browser.on('disconnected', () => { browserPromise = null; });
+        browser.on('disconnected', () => {
+          browserPromise = null;
+          // Every session belonged to the dead browser. Clearing the map lets
+          // the UI reconcile instead of offering unclosable ghost tabs.
+          sessions.clear();
+        });
         return browser;
       }).catch(error => { browserPromise = null; throw error; });
     }
@@ -144,6 +149,7 @@ function installBrowserWorkspace(app) {
       if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
       s.title = await page.title();
       sessions.set(s.id, s);
+      page.once('close', () => sessions.delete(s.id));
       return describe(s);
     } catch (error) {
       if (s) sessions.delete(s.id);
@@ -246,6 +252,7 @@ function installBrowserWorkspace(app) {
     const s={id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex'),page,context,kind,width:1280,height:800,permission:kind==='agent'?'control':'private'};
     attachDialog(s);
     sessions.set(s.id,s);
+    page.once('close', () => sessions.delete(s.id));
     // Popups remain in this permission boundary; follow in the same tab.
     page.on('popup', (popup) => followPopup(popup, page));
     res.json(describe(s));

@@ -19,6 +19,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   const port = options.port || Number(process.env.PORT) || 11357;
   const apiUrl = `http://127.0.0.1:${port}/api/panes`;
   const cliPath = path.join(__dirname, '..', 'scripts', 'panes');
+  const epoch = crypto.randomUUID();
   const tokenDir = path.join(os.homedir(), '.townmouse');
   const tokenFile = path.join(tokenDir, 'pane-token');
   let token = '';
@@ -283,11 +284,16 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       if (browser) {
         pane.url = browser.page.url();
         if (!pane.titleLocked) pane.title = browser.title || pane.title;
+      } else {
+        pane.url = '';
+        if (!pane.titleLocked) pane.title = 'Browser unavailable';
       }
     }
     return {
       id: pane.id, tabId: pane.tabId, kind: pane.kind, title: pane.title,
-      url: pane.url, browserId: pane.browserId, cols: pane.cols, rows: pane.rows,
+      url: pane.url, browserId: pane.browserId,
+      cwd: pane.kind === 'terminal' ? pane.cwd : undefined,
+      cols: pane.cols, rows: pane.rows,
       status: pane.exited ? 'exited' : (pane.kind === 'terminal' && !pane.pty ? 'starting' : 'running'),
       lastOutputAt: pane.lastOutputAt,
       idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
@@ -305,6 +311,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   function state() {
     return {
       host: os.hostname().replace(/\.local$/i, '').toLowerCase(),
+      epoch,
+      restored,
       tabs: [...tabs.values()].map(serializeTab),
       activeTabId, activePaneId,
       limits: { maxTabs: MAX_TABS, maxPanesPerTab: MAX_PANES_PER_TAB, maxTerminalPanes: MAX_TERMINAL_PANES }

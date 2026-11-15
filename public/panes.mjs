@@ -2103,9 +2103,17 @@ async function bootstrap() {
     if (!response.ok) throw new Error((payload && payload.error) || `Workspace bootstrap failed (${response.status}).`);
     if (!payload || !payload.token) throw new Error('Workspace bootstrap did not return a token.');
     token = payload.token;
+    const previousEpoch = window.sessionStorage.getItem('townmouse.workspaceEpoch');
+    const epoch = payload.state && payload.state.epoch;
     applyState(payload.state, { force: true });
     clearTimeout(noticeTimer);
     els.notice.hidden = true;
+    if (previousEpoch && epoch && previousEpoch !== epoch) {
+      showNotice('Workspace restarted. Layout restored; terminal scrollback and running jobs are gone.', 'info', 9000);
+    }
+    if (epoch) {
+      try { window.sessionStorage.setItem('townmouse.workspaceEpoch', epoch); } catch (_) { /* storage disabled */ }
+    }
     logStatus('Workspace ready.');
   } catch (error) {
     token = '';

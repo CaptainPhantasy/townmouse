@@ -77,6 +77,8 @@ async function stop(child) {
     // A browser pane that has never navigated saves about:blank. It must not be
     // discarded when the workspace is restored.
     await post(`/tabs/${tab.id}/panes`, { kind: 'browser' });
+    const second = await post('/tabs', { title: 'Second', activate: false });
+    await post(`/tabs/${second.id}/panes`, { kind: 'terminal', cwd: '/var/tmp', title: 'Second Shell' });
     await wait(500);
     await stop(app);
 
@@ -93,7 +95,14 @@ async function stop(child) {
     assert(blank, 'The blank browser pane was not restored');
     assert(!blank.url || blank.url === 'about:blank', `Blank browser gained a URL: ${blank.url}`);
     assert(boot2.state.activeTabId === persisted.id, 'Persisted tab was not restored as active');
-    console.log(`PASS persistence: restored ${persisted.panes.length} panes and the active tab`);
+    const secondRestored = boot2.state.tabs.find((candidate) => candidate.title === 'Second');
+    assert(secondRestored, 'Second tab was not restored');
+    assert.strictEqual(secondRestored.panes.length, 1, 'Second tab pane count changed');
+    assert.strictEqual(secondRestored.panes[0].kind, 'terminal', 'Second tab should restore its terminal');
+    assert(/var\/tmp/.test(secondRestored.panes[0].cwd || ''), `Second tab cwd was not restored: ${secondRestored.panes[0].cwd}`);
+    assert.notStrictEqual(boot.state.epoch, boot2.state.epoch, 'A restart should mint a new workspace epoch');
+    assert.strictEqual(boot2.state.restored, true, 'Restarted state should report that it was restored');
+    console.log(`PASS persistence: restored ${persisted.panes.length} panes, two tabs and the active tab`);
     console.log('RESULT passed=1 total=1 failures=0');
   } finally {
     await stop(app);

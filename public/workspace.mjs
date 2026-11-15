@@ -1089,6 +1089,14 @@ export async function init(T1) {
     setMessage(error.message);
   }
   setInterval(() => refresh().catch((error) => setMessage(error.message)), 1000);
+  // Reconcile the sidebar with the server so a crashed Chromium or a closed
+  // context cannot leave a permanently stale tab.
+  setInterval(async () => {
+    try {
+      tabs = await api();
+      renderTabs();
+    } catch (_) { /* the snapshot loop reports the outage */ }
+  }, 5000);
   // The workspace chrome changes the header/keybar heights after the terminal's
   // first fit. Refit once the new layout has settled.
   requestAnimationFrame(() => { T1.fit?.(); window.dispatchEvent(new Event('resize')); });

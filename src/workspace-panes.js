@@ -653,9 +653,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }));
 
   async function closeAll() {
+    // Stop new debounced writes before the final snapshot. saveState itself
+    // does not schedule, so the explicit save below still lands.
+    shuttingDown = true;
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     if (restored) await saveState().catch(() => { /* best effort on shutdown */ });
-    shuttingDown = true;
     for (const pane of [...panes.values()]) {
       killPty(pane);
       if (pane.kind === 'browser' && pane.browserId) {

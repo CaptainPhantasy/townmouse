@@ -181,14 +181,14 @@ Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID
   }
   if (scope === 'tab') {
     if (action === 'list') { const s = await call('GET', '/state'); print(s.tabs); return; }
-    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title, activate: a.activate === true })); return; }
+    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title, activate: a.activate === true, createdBy: 'agent' })); return; }
     if (action === 'close') { print(await call('DELETE', `/tabs/${a._[0]}`)); return; }
   }
   if (scope === 'pane') {
     if (action === 'create') {
       const tab = a.tab || process.env.TOWNMOUSE_TAB_ID;
       if (!tab) throw new Error('--tab is required (or run inside a Townmouse pane).');
-      print(await call('POST', `/tabs/${tab}/panes`, { kind: a.kind || 'terminal', url: a.url, cwd: a.cwd, title: a.title }));
+      print(await call('POST', `/tabs/${tab}/panes`, { kind: a.kind || 'terminal', url: a.url, cwd: a.cwd, title: a.title, createdBy: 'agent' }));
       return;
     }
     if (action === 'url') { print(await call('POST', `/panes/${a._[0]}/url`, { url: a._[1] })); return; }

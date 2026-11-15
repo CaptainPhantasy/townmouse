@@ -667,10 +667,12 @@ function renderTabStrip() {
     const active = tab.id === currentState.activeTabId;
     const item = document.createElement('div');
     item.className = 'tabstrip-item' + (active ? ' is-active' : '');
+    item.dataset.createdBy = tab.createdBy || 'human';
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'tabstrip-tab' + (active ? ' is-active' : '');
+    button.className = 'tabstrip-tab' + (active ? ' is-active' : '') + (tab.createdBy === 'agent' ? ' agent-tab' : '');
     button.textContent = tab.title;
+    if (tab.createdBy === 'agent') button.title = `${tab.title} — created by an agent`;
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-selected', active ? 'true' : 'false');
     button.setAttribute('aria-controls', 'pane-grid');
@@ -931,6 +933,12 @@ function updateActiveClasses() {
   for (const [id, record] of records) {
     record.root.classList.toggle('is-active', id === activeId);
   }
+  const active = records.get(activeId);
+  if (active && active.kind === 'browser') {
+    requestAnimationFrame(() => {
+      if (!active.disposed) active.resizeBrowser?.();
+    });
+  }
   updateKeybar();
   updateHostContext();
   updateBackButton();
@@ -1031,6 +1039,7 @@ function createTerminalPane(pane) {
   root.className = 'pane pane-terminal';
   root.dataset.paneId = pane.id;
   root.dataset.kind = 'terminal';
+  root.dataset.createdBy = pane.createdBy || 'human';
   root.dataset.status = pane.status === 'exited' ? 'exited' : 'running';
   root.innerHTML =
     '<header class="pane-header">' +
@@ -1335,6 +1344,7 @@ function createBrowserPane(pane) {
   root.className = 'pane pane-browser';
   root.dataset.paneId = pane.id;
   root.dataset.kind = 'browser';
+  root.dataset.createdBy = pane.createdBy || 'human';
   root.innerHTML =
     '<header class="pane-header">' +
       '<span class="pane-title"></span>' +
@@ -1481,6 +1491,7 @@ function createBrowserPane(pane) {
       resizeBrowser();
     }, 180);
   });
+  record.resizeBrowser = resizeBrowser;
   record.resizeObserver.observe(record.view);
   requestAnimationFrame(() => {
     if (!record.disposed && root.isConnected) {

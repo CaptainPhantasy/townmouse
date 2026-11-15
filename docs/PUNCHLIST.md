@@ -37,9 +37,9 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 | F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
 | H. Browser panes: rendering, freshness, error states | Polling, DPR, offline state, media/PDF | P2-71, P2-72, P2-73, P2-74 |
-| I. Agent orchestration and CLI | Browser control, lifecycle, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P1-33, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
-| J. Security and permissions | Token scoping, attachment boundary | P1-35, P1-36 |
-| K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, targets, long-press, idle chrome, palette, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-41, P1-42, P1-43, P1-44, P2-77, P2-78, P2-79, P2-80, P2-81 |
+| I. Agent orchestration and CLI | Browser control, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
+| J. Security and permissions | Token scoping | P1-35 |
+| K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, long-press, idle chrome, palette, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-42, P1-43, P1-44, P2-77, P2-78, P2-79, P2-80, P2-81 |
 | L. Settings, shortcuts, notifications, links, accessibility | Shortcut conflicts/help, bell/OSC/unread, stored settings, link routing, screen reader, reduced motion | P1-48, P2-64, P2-65, P2-66, P2-67, P2-68 |
 | M. Packaging, release, and tests | Docker, uninstall/version, evidence/SSOT, automated coverage | P1-45, P2-88, P2-89, P2-90 |
 
@@ -638,6 +638,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `public/panes.mjs:241-261,280-285,942-953,1163-1192`; audit runtime `activeElement === BODY`.  
 
 - [ ] **P2-94 - Agent-created tabs still activate by default in the HTTP API and carry no attribution**
+  *Progress 2026-11-15:* `createdBy` is accepted and persisted for tabs/panes; the CLI marks its creates as agent, direct HTTP `createdBy:"agent"` defaults to background, tab strips and pane headers show an agent badge, and `tests/panes-api.test.cjs` verifies provenance plus unchanged activeTabId. Still open: unread/attention badges and destructive-action grace/undo.
   *Expectation:* An agent opening a tab must not yank the human out of a live terminal; new agent tabs open in the background with an unread/attention badge, and only an explicit click switches. Agent-created panes and tabs are visually attributed and announced.  
   *Current:* `POST /api/panes/tabs` sets `activeTabId = tab.id` unless `req.body.activate === false` (`src/workspace-panes.js:265-273`). `scripts/panes tab create` now passes `activate: a.activate === true` (`scripts/panes:80`), so CLI-created tabs default to background, but any direct HTTP client/agent still steals focus, and there is no `createdBy`/`origin`/`attention` field or provenance in tab rows. The 1.2s state poll applies the new active tab and `rebuild()` disposes the terminal the human was typing in (`public/panes.mjs:241-260,280-285`). The only feedback is the sr-only `#sr-status` text "Switched to Agent Scratch."  
   *Fix:* Make background the server-side default for agent-origin creates and require an explicit activate for foreground; record `createdBy`/`origin`/`attention`; show a badge/toast and provenance in tab rows; require confirmation or a grace/undo period for agent-driven destructive actions. Add a test asserting the human's `activeTabId` is unchanged after an agent creates a tab.  
@@ -645,22 +646,22 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## Top 10 - do next
 
-All six P0 items and P1-7, P1-8, P1-9, P1-11, P1-12, P1-13, P1-14, P1-16, P1-18, P1-34, and P1-41 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
+All six P0 items and P1-7 through P1-14 (where listed), P1-16, P1-18, P1-33, P1-34, P1-36, P1-41, and P1-50 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
-| 1 | **P1-33** Agent lifecycle | Agents have wait/idle/exit data but no explicit idle/working/blocked phase or command boundary. | Lifecycle state is reported per pane and waits can target blocked/done. |
-| 2 | **P1-36** Attachment retention | Auth, sandboxing, and daily quotas exist; old days accumulate forever. | Retention/cleanup policy with a test, and proxy-URL verification. |
-| 3 | **P1-10** Visible tab context | The multi-tab strip has roles and close controls; a single active tab is still unnamed outside the sheet. | Compact active-tab indicator when only one tab exists, plus overflow affordance. |
-| 4 | **P1-15** Pane terminal parity | No search, copy/paste UI, font controls, themes, link actions, or OSC 52. | Pane menu exposes the terminal features the main surface has. |
-| 5 | **P1-19** Browser keyboard | The pane browser cannot receive arbitrary text input reliably. | Focused page input works from a hardware and software keyboard. |
-| 6 | **P1-42** Context menus | Panes have no long-press/right-click Copy, Paste, Select All, Search, or Clear. | Shared context menu on terminal and browser content with working clipboard calls. |
-| 7 | **P1-43** Idle chrome status | First-tap passthrough is fixed; connection/status still disappears with the key bar. | Reconnect state remains visible while idle, and key-bar policy matches the product decision. |
-| 8 | **P1-17** Pane reorder | Panes follow creation order with no drag/reorder affordance. | Pointer and keyboard reordering with persisted order. |
-| 9 | **P1-20** Native select | `<select>` controls in browser panes cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
-| 10 | **P1-21** Pointer accuracy | Click mapping assumes the viewport image is unscaled/uncropped in every case. | Clicks land on the intended target at all pane sizes and zoom levels. |
+| 1 | **P1-15** Pane terminal parity | Copy/paste, font, Reader, and links exist; search, themes, and OSC 52 do not. | Pane menu exposes the remaining terminal features the main surface has. |
+| 2 | **P1-19** Touch gestures | Browser panes lack pinch, momentum, and horizontal scroll. | One-finger momentum and two-finger zoom behave like a browser. |
+| 3 | **P1-20** Native select | `<select>` controls in browser panes cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
+| 4 | **P1-21** Pointer accuracy | Click mapping assumes the viewport image is unscaled/uncropped in every case. | Clicks land on the intended target at all pane sizes and zoom levels. |
+| 5 | **P1-22** Activation reflow | A newly active browser pane may show a stale viewport until a resize. | Activation triggers a measured viewport reflow and fresh snapshot. |
+| 6 | **P1-23** Popup tabs | Popups are folded into the current page and lose opener messaging. | Pane-owned popup tabs, or a safe refusal that preserves OAuth. |
+| 7 | **P1-24** Browser history | Forward exists; Back/Forward still are not disabled at history edges and there is no history menu. | Snapshot reports `canGoBack`/`canGoForward`, and the toolbar reflects it. |
+| 8 | **P1-31** Page content access | Browser content is pixels only: no selection, copy, find, or screen-reader access for the human. | Readable/selectable content or an accessible text surface alongside the image. |
+| 9 | **P1-42** Context menus | Terminal menus exist; browser content menus do not, and iPhone long-press needs a real-device test. | Shared terminal/browser menus with working clipboard actions. |
+| 10 | **P1-43** Idle status | First-tap passthrough is fixed; connection state still hides with chrome. | Reconnect/status remains visible while idle, per the product decision. |
 
-**Runners-up, start immediately after the top 10:** P1-22 (activation reflow), P1-23 (crash safety), P1-24 (forward/history), P1-31 (agent attribution), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
+**Runners-up, start immediately after the top 10:** P1-37 (keyboard avoidance), P1-46 (true multi-window fan-out), P1-47 (offline/reopen browser tabs), P2-51 (terminal scroll position on tab switch), P2-58 (resume reconnect proof), P2-88 (Docker build gate).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

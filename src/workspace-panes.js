@@ -64,11 +64,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   };
   const tabOf = (pane) => tabs.get(pane.tabId) || null;
 
-  function createTab(title) {
+  function createTab(title, createdBy = 'human') {
     if (tabs.size >= MAX_TABS) {
       throw Object.assign(new Error('Close a workspace tab before opening another.'), { status: 409 });
     }
-    const tab = { id: id('t'), title: title || `Workspace ${tabs.size + 1}`, panes: [] };
+    const tab = { id: id('t'), title: title || `Workspace ${tabs.size + 1}`, createdBy, panes: [] };
     tabs.set(tab.id, tab);
     if (!activeTabId) activeTabId = tab.id;
     scheduleSave();
@@ -174,6 +174,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const pane = {
       id: id('p'), tabId, kind: kind === 'browser' ? 'browser' : 'terminal',
       title: opts.title || '', titleLocked: Boolean(opts.title), url: '', browserId: null, pty: null,
+      createdBy: opts.createdBy === 'agent' ? 'agent' : 'human',
       cwd: opts.cwd || null,
       buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
       cols: clampCols(opts.cols), rows: clampRows(opts.rows), exited: false,
@@ -230,13 +231,15 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       activePaneIndex,
       tabs: list.map((tab) => ({
         title: tab.title,
+        createdBy: tab.createdBy,
         panes: tab.panes.map((pane) => ({
           kind: pane.kind,
           title: pane.titleLocked ? pane.title : undefined,
           url: pane.kind === 'browser' ? pane.url : undefined,
           cwd: pane.kind === 'terminal' ? pane.cwd : undefined,
           cols: pane.kind === 'terminal' ? pane.cols : undefined,
-          rows: pane.kind === 'terminal' ? pane.rows : undefined
+          rows: pane.kind === 'terminal' ? pane.rows : undefined,
+          createdBy: pane.createdBy
         }))
       }))
     };
@@ -253,7 +256,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!saved || !Array.isArray(saved.tabs)) return;
     savedWorkspace = true;
     for (const savedTab of saved.tabs.slice(0, MAX_TABS)) {
-      const tab = createTab(typeof savedTab.title === 'string' ? savedTab.title : 'Workspace');
+      const tab = createTab(
+        typeof savedTab.title === 'string' ? savedTab.title : 'Workspace',
+        savedTab.createdBy === 'agent' ? 'agent' : 'human'
+      );
       for (const savedPane of (savedTab.panes || []).slice(0, MAX_PANES_PER_TAB)) {
         try {
           // A browser pane that was never navigated saves about:blank, which
@@ -306,11 +312,12 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       agentState: pane.agentState,
       agentMessage: pane.agentMessage,
       agentStateAt: pane.agentStateAt,
+      createdBy: pane.createdBy,
       active: pane.id === activePaneId
     };
   }
   function serializeTab(tab) {
-    return { id: tab.id, title: tab.title, active: tab.id === activeTabId, panes: tab.panes.map(serializePane) };
+    return { id: tab.id, title: tab.title, createdBy: tab.createdBy || 'human', active: tab.id === activeTabId, panes: tab.panes.map(serializePane) };
   }
   function state() {
     return {
@@ -373,8 +380,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   app.get('/api/panes/state', auth, route(async (req, res) => { await ensureInitial(); res.json(state()); }));
   app.post('/api/panes/tabs', auth, route(async (req, res) => {
     await ensureInitial();
-    const tab = createTab(typeof req.body.title === 'string' ? req.body.title.slice(0, 80) : '');
-    if (req.body.activate !== false) {
+    const createdBy = req.body.createdBy === 'agent' ? 'agent' : 'human';
+    const tab = createTab(typeof req.body.title === 'string' ? req.body.title.slice(0, 80) : '', createdBy);
+    const activate = req.body.activate === true || (createdBy === 'human' && req.body.activate !== false);
+    if (activate) {
       activeTabId = tab.id;
       activePaneId = tab.panes[0]?.id || null;
       scheduleSave();
@@ -398,7 +407,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     await ensureInitial();
     const pane = await createPane(req.params.id, req.body.kind, {
       url: req.body.url, cwd: req.body.cwd, title: req.body.title,
-      cols: req.body.cols, rows: req.body.rows, start: req.body.start
+      cols: req.body.cols, rows: req.body.rows, start: req.body.start,
+      createdBy: req.body.createdBy
     });
     res.json(serializePane(pane));
   }));

@@ -793,6 +793,40 @@ async function main() {
       ensure(cleared && cleared.status === 200, 'inline dialog should clear after answering', cleared ? cleared.body : 'no response');
     });
 
+    await check('attachments: active HTML cannot execute in a browser pane', async () => {
+      const token = required('workspace token', context.token);
+      const upload = await fetch(`${BASE}/api/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/html', 'X-Filename': 'active-probe.html', 'X-Townmouse-Token': token },
+        body: '<!doctype html><title>SAFE_TITLE</title><script>document.title="PWNED";fetch("/api/panes/bootstrap").then(r=>r.text()).then(t=>document.body.textContent="LEAK "+t)</script>',
+        signal: AbortSignal.timeout(5000)
+      });
+      const attachment = await upload.json();
+      ensure(upload.status === 200, 'active HTML should upload', attachment);
+      const tab = await request('POST', '/api/panes/tabs', { token, body: { title: 'Active Probe', activate: false } });
+      const pane = await createPane(tab.body.id, { kind: 'browser', url: attachment.localUrl });
+      ensure(pane.status === 200, 'active-HTML browser pane should create', pane.body);
+      await sleep(1200);
+      const content = await request('GET', `/api/panes/panes/${pane.body.id}/browser/content`, { token });
+      ensure(content.status === 200, 'active-HTML pane content should be readable', content.body);
+      ensure(!/PWNED|LEAK/.test(content.body.text || ''), 'uploaded HTML script must not execute or read the bootstrap', content.body.text);
+      ensure(String(content.body.title || '') !== 'PWNED', 'uploaded HTML must not change the page title through script', content.body.title);
+    });
+
+    await check('tabs: agent-created tabs stay in the background and carry provenance', async () => {
+      const token = required('workspace token', context.token);
+      const before = await request('GET', '/api/panes/state', { token });
+      const created = await request('POST', '/api/panes/tabs', {
+        token,
+        body: { title: 'Agent Scratch', createdBy: 'agent' }
+      });
+      ensure(created.status === 200, 'agent tab should be created', created.body);
+      ensure(created.body.createdBy === 'agent', 'agent tab should carry provenance', created.body);
+      const after = await request('GET', '/api/panes/state', { token });
+      ensure(after.body.activeTabId === before.body.activeTabId, 'agent tab must not steal the active tab', after.body);
+      await request('DELETE', `/api/panes/tabs/${created.body.id}`, { token });
+    });
+
     await check('workspace: an intentionally empty workspace stays empty', async () => {
       const token = required('workspace token', context.token);
       const before = await request('GET', '/api/panes/state', { token });

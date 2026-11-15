@@ -1091,3 +1091,6 @@ button { cursor: pointer; }
 @media (max-width: 699px) {
   body.keyboard-open .panes-app { bottom: var(--keyboard-inset, 0px); }
 }
+
+.pane[data-created-by="agent"] .pane-kind::after { content: ' · agent'; color: #e9d6a1; }
+.tabstrip-tab.agent-tab::after { content: ' agent'; color: #e9d6a1; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; }

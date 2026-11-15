@@ -13,6 +13,8 @@
  */
 
 const http = require('http');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -147,7 +149,7 @@ function startFixtureServer() {
 function startApp() {
   const child = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(APP_PORT) },
+    env: { ...process.env, PORT: String(APP_PORT), TOWNMOUSE_STATE_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'townmouse-panes-test-')) },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   child.stdout.on('data', (chunk) => { appLog += chunk.toString(); });

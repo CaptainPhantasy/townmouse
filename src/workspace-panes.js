@@ -25,11 +25,16 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     fs.writeFileSync(tokenFile, token, { mode: 0o600 });
   }
   try { fs.chmodSync(tokenFile, 0o600); } catch (_) { /* best effort */ }
+  const stateDir = process.env.TOWNMOUSE_STATE_DIR || path.join(os.homedir(), '.townmouse');
+  const stateFile = path.join(stateDir, 'workspace.json');
 
   const tabs = new Map();
   const panes = new Map();
   let activeTabId = null;
   let activePaneId = null;
+  let restored = false;
+  let restorePromise = null;
+  let saveTimer = null;
 
   const id = (prefix) => prefix + '_' + crypto.randomBytes(6).toString('hex');
   const route = (fn) => async (req, res) => {
@@ -55,6 +60,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const tab = { id: id('t'), title: title || `Workspace ${tabs.size + 1}`, panes: [] };
     tabs.set(tab.id, tab);
     if (!activeTabId) activeTabId = tab.id;
+    scheduleSave();
     return tab;
   }
 
@@ -70,6 +76,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const pane = {
       id: id('p'), tabId, kind: kind === 'browser' ? 'browser' : 'terminal',
       title: opts.title || '', titleLocked: Boolean(opts.title), url: '', browserId: null, pty: null,
+      cwd: opts.cwd || null,
       buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
       cols: 100, rows: 30, exited: false, createdAt: Date.now()
     };
@@ -98,10 +105,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
         TOWNMOUSE_PANE_ID: pane.id,
         TOWNMOUSE_PANES_CLI: cliPath
       };
+      pane.cwd = opts.cwd || os.homedir();
       const shell = resolveShell();
       const child = pty.spawn(shell, ['-l'], {
         name: 'xterm-256color', cols: pane.cols, rows: pane.rows,
-        cwd: opts.cwd || os.homedir(), env
+        cwd: pane.cwd, env
       });
       pane.pty = child;
       child.onData((data) => {
@@ -118,7 +126,71 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     }
     tab.panes.push(pane);
     panes.set(pane.id, pane);
+    scheduleSave();
     return pane;
+  }
+
+  function scheduleSave() {
+    if (!restored) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveState().catch(() => { /* the next mutation retries */ });
+    }, 150).unref?.();
+  }
+
+  async function saveState() {
+    const list = [...tabs.values()];
+    const activeIndex = Math.max(0, list.findIndex((tab) => tab.id === activeTabId));
+    const activeTab = list[activeIndex];
+    const activePaneIndex = activeTab
+      ? Math.max(0, activeTab.panes.findIndex((pane) => pane.id === activePaneId))
+      : 0;
+    const payload = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      activeTabIndex: activeIndex,
+      activePaneIndex,
+      tabs: list.map((tab) => ({
+        title: tab.title,
+        panes: tab.panes.map((pane) => ({
+          kind: pane.kind,
+          title: pane.titleLocked ? pane.title : undefined,
+          url: pane.kind === 'browser' ? pane.url : undefined,
+          cwd: pane.kind === 'terminal' ? pane.cwd : undefined
+        }))
+      }))
+    };
+    await fs.promises.mkdir(stateDir, { recursive: true, mode: 0o700 });
+    const temp = stateFile + '.tmp';
+    await fs.promises.writeFile(temp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+    await fs.promises.rename(temp, stateFile);
+  }
+
+  async function restoreState() {
+    let saved;
+    try { saved = JSON.parse(await fs.promises.readFile(stateFile, 'utf8')); }
+    catch (_) { return; }
+    if (!saved || !Array.isArray(saved.tabs)) return;
+    for (const savedTab of saved.tabs.slice(0, MAX_TABS)) {
+      const tab = createTab(typeof savedTab.title === 'string' ? savedTab.title : 'Workspace');
+      for (const savedPane of (savedTab.panes || []).slice(0, MAX_PANES_PER_TAB)) {
+        try {
+          await createPane(tab.id, savedPane.kind === 'browser' ? 'browser' : 'terminal', {
+            title: typeof savedPane.title === 'string' ? savedPane.title : undefined,
+            url: typeof savedPane.url === 'string' ? savedPane.url : undefined,
+            cwd: typeof savedPane.cwd === 'string' ? savedPane.cwd : undefined
+          });
+        } catch (_) { /* one bad pane must not lose the rest of the workspace */ }
+      }
+    }
+    const list = [...tabs.values()];
+    if (!list.length) return;
+    const active = list[Math.min(Math.max(0, Number(saved.activeTabIndex) || 0), list.length - 1)];
+    if (!active) return;
+    activeTabId = active.id;
+    const pane = active.panes[Math.min(Math.max(0, Number(saved.activePaneIndex) || 0), Math.max(0, active.panes.length - 1))];
+    activePaneId = pane ? pane.id : (active.panes[0]?.id || null);
   }
 
   function serializePane(pane) {
@@ -147,12 +219,17 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       limits: { maxTabs: MAX_TABS, maxPanesPerTab: MAX_PANES_PER_TAB, maxTerminalPanes: MAX_TERMINAL_PANES }
     };
   }
-  async function ensureInitial() {
-    if (tabs.size) return;
-    const tab = createTab('Workspace 1');
-    const pane = await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
-    activeTabId = tab.id;
-    activePaneId = pane.id;
+  function ensureInitial() {
+    if (!restorePromise) {
+      restorePromise = restoreState().catch(() => { /* corrupt state is not fatal */ }).then(() => { restored = true; });
+    }
+    return restorePromise.then(async () => {
+      if (tabs.size) return;
+      const tab = createTab('Workspace 1');
+      const pane = await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
+      activeTabId = tab.id;
+      activePaneId = pane.id;
+    });
   }
   function killPty(pane) {
     if (!pane.pty) return;
@@ -174,6 +251,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       const next = tab && tab.panes[0];
       activePaneId = next ? next.id : null;
     }
+    scheduleSave();
   }
 
   app.get('/api/panes/bootstrap', route(async (req, res) => {
@@ -183,12 +261,14 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     await ensureInitial();
     res.json({ token, state: state(), api: apiUrl });
   }));
-  app.get('/api/panes/state', auth, route(async (req, res) => res.json(state())));
+  app.get('/api/panes/state', auth, route(async (req, res) => { await ensureInitial(); res.json(state()); }));
   app.post('/api/panes/tabs', auth, route(async (req, res) => {
+    await ensureInitial();
     const tab = createTab(typeof req.body.title === 'string' ? req.body.title.slice(0, 80) : '');
     if (req.body.activate !== false) {
       activeTabId = tab.id;
       activePaneId = tab.panes[0]?.id || null;
+      scheduleSave();
     }
     res.json(serializeTab(tab));
   }));
@@ -202,9 +282,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       activeTabId = next ? next.id : null;
       activePaneId = next?.panes[0]?.id || null;
     }
+    scheduleSave();
     res.json({ closed: true, state: state() });
   }));
   app.post('/api/panes/tabs/:id/panes', auth, route(async (req, res) => {
+    await ensureInitial();
     const pane = await createPane(req.params.id, req.body.kind, {
       url: req.body.url, cwd: req.body.cwd, title: req.body.title
     });
@@ -219,6 +301,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   app.post('/api/panes/active', auth, route(async (req, res) => {
     if (req.body.tabId && tabs.has(req.body.tabId)) activeTabId = req.body.tabId;
     if (req.body.paneId && panes.has(req.body.paneId)) activePaneId = req.body.paneId;
+    scheduleSave();
     res.json(state());
   }));
   app.post('/api/panes/panes/:id/url', auth, route(async (req, res) => {
@@ -227,6 +310,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const browser = await browserWorkspace.navigate(pane.browserId, req.body.url);
     pane.url = browser.url;
     if (!pane.titleLocked) pane.title = browser.title || pane.title;
+    scheduleSave();
     res.json(serializePane(pane));
   }));
   app.post('/api/panes/panes/:id/browser/action', auth, route(async (req, res) => {
@@ -235,6 +319,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const browser = await browserWorkspace.action(pane.browserId, req.body.action, req.body);
     pane.url = browser.url;
     if (!pane.titleLocked) pane.title = browser.title || pane.title;
+    if (!['click', 'type', 'key', 'scroll'].includes(req.body.action)) scheduleSave();
     res.json(serializePane(pane));
   }));
   app.get('/api/panes/panes/:id/browser/snapshot', auth, route(async (req, res) => {
@@ -312,6 +397,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }));
 
   async function closeAll() {
+    if (restored) await saveState().catch(() => { /* best effort on shutdown */ });
     for (const pane of [...panes.values()]) {
       killPty(pane);
       if (pane.kind === 'browser' && pane.browserId) {

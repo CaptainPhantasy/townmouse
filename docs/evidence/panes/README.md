@@ -76,3 +76,11 @@ The archival tests are `codex-fixes-test.cjs`, `input-batch-test.cjs`, and
 - The `panes` CLI creates agent tabs in the background by default; `--activate`
   is opt-in. Human tabs from the UI still activate.
 - The archival test is `pane-large-dialog-test.cjs`.
+
+## Persistence pass — 2026-11-15
+
+- Created a tab titled `Persisted` with a terminal pane (`cwd: /tmp`) and a
+  browser pane pointed at a local fixture, then stopped the server with SIGTERM.
+- Restarted the server against the same state directory: the tab reappeared as
+  the active tab with both panes, the terminal cwd and browser URL restored.
+- `tests/panes-persistence.test.cjs` covers this in the `test:panes` chain.

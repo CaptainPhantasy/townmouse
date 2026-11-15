@@ -39,7 +39,7 @@
     "test:workspace": "scripts/node-runtime.sh exec tests/workspace-journeys.cjs",
     "postinstall": "sh scripts/prepare-native.sh",
     "test:security": "node --test tests/request-boundary.test.js tests/request-boundary-integration.test.js",
-    "test:panes": "node tests/panes-api.test.cjs"
+    "test:panes": "node tests/panes-api.test.cjs && node tests/panes-persistence.test.cjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

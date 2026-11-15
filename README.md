@@ -10,7 +10,8 @@ The monocled colonial mouse is the brand character: the terminal is the house, t
 
 - **Terminal.** A real PTY through TerminalOne: your shell, session resume, key bar, themes, and the existing feature modules. The session pill opens a switcher with every named shell and a New session action; the footer shows the shell, working directory, and uptime.
 - **Browser tabs.** Each tab is an isolated Chromium context on the terminal host. Human tabs start private. A tab can be shared read-only or with control through a bearer token.
-- **Agent browser.** A separate context that keeps running when its view is hidden. Copy its connection into your terminal agent.
+- **Pane workspace.** Open `/panes.html` for the four-pane view. Each workspace tab holds up to four live panes — terminal or browser — and the orchestrator agent creates and drives them through the injected `TOWNMOUSE_API` and `scripts/panes` interface. No connection code is copied between the browser and the terminal.
+- **Agent browser.** A separate context that keeps running when its view is hidden. In the pane workspace the agent receives native access directly; the legacy single-browser view still documents its bearer-token path.
 - **Three layouts.** Desktop sidebar, tablet rail, phone bottom navigation. Phone shows one task surface at a time; its key bar collapses to one row and expands on demand.
 - **Installable.** Add it to your home screen on iPad or iPhone; the shell and workspace load from the local server.
 

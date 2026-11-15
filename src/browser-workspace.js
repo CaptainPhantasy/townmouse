@@ -8,11 +8,19 @@ function installBrowserWorkspace(app) {
   const sessions = new Map();
   let browserPromise;
   let opening=0;
-  const engine = () => browserPromise ||= puppeteer.launch({
-    headless: true,
-    args:['--disable-gpu','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'],
-    ...(process.env.TERMINALONE_CHROME ? { executablePath: process.env.TERMINALONE_CHROME } : {}),
-  }).catch(error => { browserPromise = null; throw error; });
+  const engine = () => {
+    if (!browserPromise) {
+      browserPromise = puppeteer.launch({
+        headless: true,
+        args:['--disable-gpu','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'],
+        ...(process.env.TERMINALONE_CHROME ? { executablePath: process.env.TERMINALONE_CHROME } : {}),
+      }).then((browser) => {
+        browser.on('disconnected', () => { browserPromise = null; });
+        return browser;
+      }).catch(error => { browserPromise = null; throw error; });
+    }
+    return browserPromise;
+  };
   const human = req => req.get('X-Workspace-Key') === humanKey;
   const describe = s => ({ id:s.id, kind:s.kind, permission:s.permission, url:s.page.url(), title:s.title || 'New tab' });
   const route = fn => async (req,res) => {
@@ -30,6 +38,7 @@ function installBrowserWorkspace(app) {
   function session(req, control=false) {
     const s=sessions.get(req.params.id);
     if (!s) deny('Browser tab no longer exists.',404);
+    if (s.internal) deny('This browser belongs to a pane workspace.',403);
     if (!human(req)) {
       if (req.get('Authorization') !== 'Bearer '+s.token) deny('Browser access token required.');
       if (s.permission==='private' || (control && s.permission!=='control')) deny('The owner has not granted this browser permission.');
@@ -45,13 +54,15 @@ function installBrowserWorkspace(app) {
   // Internal control surface for the pane workspace. These bypass the human
   // header key because the caller already holds the pane workspace token.
   async function createTab(kind = 'agent', url) {
-    if (sessions.size >= MAX_BROWSER_TABS) deny('Close a browser pane before opening another.', 409);
-    const context = await (await engine()).createBrowserContext();
+    if (sessions.size + opening >= MAX_BROWSER_TABS) deny('Close a browser pane before opening another.', 409);
+    opening++;
+    let context;
+    let s;
     try {
+      context = await (await engine()).createBrowserContext();
       const page = await context.newPage();
       await page.setViewport({ width: 1280, height: 800 });
-      const s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private' };
-      sessions.set(s.id, s);
+      s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private', internal: true };
       page.on('popup', async (popup) => {
         const popupUrl = popup.url();
         await popup.close();
@@ -59,10 +70,14 @@ function installBrowserWorkspace(app) {
       });
       if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
       s.title = await page.title();
+      sessions.set(s.id, s);
       return describe(s);
     } catch (error) {
-      await context.close();
+      if (s) sessions.delete(s.id);
+      if (context) await context.close().catch(() => {});
       throw error;
+    } finally {
+      opening--;
     }
   }
   async function snapshotTab(id) {
@@ -126,11 +141,13 @@ function installBrowserWorkspace(app) {
   }
   app.get('/api/browser/bootstrap',route(async(req,res)=>{
     if(req.get('Authorization')) deny('Agent tokens cannot manage workspace permissions.');
+    const site = req.get('Sec-Fetch-Site');
+    if (site && site !== 'same-origin' && site !== 'none') deny('Owner page required.');
     res.json({key:humanKey});
   }));
   app.get('/api/browser',route(async(req,res)=>{
     if(!human(req)) deny('Workspace access required.');
-    res.json([...sessions.values()].map(describe));
+    res.json([...sessions.values()].filter((s) => !s.internal).map(describe));
   }));
   app.post('/api/browser',route(async(req,res)=>{
     if(!human(req)) deny('Only the owner can create browser tabs.');

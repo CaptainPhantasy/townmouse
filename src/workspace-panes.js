@@ -8,6 +8,7 @@ const { resolveShell } = require('./shell-resolve');
 
 const MAX_PANES_PER_TAB = 4;
 const MAX_TABS = 24;
+const MAX_TERMINAL_PANES = 24;
 const MAX_BUFFER = 200_000;
 
 function installWorkspacePanes(app, browserWorkspace, options = {}) {
@@ -32,9 +33,14 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
 
   const id = (prefix) => prefix + '_' + crypto.randomBytes(6).toString('hex');
   const route = (fn) => async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     try { await fn(req, res); }
     catch (error) { res.status(error.status || 400).json({ error: error.message }); }
   };
+  app.use('/api/panes', (req, res, next) => {
+    if (req.body == null) req.body = {};
+    next();
+  });
   const auth = (req, res, next) => {
     const supplied = req.get('X-Townmouse-Token') || (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
     if (supplied !== token) { res.status(403).json({ error: 'Workspace token required.' }); return; }
@@ -53,19 +59,31 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
 
   async function createPane(tabId, kind, opts = {}) {
-    const tab = tabs.get(tabId);
+    let tab = tabs.get(tabId);
     if (!tab) throw Object.assign(new Error('Workspace tab not found.'), { status: 404 });
     if (tab.panes.length >= MAX_PANES_PER_TAB) {
       throw Object.assign(new Error('A workspace tab holds at most four panes.'), { status: 409 });
     }
+    if (kind !== 'browser' && [...panes.values()].filter((pane) => pane.kind === 'terminal').length >= MAX_TERMINAL_PANES) {
+      throw Object.assign(new Error('Close a terminal pane before opening another.'), { status: 409 });
+    }
     const pane = {
       id: id('p'), tabId, kind: kind === 'browser' ? 'browser' : 'terminal',
-      title: opts.title || '', url: '', browserId: null, pty: null,
+      title: opts.title || '', titleLocked: Boolean(opts.title), url: '', browserId: null, pty: null,
       buffer: '', bufferStart: 0, totalOffset: 0,
       cols: 100, rows: 30, exited: false, createdAt: Date.now()
     };
     if (pane.kind === 'browser') {
       const browser = await browserWorkspace.create('agent', opts.url);
+      tab = tabs.get(tabId);
+      if (!tab) {
+        await browserWorkspace.close(browser.id).catch(() => {});
+        throw Object.assign(new Error('Workspace tab was closed while the browser opened.'), { status: 404 });
+      }
+      if (tab.panes.length >= MAX_PANES_PER_TAB) {
+        await browserWorkspace.close(browser.id).catch(() => {});
+        throw Object.assign(new Error('A workspace tab holds at most four panes.'), { status: 409 });
+      }
       pane.browserId = browser.id;
       pane.url = browser.url;
       pane.title = opts.title || browser.title || 'Browser';
@@ -96,7 +114,6 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     }
     tab.panes.push(pane);
     panes.set(pane.id, pane);
-    if (!activePaneId) activePaneId = pane.id;
     return pane;
   }
 
@@ -105,7 +122,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       const browser = browserWorkspace.get(pane.browserId);
       if (browser) {
         pane.url = browser.page.url();
-        pane.title = browser.title || pane.title;
+        if (!pane.titleLocked) pane.title = browser.title || pane.title;
       }
     }
     return {
@@ -120,23 +137,32 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
   function state() {
     return {
+      host: os.hostname().replace(/\.local$/i, '').toLowerCase(),
       tabs: [...tabs.values()].map(serializeTab),
       activeTabId, activePaneId,
-      limits: { maxTabs: MAX_TABS, maxPanesPerTab: MAX_PANES_PER_TAB }
+      limits: { maxTabs: MAX_TABS, maxPanesPerTab: MAX_PANES_PER_TAB, maxTerminalPanes: MAX_TERMINAL_PANES }
     };
   }
   async function ensureInitial() {
     if (tabs.size) return;
     const tab = createTab('Workspace 1');
-    await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
+    const pane = await createPane(tab.id, 'terminal', { title: 'Orchestrator' });
     activeTabId = tab.id;
+    activePaneId = pane.id;
+  }
+  function killPty(pane) {
+    if (!pane.pty) return;
+    try { pane.pty.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    setTimeout(() => {
+      try { pane.pty.kill('SIGKILL'); } catch (_) { /* exited cleanly */ }
+    }, 1000).unref?.();
   }
   function closePane(pane) {
     if (!pane) return;
     const tab = tabOf(pane);
     if (tab) tab.panes = tab.panes.filter((candidate) => candidate.id !== pane.id);
     panes.delete(pane.id);
-    if (pane.pty) { try { pane.pty.kill(); } catch (_) { /* already gone */ } }
+    killPty(pane);
     if (pane.kind === 'browser' && pane.browserId) browserWorkspace.close(pane.browserId).catch(() => {});
     if (activePaneId === pane.id) {
       const next = tab && tab.panes[0];
@@ -145,6 +171,9 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
 
   app.get('/api/panes/bootstrap', route(async (req, res) => {
+    if (req.get('Authorization')) throw Object.assign(new Error('Agent tokens cannot bootstrap the owner workspace.'), { status: 403 });
+    const site = req.get('Sec-Fetch-Site');
+    if (site && site !== 'same-origin' && site !== 'none') throw Object.assign(new Error('Owner page required.'), { status: 403 });
     await ensureInitial();
     res.json({ token, state: state(), api: apiUrl });
   }));
@@ -171,7 +200,6 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const pane = await createPane(req.params.id, req.body.kind, {
       url: req.body.url, cwd: req.body.cwd, title: req.body.title
     });
-    activePaneId = pane.id;
     res.json(serializePane(pane));
   }));
   app.delete('/api/panes/panes/:id', auth, route(async (req, res) => {
@@ -189,21 +217,24 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
     const browser = await browserWorkspace.navigate(pane.browserId, req.body.url);
-    pane.url = browser.url; pane.title = browser.title || pane.title;
+    pane.url = browser.url;
+    if (!pane.titleLocked) pane.title = browser.title || pane.title;
     res.json(serializePane(pane));
   }));
   app.post('/api/panes/panes/:id/browser/action', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
     const browser = await browserWorkspace.action(pane.browserId, req.body.action, req.body);
-    pane.url = browser.url; pane.title = browser.title || pane.title;
+    pane.url = browser.url;
+    if (!pane.titleLocked) pane.title = browser.title || pane.title;
     res.json(serializePane(pane));
   }));
   app.get('/api/panes/panes/:id/browser/snapshot', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
     const snap = await browserWorkspace.snapshot(pane.browserId);
-    pane.url = snap.url; pane.title = snap.title || pane.title;
+    pane.url = snap.url;
+    if (!pane.titleLocked) pane.title = snap.title || pane.title;
     res.json(snap);
   }));
   app.get('/api/panes/panes/:id/read', auth, route(async (req, res) => {
@@ -221,7 +252,13 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }));
   app.post('/api/panes/panes/:id/resize', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
-    if (!pane || pane.kind !== 'terminal' || !pane.pty) { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    if (!pane) { res.status(400).json({ error: 'Pane required.' }); return; }
+    if (pane.kind === 'browser') {
+      const size = await browserWorkspace.setViewport(pane.browserId, req.body.width, req.body.height);
+      res.json(size);
+      return;
+    }
+    if (!pane.pty) { res.status(400).json({ error: 'Terminal pane required.' }); return; }
     pane.cols = Math.max(20, Math.min(400, Math.round(Number(req.body.cols) || 100)));
     pane.rows = Math.max(5, Math.min(200, Math.round(Number(req.body.rows) || 30)));
     pane.pty.resize(pane.cols, pane.rows);
@@ -238,7 +275,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
 
   async function closeAll() {
     for (const pane of [...panes.values()]) {
-      if (pane.pty) { try { pane.pty.kill(); } catch (_) { /* already gone */ } }
+      killPty(pane);
       if (pane.kind === 'browser' && pane.browserId) {
         await browserWorkspace.close(pane.browserId).catch(() => {});
       }

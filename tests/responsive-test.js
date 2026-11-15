@@ -68,6 +68,38 @@ function assert(cond, msg) {
   console.log('  ✓ ' + msg);
 }
 
+// TOWNMOUSE renders the workspace UI by default and replaces the legacy chrome
+// toggle with workspace navigation. Wait for that navigation, then report
+// whether this page is running in workspace mode.
+async function waitForWorkspace(pg, timeoutMs = 5000) {
+  try {
+    await pg.waitForFunction(() => !!document.querySelector('.workspace-nav'), { timeout: timeoutMs });
+  } catch (_) { /* upstream TerminalOne: no workspace nav */ }
+  return pg.evaluate(() => document.body.classList.contains('workspace'));
+}
+
+// Assert the workspace navigation control that replaces the chrome toggle.
+async function assertWorkspaceNavigation(pg, label) {
+  const ws = await pg.evaluate(() => {
+    const r = (el) => {
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, width: b.width, height: b.height, display: getComputedStyle(el).display };
+    };
+    return {
+      nav: r(document.querySelector('.workspace-nav')),
+      control: r(document.querySelector('#workspace-tools')),
+      vw: window.innerWidth,
+      vh: window.innerHeight
+    };
+  });
+  assert(ws.nav && ws.nav.display !== 'none', `${label}: workspace nav present`);
+  assert(ws.control && ws.control.display !== 'none', `${label}: workspace tools present`);
+  assert(ws.control.width >= 44 && ws.control.height >= 44, `${label}: workspace tools >=44pt (${Math.round(ws.control.width)}x${Math.round(ws.control.height)})`);
+  assert(ws.control.left >= -1 && ws.control.right <= ws.vw + 1, `${label}: workspace tools within viewport X (left=${Math.round(ws.control.left)}, right=${Math.round(ws.control.right)}, vw=${ws.vw})`);
+  assert(ws.control.top >= -1 && ws.control.bottom <= ws.vh + 1, `${label}: workspace tools within viewport Y (top=${Math.round(ws.control.top)}, bottom=${Math.round(ws.control.bottom)}, vh=${ws.vh})`);
+}
+
 function get(p) {
   return new Promise((resolve, reject) => {
     const req = http.get(`${BASE_URL}${p}`, (res) => {
@@ -128,6 +160,7 @@ async function checkViewport(browser, vp) {
     await pg.waitForFunction('window.__terminalOne', { timeout: 10000 });
     // Let the terminal + first fit settle.
     await new Promise((r) => setTimeout(r, 500));
+    const workspaceMode = await waitForWorkspace(pg);
 
     const m = await pg.evaluate(() => {
       const sh = document.querySelector('.app-shell');
@@ -192,10 +225,15 @@ async function checkViewport(browser, vp) {
       const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, width: b.width, height: b.height, display: getComputedStyle(el).display }; };
       return { fab: r(document.querySelector('.t1-chrome-fab')), key: r(document.querySelector('#keybarIpad .kb-key') || document.querySelector('.kb-key')), vw: window.innerWidth, vh: window.innerHeight };
     });
-    assert(fabM.fab && fabM.fab.display !== 'none', `${vp.name}: chrome toggle present`);
-    assert(fabM.fab.left >= -1 && fabM.fab.right <= fabM.vw + 1, `${vp.name}: chrome toggle within viewport X (left=${Math.round(fabM.fab.left)}, right=${Math.round(fabM.fab.right)}, vw=${fabM.vw})`);
-    assert(fabM.fab.top >= -1 && fabM.fab.bottom <= fabM.vh + 1, `${vp.name}: chrome toggle within viewport Y (top=${Math.round(fabM.fab.top)}, bottom=${Math.round(fabM.fab.bottom)})`);
-    assert(fabM.fab.width >= 44 && fabM.fab.height >= 44, `${vp.name}: chrome toggle >=44pt (${Math.round(fabM.fab.width)}x${Math.round(fabM.fab.height)})`);
+    if (workspaceMode) {
+      // Workspace navigation intentionally replaces the legacy chrome toggle.
+      await assertWorkspaceNavigation(pg, vp.name);
+    } else {
+      assert(fabM.fab && fabM.fab.display !== 'none', `${vp.name}: chrome toggle present`);
+      assert(fabM.fab.left >= -1 && fabM.fab.right <= fabM.vw + 1, `${vp.name}: chrome toggle within viewport X (left=${Math.round(fabM.fab.left)}, right=${Math.round(fabM.fab.right)}, vw=${fabM.vw})`);
+      assert(fabM.fab.top >= -1 && fabM.fab.bottom <= fabM.vh + 1, `${vp.name}: chrome toggle within viewport Y (top=${Math.round(fabM.fab.top)}, bottom=${Math.round(fabM.fab.bottom)})`);
+      assert(fabM.fab.width >= 44 && fabM.fab.height >= 44, `${vp.name}: chrome toggle >=44pt (${Math.round(fabM.fab.width)}x${Math.round(fabM.fab.height)})`);
+    }
     assert(fabM.key && fabM.key.height >= 44, `${vp.name}: keybar key >=44pt tall (${Math.round(fabM.key.height)})`);
   } finally {
     await closePageSession(pg);
@@ -214,6 +252,7 @@ async function checkIphone(browser, vp) {
     await pg.waitForFunction('window.__terminalOne', { timeout: 10000 });
     await pg.waitForFunction(() => !!document.querySelector('.t1-chrome-fab'), { timeout: 10000 });
     await new Promise((r) => setTimeout(r, 300));
+    const workspaceMode = await waitForWorkspace(pg);
 
     const m = await pg.evaluate(() => {
       const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, width: b.width, height: b.height, display: getComputedStyle(el).display }; };
@@ -233,12 +272,16 @@ async function checkIphone(browser, vp) {
     assert(m.device === 'iphone', `${vp.name}: detectDevice → iphone (got ${m.device})`);
     assert(m.docScrollW - m.vw <= 1, `${vp.name}: no horizontal overflow (scrollW=${m.docScrollW} ≤ vw=${m.vw})`);
     assert(m.docScrollH - m.vh <= 1, `${vp.name}: no vertical overflow (scrollH=${m.docScrollH} ≤ vh=${m.vh})`);
-    // R1: chrome toggle on-screen at any size (the off-screen-right bug).
-    assert(m.fab && m.fab.display !== 'none', `${vp.name}: chrome toggle present`);
-    assert(m.fab.left >= -1 && m.fab.right <= m.vw + 1, `${vp.name}: chrome toggle within viewport X (left=${Math.round(m.fab.left)}, right=${Math.round(m.fab.right)}, vw=${m.vw})`);
-    assert(m.fab.top >= -1 && m.fab.bottom <= m.vh + 1, `${vp.name}: chrome toggle within viewport Y (top=${Math.round(m.fab.top)}, bottom=${Math.round(m.fab.bottom)}, vh=${m.vh})`);
-    // R3: 44pt touch targets.
-    assert(m.fab.width >= 44 && m.fab.height >= 44, `${vp.name}: chrome toggle >=44pt (${Math.round(m.fab.width)}x${Math.round(m.fab.height)})`);
+    // R1/R3: the primary navigation must be on-screen and a >=44pt target.
+    if (workspaceMode) {
+      // Workspace navigation intentionally replaces the legacy chrome toggle.
+      await assertWorkspaceNavigation(pg, vp.name);
+    } else {
+      assert(m.fab && m.fab.display !== 'none', `${vp.name}: chrome toggle present`);
+      assert(m.fab.left >= -1 && m.fab.right <= m.vw + 1, `${vp.name}: chrome toggle within viewport X (left=${Math.round(m.fab.left)}, right=${Math.round(m.fab.right)}, vw=${m.vw})`);
+      assert(m.fab.top >= -1 && m.fab.bottom <= m.vh + 1, `${vp.name}: chrome toggle within viewport Y (top=${Math.round(m.fab.top)}, bottom=${Math.round(m.fab.bottom)}, vh=${m.vh})`);
+      assert(m.fab.width >= 44 && m.fab.height >= 44, `${vp.name}: chrome toggle >=44pt (${Math.round(m.fab.width)}x${Math.round(m.fab.height)})`);
+    }
     assert(m.key && m.key.height >= 44, `${vp.name}: keybar key >=44pt tall (${Math.round(m.key.height)})`);
     assert(m.ctrlB && m.ctrlB.width >= 44 && m.ctrlB.height >= 44 && m.ctrlB.left >= 0 && m.ctrlB.right <= m.vw, `${vp.name}: Ctrl+b is a full-size tap target visible without scrolling`);
     // R2: control bar visible + within viewport.

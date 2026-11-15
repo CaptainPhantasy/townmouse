@@ -114,12 +114,19 @@ function wsError(ws, code, message, id) {
   }
 }
 
-/** Send a JSON message to a session's *current* ws if it is open. */
+/** Send a JSON message to every window currently attached to a session. */
 function sendToSession(session, payload) {
-  const ws = session.ws;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  try { ws.send(JSON.stringify(payload)); return true; }
-  catch (e) { error(session.id, 'WS send failed', { err: e.message }); return false; }
+  const sockets = session.sockets && session.sockets.size
+    ? session.sockets
+    : (session.ws ? new Set([session.ws]) : new Set());
+  let sent = false;
+  const data = JSON.stringify(payload);
+  for (const ws of sockets) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+    try { ws.send(data); sent = true; }
+    catch (e) { error(session.id, 'WS send failed', { err: e.message }); }
+  }
+  return sent;
 }
 
 // ─── Output ring buffer ──────────────────────────────────────────────────────
@@ -171,6 +178,10 @@ function cleanupSession(session) {
   pongTimers.delete(id);
 
   if (ptyProcess) { killPty(ptyProcess, id); session.ptyProcess = undefined; }
+  for (const socket of session.sockets || []) {
+    try { socket.close(1000, 'session ended'); } catch (_) { /* already gone */ }
+  }
+  if (session.sockets) session.sockets.clear();
   activeSessions.delete(id);
   info(id, 'Session cleaned up');
 }
@@ -351,6 +362,8 @@ function resumeSession(target, ws, dims, placeholder) {
   // Adopt the new connection onto the target session.
   target.ws = ws;
   target.sessionActive = true;
+  if (!target.sockets) target.sockets = new Set();
+  target.sockets.add(ws);
   ws.__sessionRef = target; // re-point handlers at the resumed session
 
   // Cancel the resume grace countdown — we're live again.
@@ -831,9 +844,26 @@ function bindWsToSession(ws, session) {
     if (!s) return;
     info(s.id, 'WebSocket disconnected', { code, reason: reason?.toString?.() || '', userClosed: !!s.userClosed });
 
-    // Explicit close already cleaned up the session; ensure the placeholder is gone.
+    // Explicit close already cleaned up the session; close any other windows
+    // attached to it and retire the record.
     if (s.userClosed) {
+      for (const socket of s.sockets || []) {
+        if (socket !== ws) {
+          try { socket.close(1000, 'session closed'); } catch (_) { /* already gone */ }
+        }
+      }
+      if (s.sockets) s.sockets.clear();
       activeSessions.delete(s.id);
+      return;
+    }
+    if (!s.sockets) s.sockets = new Set(s.ws ? [s.ws] : []);
+    s.sockets.delete(ws);
+    // Other windows still hold this shell: keep it live and hand ownership to
+    // one of them. Closing one window must not detach the rest.
+    if (s.sockets.size > 0) {
+      if (s.ws === ws || !s.ws) {
+        s.ws = [...s.sockets].find((socket) => socket.readyState === WebSocket.OPEN) || null;
+      }
       return;
     }
     // A socket that was superseded by a newer resume must not detach the new
@@ -864,7 +894,7 @@ function bindWsToSession(ws, session) {
     // An error does not necessarily kill the socket; mark inactive and let the
     // close handler decide grace vs cleanup. Never let a superseded socket
     // mark the live owner inactive.
-    if (s && (!s.ws || s.ws === ws)) s.sessionActive = false;
+    if (s && (!s.ws || s.ws === ws) && (!s.sockets || s.sockets.size <= 1)) s.sessionActive = false;
   });
 }
 
@@ -989,6 +1019,7 @@ wss.on('connection', (ws) => {
     widthChanged: false,
     outputChars: 0,
     resizeMarkers: [],
+    sockets: new Set([ws]),
     userClosed: false
   };
   activeSessions.set(sessionId, session);

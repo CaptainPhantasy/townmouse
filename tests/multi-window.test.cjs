@@ -73,6 +73,12 @@ async function until(ws, predicate, timeout = 10000) {
     const resumed = await until(second, (message) => message.type === 'ready' && message.resumed);
     assert.strictEqual(resumed.sessionId, ready.sessionId, 'second window should resume the same shell');
 
+    second.send(JSON.stringify({ type: 'input', data: "printf 'BOTH_WINDOWS_ALIVE\\n'\r" }));
+    await until(first, (message) =>
+      message.type === 'output' && String(message.data || '').includes('BOTH_WINDOWS_ALIVE'));
+    await until(second, (message) =>
+      message.type === 'output' && String(message.data || '').includes('BOTH_WINDOWS_ALIVE'));
+
     first.close();
     await wait(500);
 

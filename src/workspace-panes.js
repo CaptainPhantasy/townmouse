@@ -154,6 +154,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       pane.exitCode = Number.isFinite(Number(event.exitCode)) ? Number(event.exitCode) : null;
       pane.exitSignal = event.signal ?? null;
       pane.lastOutputAt = Date.now();
+      pane.agentState = 'done';
+      pane.agentStateAt = Date.now();
     });
   }
 
@@ -172,7 +174,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       cwd: opts.cwd || null,
       buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
       cols: clampCols(opts.cols), rows: clampRows(opts.rows), exited: false,
-      exitCode: null, exitSignal: null, lastOutputAt: Date.now(), createdAt: Date.now()
+      exitCode: null, exitSignal: null, lastOutputAt: Date.now(), createdAt: Date.now(),
+      agentState: null, agentMessage: '', agentStateAt: null
     };
     if (pane.kind === 'browser') {
       const browser = await browserWorkspace.create('agent', opts.url);
@@ -290,6 +293,9 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
       exitCode: pane.exitCode,
       exitSignal: pane.exitSignal,
+      agentState: pane.agentState,
+      agentMessage: pane.agentMessage,
+      agentStateAt: pane.agentStateAt,
       active: pane.id === activePaneId
     };
   }
@@ -379,6 +385,20 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     });
     res.json(serializePane(pane));
   }));
+  app.post('/api/panes/panes/:id/status', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const state = String(req.body.state || '').toLowerCase();
+    if (!['working', 'blocked', 'idle', 'done', 'unknown'].includes(state)) {
+      res.status(400).json({ error: 'State must be working, blocked, idle, done, or unknown.' });
+      return;
+    }
+    pane.agentState = state === 'unknown' ? null : state;
+    pane.agentMessage = String(req.body.message || '').slice(0, 1000);
+    pane.agentStateAt = Date.now();
+    scheduleSave();
+    res.json(serializePane(pane));
+  }));
   app.post('/api/panes/panes/:id/start', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
@@ -390,6 +410,18 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       scheduleSave();
     }
     res.json(serializePane(pane));
+  }));
+  app.post('/api/panes/tabs/:id/reorder', auth, route(async (req, res) => {
+    const tab = tabs.get(req.params.id);
+    if (!tab) { res.status(404).json({ error: 'Workspace tab not found.' }); return; }
+    const from = tab.panes.findIndex((pane) => pane.id === req.body.paneId);
+    if (from < 0) { res.status(404).json({ error: 'Pane not found in this tab.' }); return; }
+    const to = Math.max(0, Math.min(tab.panes.length - 1, Math.round(Number(req.body.index))));
+    if (!Number.isFinite(to) || to === from) { res.json(state()); return; }
+    const [pane] = tab.panes.splice(from, 1);
+    tab.panes.splice(to, 0, pane);
+    scheduleSave();
+    res.json(state());
   }));
   app.delete('/api/panes/panes/:id', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
@@ -515,8 +547,13 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const match = typeof req.query.match === 'string' ? req.query.match : '';
     const pattern = typeof req.query.regex === 'string' ? req.query.regex : '';
     const idleMs = Math.max(0, Math.min(120000, Number(req.query.idleMs) || 0));
-    if (!match && !pattern && !idleMs) {
-      res.status(400).json({ error: 'Provide match, regex, or idleMs.' });
+    const state = typeof req.query.state === 'string' ? req.query.state.toLowerCase() : '';
+    if (state && !['working', 'blocked', 'idle', 'done', 'unknown'].includes(state)) {
+      res.status(400).json({ error: 'Unknown agent state.' });
+      return;
+    }
+    if (!match && !pattern && !idleMs && !state) {
+      res.status(400).json({ error: 'Provide match, regex, idleMs, or state.' });
       return;
     }
     let matcher = null;
@@ -541,11 +578,14 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
           data: data.slice(-100000),
           offset: pane.totalOffset,
           idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
+          agentState: pane.agentState,
+          agentMessage: pane.agentMessage,
           elapsedMs: Date.now() - started
         });
       };
       const check = () => {
         const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
+        if (state && pane.agentState === state) return snapshot(true, 'state');
         if (match && data.includes(match)) return snapshot(true, 'match');
         if (matcher && matcher.test(data)) return snapshot(true, 'match');
         if (idleMs && Date.now() - pane.lastOutputAt >= idleMs) return snapshot(true, 'idle');

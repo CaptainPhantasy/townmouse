@@ -160,6 +160,13 @@ async function dispatchFile(page, selector, name, type, eventName) {
       { timeout: 15000 }
     );
     assert.strictEqual(uploads, beforePanePaste + 1, 'pane image paste should upload exactly once');
+    const hostContext = await page.evaluate(() => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return { shown: document.querySelector('#host-name').textContent, title: tab.title };
+    });
+    assert.strictEqual(hostContext.shown, hostContext.title, 'the bottom bar should name the active tab');
+
     const paneNotice = await page.evaluate(() => {
       const el = document.querySelector('#notice');
       return { text: el.textContent, copyUrl: el.dataset.copyUrl || '' };
@@ -379,6 +386,12 @@ async function dispatchFile(page, selector, name, type, eventName) {
     const selected = await page.evaluate(() => Array.from(document.querySelectorAll('#tabstrip [role="tab"]'))
       .filter((tab) => tab.getAttribute('aria-selected') === 'true').length);
     assert(selected === 1, 'switching tabs should keep one selected tab');
+    const switchedHost = await page.evaluate(() => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return { shown: document.querySelector('#host-name').textContent, title: tab.title };
+    });
+    assert.strictEqual(switchedHost.shown, switchedHost.title, 'the bottom bar should follow the active tab');
 
     // Desktop: two panes get a draggable, keyboard-resizable divider.
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
@@ -445,6 +458,29 @@ async function dispatchFile(page, selector, name, type, eventName) {
     assert(fourPane.panes === 4, `four-pane tab should hold four panes: ${JSON.stringify(fourPane)}`);
     assert(fourPane.splitters === 3 && fourPane.vertical === 2 && fourPane.horizontal === 1,
       `four panes need two column dividers and one row divider: ${JSON.stringify(fourPane)}`);
+
+    const orderBefore = await page.evaluate(() => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return { ids: tab.panes.map((pane) => pane.id), activeIndex: tab.panes.findIndex((pane) => pane.id === state.activePaneId) };
+    });
+    const reorderKey = orderBefore.activeIndex > 0 ? 'ArrowLeft' : 'ArrowRight';
+    await page.evaluate((key) => document.dispatchEvent(new KeyboardEvent('keydown', {
+      key, altKey: true, shiftKey: true, bubbles: true, cancelable: true
+    })), reorderKey);
+    await page.waitForFunction((before) => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return tab.panes.map((pane) => pane.id).join(',') !== before.join(',');
+    }, { timeout: 10000 }, orderBefore.ids);
+    const orderAfter = await page.evaluate(() => {
+      const state = window.__panes.state();
+      return {
+        panes: state.tabs.find((tab) => tab.id === state.activeTabId).panes.map((pane) => pane.id),
+        dom: [...document.querySelectorAll('.pane-grid > .pane')].map((pane) => pane.dataset.paneId)
+      };
+    });
+    assert.deepStrictEqual(orderAfter.dom, orderAfter.panes, 'DOM order should follow the reordered state');
 
     await page.setViewport({ width: 393, height: 852, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
     await page.waitForFunction('document.querySelectorAll(".pane-splitter").length === 0', { timeout: 5000 });

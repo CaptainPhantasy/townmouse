@@ -5,10 +5,43 @@ const os = require('os');
 const path = require('path');
 const express = require('express');
 
+// Move old day buckets out of the active upload tree. They are archived, not
+// deleted: the owner can inspect or remove them without losing a file the
+// workspace still references.
+function pruneAttachments(stateDir, options = {}) {
+  const root = path.join(stateDir, 'attachments');
+  const archive = path.join(stateDir, 'attachments-archive');
+  const retentionDays = Math.max(1, Number(options.retentionDays ?? process.env.TOWNMOUSE_ATTACHMENT_RETENTION_DAYS ?? 30) || 30);
+  const now = Number(options.now) || Date.now();
+  const cutoff = now - retentionDays * 24 * 60 * 60 * 1000;
+  let moved = 0;
+  let entries;
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); }
+  catch (_) { return { moved }; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^\d{8}$/.test(entry.name)) continue;
+    const year = Number(entry.name.slice(0, 4));
+    const month = Number(entry.name.slice(4, 6));
+    const day = Number(entry.name.slice(6, 8));
+    const stamp = Date.UTC(year, month - 1, day);
+    if (!Number.isFinite(stamp) || stamp >= cutoff) continue;
+    const from = path.join(root, entry.name);
+    const to = path.join(archive, entry.name);
+    if (fs.existsSync(to)) continue;
+    try {
+      fs.mkdirSync(archive, { recursive: true, mode: 0o700 });
+      fs.renameSync(from, to);
+      moved += 1;
+    } catch (_) { /* leave the bucket in place if it cannot move */ }
+  }
+  return { moved };
+}
+
 function installAttachments(app) {
   const stateDir = process.env.TOWNMOUSE_STATE_DIR || path.join(os.homedir(), '.townmouse');
   const root = path.join(stateDir, 'attachments');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  try { pruneAttachments(stateDir); } catch (_) { /* retention is best effort */ }
 
   app.use('/attachments', express.static(root, {
     fallthrough: false,
@@ -92,4 +125,4 @@ function installAttachments(app) {
   return { root };
 }
 
-module.exports = { installAttachments };
+module.exports = { installAttachments, pruneAttachments };

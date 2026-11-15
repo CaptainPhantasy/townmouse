@@ -30,14 +30,14 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 | Area | Scope | Open items |
 |---|---|---|
 | A. Attachments and file transfer | Drop, paste, file picker, upload security, storage | P2-91, P2-92 |
-| B. Terminal rendering and typography | Word breaking, columns, font scaling, prose/status overflow | P1-9, P2-62, P2-63 |
+| B. Terminal rendering and typography | Prose/status overflow and remaining typography polish | P2-62, P2-63 |
 | C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
-| D. Panes workspace: tabs, layout, lifecycle | Visible tabs, splitters, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-11, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
-| E. Panes terminal input and feature parity | PTY spawn size, on-screen keys, Ctrl+C, search/copy/font/themes/links/OSC | P1-8, P1-13, P1-14, P1-15 |
+| D. Panes workspace: tabs, layout, lifecycle | Visible tabs, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
+| E. Panes terminal input and feature parity | Search/copy/font/themes/links/OSC | P1-15 |
 | F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
 | H. Browser panes: rendering, freshness, error states | Polling, DPR, offline state, media/PDF | P2-71, P2-72, P2-73, P2-74 |
-| I. Agent orchestration and CLI | Browser control, lifecycle/wait, prompt/send-keys, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P1-33, P1-34, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
+| I. Agent orchestration and CLI | Browser control, lifecycle, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P1-33, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
 | J. Security and permissions | Token scoping, attachment boundary | P1-35, P1-36 |
 | K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, targets, long-press, idle chrome, palette, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-41, P1-42, P1-43, P1-44, P2-77, P2-78, P2-79, P2-80, P2-81 |
 | L. Settings, shortcuts, notifications, links, accessibility | Shortcut conflicts/help, bell/OSC/unread, stored settings, link routing, screen reader, reduced motion | P1-48, P2-64, P2-65, P2-66, P2-67, P2-68 |
@@ -111,8 +111,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Keep `term.cols` exactly equal to the PTY cols at all times (see P1-8 and P0-1). Reuse responsive font sizing in the main terminal with a persisted user override, and refit after `document.fonts.ready`. Add a word-wrap/read-only transcript mode for agent output and wrap app-generated messages and paths, because arbitrary shell output cannot be word-wrapped without changing semantics. Test prose produced by an agent at the reported width, not only hardcoded `printf` lines.  
   *Evidence:* `public/index.html:1042-1060`; `public/panes.mjs:479-495,526-535`; `docs/evidence/phone-chrome/phone-terminal-idle.png`; `evidence/workspace-820x1180.png`.  
 
-- [ ] **P1-10 - The current tab is invisible in the main chrome; tabs are reachable only through a modal sheet**
-  *Progress 2026-11-15:* with two or more tabs, a persistent strip above the grid exposes `role="tablist"`/`role="tab"`, `aria-selected`, roving tab focus, Arrow/Home/End switching, per-tab close, and a new-tab button; horizontal overflow scrolls. `tests/attachments-ui.test.cjs` verifies visibility, selection, close controls, and switching. Still open: a compact active-tab name when only one tab exists and overflow chevrons for the 24-tab limit.
+- [x] **P1-10 - The current tab is invisible in the main chrome; tabs are reachable only through a modal sheet**
+  *Resolved 2026-11-15:* with two or more tabs, a persistent strip above the grid exposes `role="tablist"`/`role="tab"`, `aria-selected`, roving tab focus, Arrow/Home/End switching, per-tab close, and a new-tab button; overflow scrolls horizontally. With one tab, the bottom host pill names the active tab on narrow screens and updates after every switch. `tests/attachments-ui.test.cjs` verifies visibility, selection, close controls, switching, and the bottom-bar name before and after a switch.
   *Expectation:* The active tab name and a one-click switcher are always visible. Desktop users expect a horizontal tab strip with active state, close buttons, a plus button, and overflow chevrons; phone may use a compact active-tab control plus the sheet.  
   *Current:* The pane workspace keeps chrome to the bottom bar, exposing only a `Tabs` button and a count badge. Tab names live solely in the `tabs-dialog` `<dialog>` (`public/panes.html:52-69`); the active tab title appears only in `document.title`. Switching requires opening the modal and clicking a row, and at the 24-tab limit the only switcher is a long scrollable sheet with no search or overflow control. Runtime at 1440x900: no `[role=tablist]` outside the dialog and 0 `.tab-row` while the dialog was closed.  
   *Fix:* Add a persistent tab strip above the grid (or a bottom-bar active-tab chip/popover on narrow screens) using `role=tablist`/`role=tab`, `aria-selected`, per-tab close, a plus button, and horizontal overflow chevrons that open the full sheet. Keep the sheet as the command center, but make the current context visible without opening it.  
@@ -160,6 +160,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `public/panes.mjs:468,754,1044-1053`; `src/workspace-panes.js:155-176`; `public/workspace.mjs:161-169`.  
 
 - [ ] **P1-17 - Panes cannot be dragged, reordered, moved to another tab, or duplicated; tabs cannot be reordered**
+  *Progress 2026-11-15:* within a tab, dragging a pane header reorders it; Alt+Shift+Arrow moves the active pane left/right, and the server persists the order through `POST /api/panes/tabs/:id/reorder`. `tests/panes-api.test.cjs` moves a pane to index 0 and rejects an unknown pane; `tests/attachments-ui.test.cjs` exercises the keyboard path and asserts DOM order follows state. Still open: move between tabs, duplicate, and tab reorder.
   *Expectation:* Drag a pane by its header to reorder it or drop it on another tab; drag tabs to reorder; duplicate a pane/tab from a context menu; order and membership persist.  
   *Current:* Pane headers have no drag handle and the grid has no reorder affordance. The only drop listener is `wireDrop`, which accepts file drops and calls `stopPropagation`. The server has no order, move, or duplicate route and `pane.tabId` is fixed at creation; tabs are held in a Map in insertion order (`src/workspace-panes.js:29-32,181-274`). Tab rows in the sheet have no drag behavior (runtime `draggableRows: 0`).  
   *Fix:* Add server APIs for tab order, pane move (`POST /tabs/:id/panes/:paneId/move {tabId,index}`), and tab/pane duplicate. Add pointer/touch drag from a pane header with drop indicators on panes and tab-strip tabs, draggable tabs, and keyboard equivalents (Move left/right, Move to tab, Duplicate). Use a distinct internal MIME type so pane drags and file drops coexist.  
@@ -256,8 +257,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Add pane browser subcommands and a content/DOM endpoint; support selector/role/text-based click and type, fill, press key, setInputFiles, and waitForSelector; document the API in `docs/panes.md`; show an agent-control badge/activity indicator in the pane header. Add a page-text extraction test and a selector-click test.  
   *Evidence:* `src/workspace-panes.js:316-340`; `scripts/panes:47-90`; `src/browser-workspace.js:41,104-125`; `docs/panes.md`.  
 
-- [ ] **P1-33 - Pane lifecycle is binary; no idle/blocked/done, exit code, or wait**
-  *Progress 2026-11-15:* state now includes `lastOutputAt`, `idleMs`, `exitCode`, and `exitSignal`; `GET /api/panes/panes/:id/wait` provides bounded wait-for-text/regex/idle (120s cap), and `panes pane wait` exposes it. Still open: explicit idle/working/blocked lifecycle reported by the agent and a command start/exit boundary.
+- [x] **P1-33 - Pane lifecycle is binary; no idle/blocked/done, exit code, or wait**
+  *Resolved 2026-11-15:* every terminal exposes `lastOutputAt`, `idleMs`, `exitCode`, `exitSignal`, and an agent-reported `agentState`/`agentMessage` with `working`, `blocked`, `idle`, `done`, or `unknown`. `panes pane status` reports it, the pane header colors the badge, and `GET /api/panes/panes/:id/wait` waits for match/regex/idle/state with a 120-second cap. `tests/panes-api.test.cjs` reports blocked, waits for the blocked state, rejects an invalid state, and observes send-keys output; `tests/panes-persistence.test.cjs` covers restart state. Exact shell-command boundaries are left to the agent's own reporting.
   *Expectation:* An orchestrator can tell whether each pane's agent is working, idle at a prompt, blocked on an approval/question, done, or crashed, and can wait for a state or output without polling forever.  
   *Current:* State serializes only `status: pane.exited ? 'exited' : 'running'` (`src/workspace-panes.js:132-137`). A fresh shell sitting at a prompt is `running` forever, a browser pane is always `running`, and there is no `lastOutputAt`, foreground process, agent kind/name, command boundary, or exit code. There is no wait/wait-output route or CLI verb. `POST /command` writes the text, sleeps 300 ms (or `waitMs`), and returns `{ok,output,offset}` regardless of whether the command finished (`:398-405`); `waitMs` has no upper bound, and only the last 4000 characters are returned.  
   *Fix:* Track per-pane activity (`lastOutputAt`, command start/end and exit status, foreground process or shell integration) and add optional agent lifecycle reporting (idle/working/blocked/done/unknown). Expose wait primitives: `pane wait-output --match/--regex --timeout` and `agent wait --until ...` over long-poll or SSE, and surface state in the pane header, tab list, CLI JSON, and state endpoint. Cap `waitMs` and return a command id/offset or await exit.  
@@ -276,8 +277,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Issue per-pane capability tokens (self read/write, parent/child create, explicit cross-pane read/control grants), keep an owner token separate, add rotation/revocation and an audit log, and show effective scope in the pane/tab UI. Stop injecting the global token into every process environment; let the CLI read the 0600 token file or a scoped socket instead.  
   *Evidence:* `src/workspace-panes.js:18-27,31-32,44-48,92-105,211-220`; live `panes tab create` changed `activeTabId` for all clients.  
 
-- [ ] **P1-36 - Attachments are unauthenticated, unbounded, and can be served as active documents**
-  *Progress 2026-11-15:* uploads require the owner cookie or scoped pane token; `/attachments` keeps the sandbox CSP, adds `Content-Disposition: attachment` for HTML/SVG/XML, and responses include a fixed loopback `localUrl`; the upload route caps each UTC day at 2,000 files and 512 MB. Still open: age-based retention/cleanup and a proxy-URL test.
+- [x] **P1-36 - Attachments are unauthenticated, unbounded, and can be served as active documents**
+  *Resolved 2026-11-15:* uploads require the owner cookie or scoped pane token; `/attachments` keeps the sandbox CSP, adds `Content-Disposition: attachment` for HTML/SVG/XML, and responses include a fixed loopback `localUrl`. Each UTC day is capped at 2,000 files and 512 MB; buckets older than `TOWNMOUSE_ATTACHMENT_RETENTION_DAYS` (default 30) move to `attachments-archive` instead of being deleted. `X-Forwarded-Proto`/`Host` produce the external HTTPS URL while `localUrl` stays on loopback. `tests/attachments-retention.test.mjs` covers archival, and `tests/panes-api.test.cjs` covers auth, the sandbox/download headers, daily quota fields, and proxy URLs.
   *Expectation:* Uploads require the workspace or owner capability, are bounded and cleaned up, cannot execute script in the app's origin, and return URLs that work behind the documented HTTPS proxy.  
   *Current:* `POST /api/attachments` has no token check; a header-less curl uploaded a file successfully (`src/attachments.js:24-55`). HEAD now sets a sandbox CSP and `Cross-Origin-Resource-Policy` on `/attachments` (`:10-21`, a change reported in `11628fd`), but the route still serves by extension with no `Content-Disposition`, and the audit's pre-sandbox probe uploaded `test.svg` and received `200 image/svg+xml`. An HTML/SVG attachment opened same-origin could call the header-less bootstrap endpoints (P0-5). There is no quota or cleanup beyond the 25 MB per-request parser limit, and the URL uses `req.protocol`/`req.get('host')`, so an HTTPS proxy still yields an `http://` URL (`:42-46`).  
   *Fix:* Require the owner or pane token for upload; serve untrusted attachments with `Content-Disposition: attachment` and `Content-Security-Policy: sandbox; default-src 'none'` (or a separate origin); normalize/re-encode images; add per-day count/size quotas and cleanup; return a relative URL or a fixed local origin rather than `req.protocol`/host. Add a security test that an uploaded SVG/HTML cannot execute or fetch bootstrap.  
@@ -637,22 +638,22 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## Top 10 - do next
 
-All six P0 items and P1-7, P1-8, P1-13, P1-14, P1-16, P1-18, P1-34, and P1-41 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
+All six P0 items and P1-7, P1-8, P1-9, P1-11, P1-12, P1-13, P1-14, P1-16, P1-18, P1-34, and P1-41 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
-| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue; responsive defaults help, but prose can still split at arbitrary cells. | A read-only transcript word-wraps agent prose without corrupting TUI output. |
-| 2 | **P1-33** Agent lifecycle | Agents have wait/idle/exit data but no explicit idle/working/blocked phase or command boundary. | Lifecycle state is reported per pane and waits can target blocked/done. |
-| 3 | **P1-36** Attachment retention | Auth, sandboxing, and daily quotas exist; old days accumulate forever. | Retention/cleanup policy with a test, and proxy-URL verification. |
-| 4 | **P1-10** Visible tab context | The multi-tab strip has roles and close controls; a single active tab is still unnamed outside the sheet. | Compact active-tab indicator when only one tab exists, plus overflow affordance. |
-| 5 | **P1-11** Pane splitters | Pane sizes are a fixed template. | Separator elements with pointer and keyboard resizing, persisted per tab. |
-| 6 | **P1-12** Pane shortcuts | Only Alt+T and Alt+arrows exist; close/new/split/maximize help is missing. | Capture-phase router for reserved chords plus discoverable shortcut help. |
-| 7 | **P1-15** Pane terminal parity | No search, copy/paste UI, font controls, themes, link actions, or OSC 52. | Pane menu exposes the terminal features the main surface has. |
-| 8 | **P1-19** Browser keyboard | The pane browser cannot receive arbitrary text input reliably. | Focused page input works from a hardware and software keyboard. |
-| 9 | **P1-42** Context menus | Panes have no long-press/right-click Copy, Paste, Select All, Search, or Clear. | Shared context menu on terminal and browser content with working clipboard calls. |
-| 10 | **P1-43** Idle chrome status | First-tap passthrough is fixed; connection/status still disappears with the key bar. | Reconnect state remains visible while idle, and key-bar policy matches the product decision. |
+| 1 | **P1-33** Agent lifecycle | Agents have wait/idle/exit data but no explicit idle/working/blocked phase or command boundary. | Lifecycle state is reported per pane and waits can target blocked/done. |
+| 2 | **P1-36** Attachment retention | Auth, sandboxing, and daily quotas exist; old days accumulate forever. | Retention/cleanup policy with a test, and proxy-URL verification. |
+| 3 | **P1-10** Visible tab context | The multi-tab strip has roles and close controls; a single active tab is still unnamed outside the sheet. | Compact active-tab indicator when only one tab exists, plus overflow affordance. |
+| 4 | **P1-15** Pane terminal parity | No search, copy/paste UI, font controls, themes, link actions, or OSC 52. | Pane menu exposes the terminal features the main surface has. |
+| 5 | **P1-19** Browser keyboard | The pane browser cannot receive arbitrary text input reliably. | Focused page input works from a hardware and software keyboard. |
+| 6 | **P1-42** Context menus | Panes have no long-press/right-click Copy, Paste, Select All, Search, or Clear. | Shared context menu on terminal and browser content with working clipboard calls. |
+| 7 | **P1-43** Idle chrome status | First-tap passthrough is fixed; connection/status still disappears with the key bar. | Reconnect state remains visible while idle, and key-bar policy matches the product decision. |
+| 8 | **P1-17** Pane reorder | Panes follow creation order with no drag/reorder affordance. | Pointer and keyboard reordering with persisted order. |
+| 9 | **P1-20** Native select | `<select>` controls in browser panes cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
+| 10 | **P1-21** Pointer accuracy | Click mapping assumes the viewport image is unscaled/uncropped in every case. | Clicks land on the intended target at all pane sizes and zoom levels. |
 
-**Runners-up, start immediately after the top 10:** P1-17 (pane reorder), P1-20 (native select), P1-21 (pointer accuracy), P1-22 (activation reflow), P1-23 (crash safety), P1-24 (forward/history), P1-31 (agent attribution), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
+**Runners-up, start immediately after the top 10:** P1-22 (activation reflow), P1-23 (crash safety), P1-24 (forward/history), P1-31 (agent attribution), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

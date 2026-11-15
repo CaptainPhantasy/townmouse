@@ -84,6 +84,15 @@ async function main() {
     print(await call('POST', `/panes/${paneId}/keys`, { keys }));
     return;
   }
+  if (scope === 'pane' && action === 'status') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane status requires a pane id.');
+    const options = args(rest.slice(1));
+    const state = options.state || options._[0];
+    if (!state) throw new Error('pane status requires --state working|blocked|idle|done|unknown.');
+    print(await call('POST', `/panes/${paneId}/status`, { state, message: options.message }));
+    return;
+  }
   if (scope === 'pane' && action === 'dialog') {
     const paneId = rest[0];
     if (!paneId) throw new Error('pane dialog requires a pane id.');
@@ -104,9 +113,10 @@ async function main() {
     if (options.match !== undefined) query.set('match', String(options.match));
     if (options.regex !== undefined) query.set('regex', String(options.regex));
     if (options.idle !== undefined) query.set('idleMs', String(options.idle));
+    if (options.state !== undefined) query.set('state', String(options.state));
     if (options.timeout !== undefined) query.set('timeout', String(options.timeout));
     if (options.since !== undefined) query.set('since', String(options.since));
-    if (!query.toString()) throw new Error('pane wait requires --match, --regex, or --idle.');
+    if (!query.toString()) throw new Error('pane wait requires --match, --regex, --idle, or --state.');
     print(await call('GET', `/panes/${paneId}/wait?${query.toString()}`));
     return;
   }
@@ -152,8 +162,9 @@ async function main() {
   panes pane input <pane-id> <text...>
   panes pane send-text <pane-id> [--raw] <text...>
   panes pane keys <pane-id> <key...>        (enter, esc, tab, ctrl+c, alt+x, arrows)
-  panes pane wait <pane-id> [--match TEXT | --regex PATTERN | --idle MS]
+  panes pane wait <pane-id> [--match TEXT | --regex PATTERN | --idle MS | --state STATE]
                             [--since OFFSET] [--timeout MS]
+  panes pane status <pane-id> --state working|blocked|idle|done|unknown [--message TEXT]
   panes pane dialog <pane-id> --accept|--dismiss [--text VALUE]
   panes pane close <pane-id>
   panes attach <file> [--pane <pane-id>] [--type MIME]

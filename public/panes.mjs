@@ -23,6 +23,7 @@ const els = {
   emptyAddBrowser: byId('empty-add-browser'),
   emptyNewTab: byId('empty-new-tab'),
   backButton: byId('back-button'),
+  hostPill: byId('host-pill'),
   hostName: byId('host-name'),
   tabsButton: byId('tabs-button'),
   tabCount: byId('tab-count'),
@@ -163,6 +164,84 @@ async function attachFiles(record, files) {
       showNotice(error.message || `Could not attach ${file.name}.`, 'error');
     }
   }
+}
+
+function reorderActivePane(direction) {
+  const tab = activeTab();
+  if (!tab || tab.panes.length < 2) return;
+  const from = tab.panes.findIndex((pane) => pane.id === effectiveActivePaneId(tab));
+  const to = Math.max(0, Math.min(tab.panes.length - 1, from + direction));
+  if (from < 0 || to === from) return;
+  void (async () => {
+    try {
+      const next = await api(`/tabs/${tab.id}/reorder`, { method: 'POST', body: { paneId: tab.panes[from].id, index: to } });
+      if (next && next.tabs) applyState(next, { force: true });
+      else await refresh();
+      logStatus('Pane reordered.');
+    } catch (error) {
+      showNotice(error.message || 'Could not reorder the pane.', 'error');
+    }
+  })();
+}
+
+function wirePaneReorder(root, paneId) {
+  const header = root.querySelector('.pane-header');
+  if (!header) return;
+  header.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('button, input')) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragging = false;
+    let target = null;
+    const clearTarget = () => {
+      if (target) target.classList.remove('drop-target');
+      target = null;
+    };
+    const move = (moveEvent) => {
+      if (!dragging && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 8) {
+        dragging = true;
+        root.classList.add('reordering');
+      }
+      if (!dragging) return;
+      const under = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest?.('.pane');
+      if (under === target) return;
+      clearTarget();
+      if (under && under !== root) {
+        target = under;
+        target.classList.add('drop-target');
+      }
+    };
+    const end = (upEvent) => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', end);
+      document.removeEventListener('pointercancel', end);
+      root.classList.remove('reordering');
+      const drop = target;
+      clearTarget();
+      if (!dragging || !drop || !currentState) return;
+      const tab = activeTab();
+      if (!tab) return;
+      const from = tab.panes.findIndex((pane) => pane.id === paneId);
+      const dropId = drop.dataset.paneId;
+      const over = tab.panes.findIndex((pane) => pane.id === dropId);
+      if (from < 0 || over < 0 || from === over) return;
+      const rect = drop.getBoundingClientRect();
+      const after = upEvent.clientX > rect.left + rect.width / 2;
+      const index = Math.max(0, Math.min(tab.panes.length - 1, over + (after ? 1 : 0) - (from < over ? 1 : 0)));
+      void (async () => {
+        try {
+          const next = await api(`/tabs/${tab.id}/reorder`, { method: 'POST', body: { paneId, index } });
+          if (next && next.tabs) applyState(next, { force: true });
+          else await refresh();
+        } catch (error) {
+          showNotice(error.message || 'Could not reorder the pane.', 'error');
+        }
+      })();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  });
 }
 
 function wireDrop(root, paneId) {
@@ -744,7 +823,7 @@ function updateEmptyState(tab) {
 }
 
 function updatePaneChrome(tab) {
-  if (!tab) { updateBackButton(); updateKeybar(); return; }
+  if (!tab) { updateBackButton(); updateKeybar(); updateHostContext(); return; }
   const activeId = effectiveActivePaneId(tab);
   tab.panes.forEach((pane, index) => {
     const record = records.get(pane.id);
@@ -757,7 +836,11 @@ function updatePaneChrome(tab) {
     if (record.kind === 'terminal') {
       const status = pane.status === 'exited' ? 'exited' : 'running';
       if (record.root.dataset.status !== status) record.root.dataset.status = status;
-      const kindText = status === 'exited' ? 'Terminal · exited' : 'Terminal';
+      const agentState = pane.agentState || '';
+      record.root.dataset.agentState = agentState;
+      const kindText = status === 'exited'
+        ? 'Terminal · exited'
+        : agentState ? `Terminal · ${agentState}` : 'Terminal';
       if (record.kindEl.textContent !== kindText) record.kindEl.textContent = kindText;
     } else {
       if (record.kindEl.textContent !== 'Browser') record.kindEl.textContent = 'Browser';
@@ -779,7 +862,17 @@ function updateActiveClasses() {
     record.root.classList.toggle('is-active', id === activeId);
   }
   updateKeybar();
+  updateHostContext();
   updateBackButton();
+}
+
+function updateHostContext() {
+  if (!els.hostName) return;
+  const tab = activeTab();
+  const host = currentState?.host || 'localhost';
+  const narrow = window.matchMedia('(max-width: 699px)').matches;
+  els.hostName.textContent = narrow && tab ? tab.title : host;
+  if (els.hostPill) els.hostPill.title = narrow ? `Active tab: ${tab ? tab.title : 'none'} · ${host}` : host;
 }
 
 function updateBackButton() {
@@ -909,6 +1002,7 @@ function createTerminalPane(pane) {
   record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
   records.set(pane.id, record);
   wireDrop(root, pane.id);
+  wirePaneReorder(root, pane.id);
   requestAnimationFrame(() => {
     if (!record.disposed && root.isConnected) mountTerminal(record);
   });
@@ -1270,6 +1364,7 @@ function createBrowserPane(pane) {
 
   records.set(pane.id, record);
   wireDrop(root, pane.id);
+  wirePaneReorder(root, pane.id);
   const resizeBrowser = () => {
     if (record.disposed || !record.root.isConnected) return;
     const rect = record.view.getBoundingClientRect();
@@ -1753,8 +1848,13 @@ function bindEvents() {
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       const tab = activeTab();
       if (!tab || !tab.panes.length) return;
-      const at = tab.panes.findIndex((pane) => pane.id === effectiveActivePaneId(tab));
       const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      if (event.shiftKey) {
+        event.preventDefault();
+        reorderActivePane(step);
+        return;
+      }
+      const at = tab.panes.findIndex((pane) => pane.id === effectiveActivePaneId(tab));
       const next = tab.panes[(at + step + tab.panes.length) % tab.panes.length];
       if (next) {
         event.preventDefault();
@@ -1931,6 +2031,7 @@ window.addEventListener('resize', () => {
   layoutResizeFrame = requestAnimationFrame(() => {
     layoutResizeFrame = 0;
     applyPaneLayout(activeTab());
+    updateHostContext();
   });
 });
 

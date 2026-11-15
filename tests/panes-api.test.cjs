@@ -341,6 +341,30 @@ async function main() {
         'attachment should return a loopback URL for pane navigation',
         attachment
       );
+      const proxied = await fetch(`${BASE}/api/attachments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          'X-Filename': 'proxy-note.txt',
+          'X-Townmouse-Token': token,
+          'X-Forwarded-Proto': 'https',
+          'X-Forwarded-Host': 'terminal.example.com'
+        },
+        body: 'proxy attachment',
+        signal: AbortSignal.timeout(5000)
+      });
+      const proxiedAttachment = await proxied.json();
+      ensure(proxied.status === 200, 'proxied attachment should upload', proxiedAttachment);
+      ensure(
+        String(proxiedAttachment.url).startsWith('https://terminal.example.com/attachments/'),
+        'proxy headers should produce an HTTPS attachment URL',
+        proxiedAttachment
+      );
+      ensure(
+        String(proxiedAttachment.localUrl).startsWith('http://127.0.0.1:'),
+        'localUrl must stay on loopback behind a proxy',
+        proxiedAttachment
+      );
       const served = await fetch(attachment.url, { signal: AbortSignal.timeout(5000) });
       ensure(served.status === 200, 'attachment URL should serve the upload', served.status);
       ensure((await served.text()) === 'agent attachment body', 'attachment URL should return the uploaded bytes');
@@ -474,6 +498,24 @@ async function main() {
       );
     });
 
+    await check('panes: reorder endpoint moves a pane to the requested index', async () => {
+      const token = required('workspace token', context.token);
+      const tabId = required('tab id', context.tabId);
+      const paneId = required('browser pane', context.browserB);
+      const reordered = await request('POST', `/api/panes/tabs/${tabId}/reorder`, {
+        token,
+        body: { paneId, index: 0 }
+      });
+      ensure(reordered.status === 200, 'reorder should respond 200', reordered.body);
+      const tab = (reordered.body.tabs || []).find((candidate) => candidate.id === tabId);
+      ensure(tab && tab.panes[0].id === paneId, 'reordered pane should be first', reordered.body);
+      const invalid = await request('POST', `/api/panes/tabs/${tabId}/reorder`, {
+        token,
+        body: { paneId: 'p_missing', index: 0 }
+      });
+      ensure(invalid.status === 404, 'unknown panes should be rejected', invalid.body);
+    });
+
     await check('terminal: POST /command writes PANE_OK and /read exposes it', async () => {
       required('workspace token', context.token);
       const paneId = required('terminal pane', context.terminalA);
@@ -522,6 +564,27 @@ async function main() {
         body: { keys: ['not-a-real-key'] }
       });
       ensure(bad.status === 400, 'unknown key names should be rejected', bad.body);
+    });
+
+    await check('terminal: agent state is reportable and waitable', async () => {
+      const token = required('workspace token', context.token);
+      const paneId = required('terminal pane', context.terminalA);
+      const blocked = await request('POST', `/api/panes/panes/${paneId}/status`, {
+        token,
+        body: { state: 'blocked', message: 'Waiting for approval' }
+      });
+      ensure(blocked.status === 200, 'status endpoint should accept blocked', blocked.body);
+      ensure(blocked.body.agentState === 'blocked', 'status should report blocked', blocked.body);
+      ensure(blocked.body.agentMessage === 'Waiting for approval', 'status should keep the message', blocked.body);
+      const waited = await request('GET', `/api/panes/panes/${paneId}/wait?state=blocked&timeout=5000`, { token });
+      ensure(waited.status === 200 && waited.body.matched === true, 'wait should observe the blocked state', waited.body);
+      ensure(waited.body.reason === 'state' && waited.body.agentState === 'blocked', 'wait should report the state reason', waited.body);
+      const invalid = await request('POST', `/api/panes/panes/${paneId}/status`, {
+        token,
+        body: { state: 'exploded' }
+      });
+      ensure(invalid.status === 400, 'invalid agent states should be rejected', invalid.body);
+      await request('POST', `/api/panes/panes/${paneId}/status`, { token, body: { state: 'working' } });
     });
 
     await check('browser: snapshot has a base64 image, fixture url and title', async () => {

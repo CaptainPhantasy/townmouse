@@ -1506,6 +1506,7 @@ function createBrowserPane(pane) {
       '</div>' +
       '<div class="browser-view">' +
         '<img class="browser-image" alt="" draggable="false" tabindex="0">' +
+        '<button type="button" class="pane-reopen" hidden>Reopen browser</button>' +
       '</div>' +
       '<form class="browser-type-row" novalidate>' +
         '<input class="browser-type-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type into the page" aria-label="Type into the page">' +
@@ -1526,6 +1527,7 @@ function createBrowserPane(pane) {
     typeInput: root.querySelector('.browser-type-input'),
     view: root.querySelector('.browser-view'),
     image: root.querySelector('.browser-image'),
+    reopenButton: root.querySelector('.pane-reopen'),
     backButton: root.querySelector('.browser-back'),
     forwardButton: root.querySelector('.browser-forward'),
     reloadButton: root.querySelector('.browser-reload'),
@@ -1579,6 +1581,17 @@ function createBrowserPane(pane) {
   record.image.addEventListener('click', (event) => {
     record.image.focus({ preventScroll: true });
     void onBrowserImageClick(record, event);
+  });
+  record.reopenButton.addEventListener('click', async () => {
+    try {
+      await api(`/panes/${record.id}/browser/reopen`, { method: 'POST' });
+      record.lastViewport = '';
+      record.reopenButton.hidden = true;
+      record.root.classList.remove('is-offline');
+      requestSnapshot(record, 120);
+    } catch (error) {
+      showNotice(error.message || 'Could not reopen the browser.', 'error');
+    }
   });
   record.image.addEventListener('keydown', (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -1682,7 +1695,10 @@ async function pollSnapshot(record) {
     if (record.disposed) return;
     applySnapshot(record, snapshot);
   } catch (error) {
-    if (!record.disposed) record.root.classList.add('is-offline');
+    if (!record.disposed) {
+      record.root.classList.add('is-offline');
+      record.reopenButton.hidden = false;
+    }
   } finally {
     record.snapshotBusy = false;
     if (!record.disposed) requestSnapshot(record, record.snapshotWanted ? 120 : SNAPSHOT_POLL_MS);
@@ -1725,6 +1741,7 @@ function applySnapshot(record, snapshot) {
     hidePageDialog();
   }
   record.root.classList.remove('is-offline');
+  record.reopenButton.hidden = true;
 }
 
 async function onBrowserImageClick(record, event) {

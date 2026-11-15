@@ -1108,3 +1108,20 @@ button { cursor: pointer; }
 }
 #browser-control-select[hidden],
 #browser-control-value[hidden] { display: none; }
+
+.browser-view { position: relative; }
+.pane-reopen {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  min-height: 44px;
+  padding: 0 16px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--mint);
+  border-radius: 8px;
+  background: rgba(8, 13, 10, 0.92);
+  color: var(--mint);
+  font-size: 13px;
+}
+.pane-reopen[hidden] { display: none; }

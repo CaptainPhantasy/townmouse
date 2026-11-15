@@ -480,6 +480,18 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!['click', 'type', 'key', 'scroll', 'selectAt', 'setValueAt'].includes(req.body.action)) scheduleSave();
     res.json({ ...serializePane(pane), control: browser.control || null });
   }));
+  app.post('/api/panes/panes/:id/browser/reopen', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const previous = pane.browserId;
+    const browser = await browserWorkspace.create('agent', req.body.url);
+    pane.browserId = browser.id;
+    pane.url = browser.url && browser.url !== 'about:blank' ? browser.url : 'about:blank';
+    if (!pane.titleLocked) pane.title = browser.title || 'Browser';
+    if (previous) await browserWorkspace.close(previous).catch(() => {});
+    scheduleSave();
+    res.json(serializePane(pane));
+  }));
   app.post('/api/panes/panes/:id/browser/dialog', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }

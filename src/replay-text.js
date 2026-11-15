@@ -62,6 +62,15 @@ function replayTranscript(raw, segments = 120) {
     while (rows.length <= index) rows.push([]);
   };
 
+  // Erasing either half of a wide glyph clears the whole glyph, while
+  // preserving the remaining cell's blank column for subsequent writes.
+  const eraseCells = (start, end) => {
+    const line = rows[row];
+    if (start > 0 && line[start] === '') line[start - 1] = ' ';
+    if (end < line.length && line[end] === '') line[end] = ' ';
+    line.fill(' ', start, Math.min(end, line.length));
+  };
+
   let width = Math.max(2, Math.min(400, Math.floor(widths[0].cols)));
 
   const put = (value, cells = 1) => {
@@ -99,7 +108,36 @@ function replayTranscript(raw, segments = 120) {
       const osc = rest.match(/^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/);
       if (osc) { index += osc[0].length - 1; continue; }
       const csi = rest.match(/^\x1b\[[0-?]*[ -/]*[@-~]/);
-      if (csi) { index += csi[0].length - 1; continue; }
+      if (csi) {
+        const command = csi[0].slice(-1);
+        const parameters = csi[0].slice(2, -1).split(';').map(Number);
+        const mode = parameters[0] || 0;
+        const amount = Math.max(1, mode);
+        ensure(row);
+        if (command === 'K') {
+          if (mode === 0) { eraseCells(col, rows[row].length); rows[row].splice(col); }
+          else if (mode === 1) eraseCells(0, col + 1);
+          else if (mode === 2) rows[row] = [];
+        } else if (command === 'J') {
+          if (mode === 0) { eraseCells(col, rows[row].length); rows[row].splice(col); rows.splice(row + 1); }
+          else if (mode === 1) { for (let r = 0; r < row; r++) rows[r] = []; eraseCells(0, col + 1); }
+          else if (mode === 2) { for (let r = 0; r < rows.length; r++) rows[r] = []; }
+        } else if (command === 'X') {
+          eraseCells(col, col + amount);
+        } else if (command === 'P') {
+          eraseCells(col, col + amount);
+          rows[row].splice(col, amount);
+        } else if (command === 'G') {
+          col = Math.min(width - 1, amount - 1);
+        } else if (command === 'C') {
+          col = Math.min(width - 1, col + amount);
+        } else if (command === 'D') {
+          col = Math.max(0, col - amount);
+        }
+        if ('KJXPGCD'.includes(command)) wrapPending = false;
+        index += csi[0].length - 1;
+        continue;
+      }
       const two = rest.match(/^\x1b[@-_]/);
       if (two) { index += two[0].length - 1; continue; }
       continue;

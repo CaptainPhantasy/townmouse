@@ -1,3 +1,5 @@
+import { decodeClipboardText } from '../clipboard-text.mjs';
+
 /**
  * OSC bridge — intercepts xterm OSC sequences that remote applications use to
  * control the local client. Supports:
@@ -22,7 +24,7 @@ export function init(T1) {
       let m;
       while ((m = osc52Re.exec(data)) !== null) {
         try {
-          const text = atob(m[1]);
+          const text = decodeClipboardText(m[1]);
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).catch(() => {});
           }

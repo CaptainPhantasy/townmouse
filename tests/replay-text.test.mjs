@@ -46,3 +46,19 @@ test('replayTranscript keeps a wrapped command and its output in order', () => {
   assert.ok(flat.split(marker).length - 1 >= 2, flat);
   assert.ok(text.indexOf('echo') < text.lastIndexOf(marker));
 });
+
+test('replay erases the old suffix before shorter progress output', () => {
+  assert.equal(replayTranscript('progress 100%\r\x1b[Kdone\r\n', 80), 'done\n');
+});
+test('replay honors whole-line and start-of-line erasure without moving the cursor', () => {
+  assert.equal(replayTranscript('abcdef\r\x1b[2Kdone\r\n', 80), 'done\n');
+  assert.equal(replayTranscript('abcdef\r\x1b[3G\x1b[1KZ\r\n', 80), '  Zdef\n');
+});
+test('replay erase display drops stale following rows', () => {
+  assert.equal(replayTranscript('obsolete\r\x1b[Jnew\r\n', 80), 'new\n');
+});
+
+test('erase at either cell of a wide glyph does not leave half a glyph', () => {
+  assert.equal(replayTranscript('😀X\r\x1b[2G\x1b[KZ\r\n', 80), ' Z\n');
+  assert.equal(replayTranscript('😀X\r\x1b[1KZ\r\n', 80), 'Z X\n');
+});

@@ -46,3 +46,10 @@ test('replayTranscript keeps a wrapped command and its output in order', () => {
   assert.ok(flat.split(marker).length - 1 >= 2, flat);
   assert.ok(text.indexOf('echo') < text.lastIndexOf(marker));
 });
+
+test('replayTranscript applies erase-line sequences before stripping them', () => {
+  assert.equal(replayTranscript('progress 100%\r\x1b[Kdone\r\n', 80), 'done\n');
+  assert.equal(replayTranscript('abcdef\x1b[2K\rxy\r\n', 80), 'xy\n');
+  assert.equal(replayTranscript('abcdef\x1b[1K\rxy\r\n', 80), 'xy\n');
+  assert.equal(replayTranscript('keep\r\nabcdef\r\x1b[Jz\r\n', 80), 'keep\nz\n');
+});

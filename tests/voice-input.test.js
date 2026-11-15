@@ -120,6 +120,32 @@ async function run() {
     const tooLarge = await waitForMsg(ws2, (m) => m.type === 'voice-error');
     assertLog(tooLarge.code === 'VOICE_CHUNK_TOO_LARGE', `oversized chunk rejected (${tooLarge.code})`);
     ws2.close();
+
+    // Two windows on one shell: only the recording window gets the reply,
+    // otherwise each window would type the transcript into the shared PTY.
+    const owner = await openWs();
+    owner.send(JSON.stringify({ type: 'shell', cols: 80, rows: 24 }));
+    const shell = await waitForMsg(owner, (m) => m.type === 'ready');
+    const recorder = await openWs();
+    recorder.send(JSON.stringify({ type: 'resume', sessionId: shell.sessionId, cols: 80, rows: 24 }));
+    await waitForMsg(recorder, (m) => m.type === 'ready' && m.resumed);
+    const ownerVoice = [];
+    owner.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (String(msg.type || '').startsWith('voice-')) ownerVoice.push(msg.type);
+      } catch (_) { /* ignore */ }
+    });
+    recorder.send(JSON.stringify({ type: 'voice-start', mimeType: 'audio/webm' }));
+    await waitForMsg(recorder, (m) => m.type === 'voice-ready');
+    recorder.send(JSON.stringify({ type: 'voice-chunk', b64: Buffer.from('fake audio').toString('base64') }));
+    recorder.send(JSON.stringify({ type: 'voice-end' }));
+    const shared = await waitForMsg(recorder, (m) => m.type === 'voice-transcript');
+    assertLog(shared.text === 'git status.', 'recording window receives its transcript');
+    await new Promise((r) => setTimeout(r, 500));
+    assertLog(ownerVoice.length === 0, `other window receives no voice messages (${ownerVoice.join(',') || 'none'})`);
+    owner.close();
+    recorder.close();
   } catch (err) {
     console.error('\n✗ ' + (err && err.message ? err.message : err));
     if (log.trim()) console.error('--- server log ---\n' + log.trim());

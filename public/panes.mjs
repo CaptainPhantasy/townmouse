@@ -992,11 +992,15 @@ function rebuild(tab) {
     // cursors and local scrollback survive in the maps below.
     teardownPanes();
     els.grid.replaceChildren();
+    // The maximized pane belonged to the old tab; leaving the class would
+    // hide every pane of the new one.
+    els.grid.classList.remove('is-maximized');
     currentTabId = nextTabId;
   } else {
     for (const [id, record] of [...records]) {
       const pane = panes.find((candidate) => candidate.id === id);
       if (!pane || pane.kind !== record.kind) {
+        if (record.root.classList.contains('is-maximized')) els.grid.classList.remove('is-maximized');
         disposeRecord(record);
         records.delete(id);
         record.root.remove();
@@ -1258,7 +1262,9 @@ function mountTerminal(record) {
       const payload = String(data).split(';')[1] || '';
       if (payload && payload !== '?') {
         try {
-          const text = atob(payload);
+          // atob yields one char per byte; decode those bytes as UTF-8.
+          const bytes = Uint8Array.from(atob(payload), (ch) => ch.charCodeAt(0));
+          const text = new TextDecoder().decode(bytes);
           if (text) navigator.clipboard?.writeText(text).catch(() => {});
         } catch (_) { /* malformed clipboard payload */ }
       }

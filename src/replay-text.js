@@ -98,8 +98,27 @@ function replayTranscript(raw, segments = 120) {
       const rest = source.slice(index);
       const osc = rest.match(/^\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/);
       if (osc) { index += osc[0].length - 1; continue; }
-      const csi = rest.match(/^\x1b\[[0-?]*[ -/]*[@-~]/);
-      if (csi) { index += csi[0].length - 1; continue; }
+      const csi = rest.match(/^\x1b\[([0-?]*)[ -/]*([@-~])/);
+      if (csi) {
+        index += csi[0].length - 1;
+        const final = csi[2];
+        const mode = Number(csi[1].split(';')[0]) || 0;
+        const privateMode = /[<=>?]/.test(csi[1]);
+        // Apply erases so text the terminal already removed (progress
+        // redraws, readline edits) does not resurface in the replay. Screen
+        // clears above the cursor (ED 1/2/3) are left alone: a terminal keeps
+        // that text in scrollback, and the replay is that scrollback.
+        if (!privateMode && (final === 'K' || (final === 'J' && mode === 0))) {
+          wrapPending = false;
+          ensure(row);
+          const line = rows[row];
+          if (final === 'J' || mode === 0) line.length = Math.min(line.length, col);
+          else if (mode === 1) for (let c = 0; c <= col && c < line.length; c++) line[c] = ' ';
+          else line.length = 0;
+          if (final === 'J') rows.length = row + 1;
+        }
+        continue;
+      }
       const two = rest.match(/^\x1b[@-_]/);
       if (two) { index += two[0].length - 1; continue; }
       continue;

@@ -419,6 +419,47 @@ async function dispatchFile(page, selector, name, type, eventName) {
     });
     assert.strictEqual(switchedHost.shown, switchedHost.title, 'the bottom bar should follow the active tab');
 
+    // OSC 52 clipboard writes carry UTF-8 bytes; non-ASCII must survive.
+    await page.evaluate(() => {
+      window.__clip = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (text) => { window.__clip.push(text); } }
+      });
+    });
+    const clipText = 'café 😀';
+    const clipB64 = Buffer.from(clipText, 'utf8').toString('base64');
+    await page.focus('.pane-terminal .xterm-helper-textarea');
+    await page.keyboard.type(`printf '\\033]52;c;${clipB64}\\007'\n`);
+    await page.waitForFunction('window.__clip.length > 0', { timeout: 10000 });
+    const clipped = await page.evaluate(() => window.__clip[0]);
+    assert.strictEqual(clipped, clipText, `OSC 52 should decode UTF-8 (${JSON.stringify(clipped)})`);
+
+    // A maximized pane must not leave the next tab's panes hidden.
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', altKey: true, bubbles: true, cancelable: true })));
+    await page.waitForFunction('document.querySelector("#pane-grid").classList.contains("is-maximized")', { timeout: 5000 });
+    const otherTabId = await page.evaluate((tabId) => window.__panes.state().tabs.find((tab) => tab.id !== tabId).id, firstTabId);
+    await page.evaluate(() => {
+      const tab = Array.from(document.querySelectorAll('#tabstrip [role="tab"]')).find((button) => button.getAttribute('aria-selected') !== 'true');
+      tab.click();
+    });
+    await page.waitForFunction((tabId) => window.__panes.state().activeTabId === tabId, { timeout: 10000 }, otherTabId);
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-add-terminal', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-add-terminal').click());
+    await page.waitForSelector('#pane-grid > .pane', { timeout: 10000 });
+    const afterSwitch = await page.evaluate(() => ({
+      maximized: document.querySelector('#pane-grid').classList.contains('is-maximized'),
+      visible: Array.from(document.querySelectorAll('#pane-grid > .pane')).filter((pane) => getComputedStyle(pane).display !== 'none').length
+    }));
+    assert(!afterSwitch.maximized, 'switching tabs should clear maximization');
+    assert(afterSwitch.visible > 0, `the new tab should show its panes (${JSON.stringify(afterSwitch)})`);
+    await page.evaluate(() => {
+      const tab = Array.from(document.querySelectorAll('#tabstrip [role="tab"]')).find((button) => button.getAttribute('aria-selected') !== 'true');
+      tab.click();
+    });
+    await page.waitForFunction((tabId) => window.__panes.state().activeTabId === tabId, { timeout: 10000 }, firstTabId);
+
     // Desktop: two panes get a draggable, keyboard-resizable divider.
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false });
     await page.evaluate(() => document.querySelector('#menu-button').click());

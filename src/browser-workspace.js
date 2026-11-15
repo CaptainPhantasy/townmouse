@@ -12,7 +12,7 @@ function installBrowserWorkspace(app) {
     if (!browserPromise) {
       browserPromise = puppeteer.launch({
         headless: true,
-        args:['--disable-gpu','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'],
+        args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows'],
         ...(process.env.TERMINALONE_CHROME ? { executablePath: process.env.TERMINALONE_CHROME } : {}),
       }).then((browser) => {
         browser.on('disconnected', () => { browserPromise = null; });

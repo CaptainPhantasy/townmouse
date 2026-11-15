@@ -95,3 +95,10 @@ The archival tests are `codex-fixes-test.cjs`, `input-batch-test.cjs`, and
 - Mobile CSS: 44px pane header close targets, 16px address/type inputs (prevents
   iOS focus zoom), and safe-area padding on the pane app/bar.
 - Archival test: `pane-text-test.cjs`.
+
+## CI Chromium pass — 2026-11-15
+
+GitHub Actions could not launch Chromium (`zygote_host_impl_linux` fatal) because
+the server engine omitted container-safe flags. The browser engine now launches
+with `--no-sandbox`, `--disable-setuid-sandbox`, and `--disable-dev-shm-usage`;
+the pane API suite is 16/16 locally.

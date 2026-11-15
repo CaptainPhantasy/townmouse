@@ -696,6 +696,19 @@ export async function init(T1) {
       if (document.activeElement !== $('browser-url')) $('browser-url').value = blank ? '' : snap.url;
       updateBrowserState();
       renderTabs();
+    } catch (error) {
+      if (/no longer exists|404/i.test(error.message || '')) {
+        tabs = tabs.filter((candidate) => candidate.id !== id);
+        if (current && current.id === id) {
+          current = null;
+          hide();
+        } else {
+          renderTabs();
+        }
+        setMessage('Browser tab closed; it was removed from the sidebar.');
+      } else {
+        setMessage(error.message || 'Browser snapshot failed.');
+      }
     } finally {
       busy = false;
     }

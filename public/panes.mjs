@@ -406,6 +406,10 @@ function disposeRecord(record) {
   if (!record || record.disposed) return;
   record.disposed = true;
   if (record.readTimer) { clearTimeout(record.readTimer); record.readTimer = 0; }
+  if (record.streamController) {
+    try { record.streamController.abort(); } catch (_) { /* already ended */ }
+    record.streamController = null;
+  }
   if (record.inputTimer) { clearTimeout(record.inputTimer); record.inputTimer = 0; }
   if (record.snapshotTimer) { clearTimeout(record.snapshotTimer); record.snapshotTimer = 0; }
   if (record.wheelTimer) { clearTimeout(record.wheelTimer); record.wheelTimer = 0; }
@@ -451,6 +455,7 @@ function createTerminalPane(pane) {
     pendingInput: '',
     inputTimer: 0,
     inputBusy: false,
+    streamController: null,
     offset: cursors.get(pane.id) || 0,
     lastResize: '',
     exited: false,
@@ -496,6 +501,14 @@ function mountTerminal(record) {
   }
   record.term = term;
   record.fit = fit;
+  // Terminal copy: Cmd/Ctrl+C with a selection copies; with no selection it
+  // still reaches the PTY as SIGINT, matching terminal expectations.
+  term.attachCustomKeyEventHandler((event) => {
+    const mod = event.metaKey || event.ctrlKey;
+    if (!mod || event.key.toLowerCase() !== 'c' || !term.hasSelection()) return true;
+    try { navigator.clipboard?.writeText(term.getSelection()); } catch (_) { /* clipboard denied */ }
+    return false;
+  });
   term.onData((data) => {
     if (!record.disposed && data) sendTerminalInput(record, data);
   });
@@ -504,7 +517,7 @@ function mountTerminal(record) {
   });
   const history = histories.get(record.id);
   if (history) term.write(history);
-  startTerminalRead(record);
+  void startTerminalStream(record);
   requestAnimationFrame(() => {
     if (record.disposed || !record.term) return;
     safeFit(record);
@@ -579,6 +592,54 @@ async function flushTerminalInput(record) {
       }, 12);
     }
   }
+}
+
+async function startTerminalStream(record) {
+  if (record.disposed || !record.term) return;
+  if (record.streamController) {
+    try { record.streamController.abort(); } catch (_) { /* already ended */ }
+  }
+  const controller = new AbortController();
+  record.streamController = controller;
+  try {
+    const response = await fetch(`/api/panes/panes/${record.id}/stream?since=${record.offset || 0}`, {
+      headers: { 'X-Townmouse-Token': token },
+      signal: controller.signal,
+      cache: 'no-store'
+    });
+    if (!response.ok || !response.body) throw new Error(`Output stream failed (${response.status}).`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (!record.disposed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const event = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const line = event.split('\n').find((entry) => entry.startsWith('data: '));
+        if (!line) continue;
+        let payload = null;
+        try { payload = JSON.parse(line.slice(6)); } catch (_) { continue; }
+        if (!record.term || record.disposed) continue;
+        if (payload.data) {
+          record.term.write(payload.data);
+          rememberOutput(record.id, payload.data);
+        }
+        if (Number.isFinite(Number(payload.offset))) {
+          record.offset = Number(payload.offset);
+          cursors.set(record.id, record.offset);
+        }
+        if (payload.exited && !record.exited) markTerminalExited(record);
+      }
+    }
+  } catch (error) {
+    if (record.disposed || controller.signal.aborted) return;
+  }
+  // A dropped stream is not a dead terminal: fall back to polling.
+  if (!record.disposed) startTerminalRead(record);
 }
 
 function startTerminalRead(record) {

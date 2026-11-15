@@ -288,32 +288,41 @@ export async function init(T1) {
     const cwd = cwdMatch ? cwdMatch[1].trim() : '';
     const base = cwd.split('/').filter(Boolean).pop();
     const idMatch = session.match(/session\s+([a-f0-9-]+)/i);
+    const fullId = $('sessionInfo')?.dataset.sessionId || '';
+    const sessionId = fullId || (idMatch ? idMatch[1] : '');
     sessionPill.textContent = base ? 'Shell · ' + base : 'Shell';
-    sessionPill.title = idMatch ? 'Session ' + idMatch[1] : 'Shell session';
+    sessionPill.title = sessionId ? 'Session ' + sessionId : 'Shell session';
     sessionPill.setAttribute('aria-label', 'Sessions. ' + (base ? 'Shell · ' + base : 'Shell'));
     sessionPill.hidden = false;
-    if (idMatch) {
-      const id = idMatch[1];
+    if (sessionId) {
       const names = window.__terminalOne?.sessionNames?.() || {};
-      if (!names[id]) window.__terminalOne?.renameSession?.(id, id.slice(0, 8));
+      if (!names[sessionId]) window.__terminalOne?.renameSession?.(sessionId, sessionId.slice(0, 8));
     }
   }
 
-  function renderSessionMenu() {
+  async function renderSessionMenu() {
     const list = $('session-menu-list');
     list.innerHTML = '';
-    const current = (($('sessionInfo')?.textContent || '').match(/session\s+([a-f0-9-]+)/i) || [])[1] || '';
+    const current = $('sessionInfo')?.dataset.sessionId || (($('sessionInfo')?.textContent || '').match(/session\s+([a-f0-9-]+)/i) || [])[1] || '';
     const names = window.__terminalOne?.sessionNames?.() || {};
-    const ids = new Set(Object.keys(names));
-    if (current) ids.add(current);
+    const sessions = new Map();
+    try {
+      const response = await fetch('/admin/sessions', { cache: 'no-store' });
+      if (response.ok) {
+        const body = await response.json();
+        for (const session of body.sessions || []) sessions.set(session.id, session);
+      }
+    } catch (_) { /* the current session still renders below */ }
+    if (current) sessions.set(current, sessions.get(current) || { id: current });
     let added = 0;
-    for (const id of ids) {
+    for (const [id, info] of sessions) {
       const name = names[id] || id.slice(0, 8);
       const active = id === current;
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'drawer-row' + (active ? ' active' : '');
-      row.innerHTML = icon('session') + '<span class="drawer-row-copy"><span class="drawer-row-name">' + escapeHtml(name) + '</span><span class="drawer-row-desc">' + (active ? 'Current session' : 'Switch to this session') + '</span></span>';
+      const detail = active ? 'Current session' : (info.resumable === false ? 'Attached shell' : 'Switch to this session');
+      row.innerHTML = icon('session') + '<span class="drawer-row-copy"><span class="drawer-row-name">' + escapeHtml(name) + '</span><span class="drawer-row-desc">' + detail + '</span></span>';
       row.onclick = () => {
         sessionMenu.close();
         if (!active) window.__terminalOne?.switchSession?.(id);
@@ -330,8 +339,7 @@ export async function init(T1) {
   }
 
   sessionPill.addEventListener('click', () => {
-    renderSessionMenu();
-    sessionMenu.showModal();
+    void renderSessionMenu().finally(() => sessionMenu.showModal());
   });
   $('session-menu-close').onclick = () => sessionMenu.close();
   $('session-menu-new').onclick = () => {

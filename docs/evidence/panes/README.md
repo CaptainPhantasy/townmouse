@@ -44,3 +44,23 @@ Typing `echo BATCH_OK` and pressing Enter (13 keystrokes) produced **one**
 POST to `/api/panes/panes/:id/input`, and the shell executed it correctly.
 The panes UI now buffers keystrokes for 12 ms and flushes one ordered request
 instead of one HTTP round-trip per keystroke.
+
+## Codex review fixes — 2026-11-15
+
+- JSON attachment uploads now parse before the global JSON middleware; an 11-byte
+  `sample.json` returned 200 and the file existed on disk.
+- Untrusted attachment documents are served with
+  `Content-Security-Policy: sandbox; default-src 'none'; …`, so HTML/SVG cannot
+  read the workspace token or call the pane API as a same-origin document.
+- Session menu uses full UUIDs from `/admin/sessions` and `#sessionInfo`'s
+  `data-session-id`; switching from `02209129…` back to `66b0e80d…` reconnected
+  to the original shell instead of starting a new one.
+- The `panes` CLI preserves trailing flags: `pane run <id> "printf ... --runInBand"`
+  executed with `--runInBand` intact.
+- Pane output uses one SSE stream per terminal (0 `/read` polls during the test)
+  and input coalescing still sends one POST for 13 keystrokes.
+- Package dry-run includes `bin/townmouse`, `scripts/panes`, `public/panes.mjs`,
+  and `LICENSE`.
+
+The archival tests are `codex-fixes-test.cjs`, `input-batch-test.cjs`, and
+`panes-attach-test.cjs`.

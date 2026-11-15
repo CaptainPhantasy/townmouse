@@ -14,6 +14,11 @@ function installAttachments(app) {
     setHeaders: (res) => {
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Attachments are untrusted URL-backed documents. Sandbox them into an
+      // opaque origin so HTML/SVG cannot read the workspace token or call the
+      // pane-control API from the Townmouse origin.
+      res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'unsafe-inline'");
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     }
   }));
 

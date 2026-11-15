@@ -7,7 +7,7 @@
  <meta name="mobile-web-app-capable" content="yes">
  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
  <meta name="apple-mobile-web-app-title" content="Townmouse">
- <meta name="description" content="Townmouse is a terminal and agent browser workspace built on TerminalOne.">
+ <meta name="description" content="Townmouse is a terminal and agent browser workspace. Its embedded TerminalOne engine supplies the PTY.">
  <title>Townmouse</title>
  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
  <link rel="manifest" href="/manifest.json">
@@ -742,7 +742,12 @@
   }
 
   function setFooter(text) { $('#footerMeta').textContent = text; }
-  function setSessionInfo(text) { $('#sessionInfo').textContent = text; }
+  function setSessionInfo(text, sessionId) {
+    const el = $('#sessionInfo');
+    el.textContent = text;
+    if (sessionId) el.dataset.sessionId = sessionId;
+    else if (!text) delete el.dataset.sessionId;
+  }
 
   function scheduleFit(delay = 0) {
    if (fitTimer) clearTimeout(fitTimer);
@@ -1122,7 +1127,7 @@
       updateStatus('Connected', 'connected');
       setFooter(`${msg.command} · ${msg.cwd}`);
      }
-     setSessionInfo(`session ${msg.sessionId.slice(0, 8)}`);
+     setSessionInfo(`session ${msg.sessionId.slice(0, 8)}`, msg.sessionId);
      window.dispatchEvent(new CustomEvent('t1:session-ready', {
       detail: { command: msg.command, cwd: msg.cwd, resumed: !!msg.resumed }
      }));

@@ -815,11 +815,13 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
   next();
 });
+// Attachments must be mounted before the global JSON parser: JSON files are
+// valid uploads and the raw parser, not express.json, must consume their body.
+require('./attachments').installAttachments(app);
 app.use(express.json({ limit: '64kb' }));
 const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
 const closeBrowsers = () => browserWorkspace.closeAll();
 const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
-require('./attachments').installAttachments(app);
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs
@@ -918,5 +920,5 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 server.listen(PORT, HOST, () => {
-  info(null, `TerminalOne running at http://localhost:${PORT}`, { maxSessions: MAX_CONCURRENT_SESSIONS });
+  info(null, `Townmouse running at http://localhost:${PORT}`, { maxSessions: MAX_CONCURRENT_SESSIONS });
 });

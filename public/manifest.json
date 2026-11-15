@@ -1,7 +1,7 @@
 {
   "name": "Townmouse",
   "short_name": "Townmouse",
-  "description": "A terminal and agent browser workspace built on TerminalOne.",
+  "description": "Townmouse is a terminal and agent browser workspace. Its embedded TerminalOne engine supplies the PTY.",
   "icons": [
     {
       "src": "icon-192.png",

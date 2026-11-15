@@ -70,7 +70,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const pane = {
       id: id('p'), tabId, kind: kind === 'browser' ? 'browser' : 'terminal',
       title: opts.title || '', titleLocked: Boolean(opts.title), url: '', browserId: null, pty: null,
-      buffer: '', bufferStart: 0, totalOffset: 0,
+      buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
       cols: 100, rows: 30, exited: false, createdAt: Date.now()
     };
     if (pane.kind === 'browser') {
@@ -109,6 +109,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
         pane.totalOffset += data.length;
         if (pane.buffer.length > MAX_BUFFER) pane.buffer = pane.buffer.slice(-MAX_BUFFER);
         pane.bufferStart = pane.totalOffset - pane.buffer.length;
+        const event = `data: ${JSON.stringify({ data, offset: pane.totalOffset })}\n\n`;
+        for (const stream of pane.streams) {
+          try { stream.write(event); } catch (_) { pane.streams.delete(stream); }
+        }
       });
       child.onExit(() => { pane.exited = true; });
     }
@@ -162,6 +166,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const tab = tabOf(pane);
     if (tab) tab.panes = tab.panes.filter((candidate) => candidate.id !== pane.id);
     panes.delete(pane.id);
+    for (const stream of pane.streams) { try { stream.end(); } catch (_) { /* already closed */ } }
+    pane.streams.clear();
     killPty(pane);
     if (pane.kind === 'browser' && pane.browserId) browserWorkspace.close(pane.browserId).catch(() => {});
     if (activePaneId === pane.id) {
@@ -237,6 +243,36 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!pane.titleLocked) pane.title = snap.title || pane.title;
     res.json(snap);
   }));
+  app.get('/api/panes/panes/:id/stream', auth, (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') {
+      res.status(400).json({ error: 'Terminal pane required.' });
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
+    let since = Math.max(0, Number(req.query.since) || 0);
+    if (since < pane.bufferStart) since = pane.bufferStart;
+    res.write(`data: ${JSON.stringify({ data: pane.buffer.slice(since - pane.bufferStart), offset: pane.totalOffset, exited: pane.exited })}\n\n`);
+    pane.streams.add(res);
+    const ping = setInterval(() => {
+      try { res.write(': ping\n\n'); } catch (_) { /* client vanished */ }
+    }, 15000);
+    ping.unref?.();
+    let closed = false;
+    const end = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(ping);
+      pane.streams.delete(res);
+    };
+    req.on('close', end);
+    res.on('close', end);
+  });
   app.get('/api/panes/panes/:id/read', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }

@@ -43,6 +43,17 @@ function print(value) { console.log(JSON.stringify(value, null, 2)); }
 
 async function main() {
   const [scope, action, ...rest] = process.argv.slice(2);
+  if (scope === 'pane' && (action === 'run' || action === 'input')) {
+    const paneId = rest[0];
+    if (!paneId) throw new Error(`pane ${action} requires a pane id.`);
+    const payload = rest.slice(1).join(' ');
+    if (action === 'run') {
+      print(await call('POST', `/panes/${paneId}/command`, { command: payload }));
+    } else {
+      print(await call('POST', `/panes/${paneId}/input`, { data: payload }));
+    }
+    return;
+  }
   const a = args(rest);
   if (!scope || scope === 'help' || scope === '--help') {
     console.log(`Usage:

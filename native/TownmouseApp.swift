@@ -4,14 +4,14 @@ import WebKit
 
 @main
 @MainActor
-final class TerminalOneApp: NSObject, NSApplicationDelegate {
+final class TownmouseApp: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
-    private let serviceURL = URL(string: ProcessInfo.processInfo.environment["TERMINALONE_URL"] ?? "http://127.0.0.1:11001")!
+    private let serviceURL = URL(string: ProcessInfo.processInfo.environment["TOWNMOUSE_URL"] ?? ProcessInfo.processInfo.environment["TERMINALONE_URL"] ?? "http://127.0.0.1:11001")!
 
     static func main() {
         let app = NSApplication.shared
-        let delegate = TerminalOneApp()
+        let delegate = TownmouseApp()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         app.run()
@@ -27,8 +27,8 @@ final class TerminalOneApp: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "TerminalOne"
-        window.setFrameAutosaveName("TerminalOneMainWindow")
+        window.title = "Townmouse"
+        window.setFrameAutosaveName("TownmouseMainWindow")
         window.contentView = webView
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -98,7 +98,7 @@ final class TerminalOneApp: NSObject, NSApplicationDelegate {
 
     private func presentStartupError() {
         let alert = NSAlert()
-        alert.messageText = "TerminalOne could not start"
+        alert.messageText = "Townmouse could not start"
         alert.informativeText = "Run ‘t1 doctor’ in a terminal for the exact cause and repair command."
         alert.alertStyle = .critical
         alert.addButton(withTitle: "OK")

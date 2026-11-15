@@ -300,18 +300,21 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `public/index.html:5,34-41,62-70,132-158`; `public/panes.css:59-65,263-271,399-409`; grep for `visualViewport` returns no matches.  
 
 - [ ] **P1-38 - iOS auto-zooms the whole app when address, type, or settings fields receive focus**
+  *Progress 2026-11-15:* a coarse-pointer rule raises workspace, drawer, settings, and pane text fields/selects to 16px. Still needs iPhone Safari/standalone verification.
   *Expectation:* Focusing any input should not change page zoom or crop the app chrome.  
   *Current:* Text fields use 11.5-14px text: `.address-input` is 11.5px (`public/panes.css:244-255`), `.browser-type-input` is 12px (`:293-303`), workspace inputs/selects are 14px (`public/workspace.css:256-265`), and settings selects/textareas are 13px/12px (`public/index.html:271-281,287-299`). iOS Safari zooms the layout when a text field under 16px is focused and leaves it zoomed after blur.  
   *Fix:* Set a 16px minimum for text inputs, selects, and textareas under `(pointer: coarse)`, keeping compact desktop sizing. Verify focus on iPhone Safari and in standalone PWA.  
   *Evidence:* `public/panes.css:244-255,293-303`; `public/workspace.css:256-265`; `public/index.html:271-281,287-299`.  
 
 - [ ] **P1-39 - Panes workspace draws under the notch and rounded corners in landscape**
+  *Progress 2026-11-15:* `.panes-app` now pads with the top/right/left safe-area insets; the bottom bar and sheets already handle the bottom. Still needs a notched-device landscape check.
   *Expectation:* Pane headers, close buttons, and terminal text stay inside the safe area on notched iPhones and rounded iPads.  
   *Current:* `panes.html` opts into `viewport-fit=cover` (`:5`), but `.panes-app` is fixed `inset:0` (`public/panes.css:59-65`) and `.pane-grid` gets only 6px padding (`:76-84`). `env(safe-area-inset-*)` is used only for the bottom bar, sheets, and notice (`:406,505,686`); there is no top/left/right inset. On iPhone landscape the 47pt side inset overlaps the pane header, close button, and first terminal column.  
   *Fix:* Apply `env(safe-area-inset-top/right/bottom/left)` to `.panes-app`/`.pane-grid` and the bar sides (`max()` for bottom), and test with non-zero insets in landscape and standalone.  
   *Evidence:* `public/panes.html:5`; `public/panes.css:59-65,76-84,406,505,686`.  
 
-- [ ] **P1-40 - iPhone landscape uses the tablet rail: Tools is clipped and chrome consumes most of the height**
+- [x] **P1-40 - iPhone landscape uses the tablet rail: Tools is clipped and chrome consumes most of the height**
+  *Resolved 2026-11-15:* the main rail compacts in short landscape (brand/status/labels hidden, 44px buttons), and the responsive suite asserts every nav/keybar control stays inside the 932x430 viewport. The panes page uses its own bottom bar and key row, not the tablet rail.
   *Expectation:* Rotating to landscape keeps every navigation control reachable and gives the terminal most of the 393px height, matching the existing content-first landscape goal.  
   *Current:* At 852x393 the 700-1099px tablet breakpoint applies: body padding drops to 12px with no left/right safe area (`public/workspace.css:659`), and the 72px rail holds a 64px brand plus five 62px buttons (`:660-670`). Measured at 852x393: `#workspace-tools` spans top 368 to bottom 430 versus a 393px viewport, so Tools is 37px clipped. The iPhone key bar still renders all groups because phone-only hiding is `max-width:699` (`:759-760`), the "Hide bars" FAB is explicitly hidden in workspace mode (`:75`), and auto-hide is also `max-width:699` (`public/workspace.mjs:929`); the result is roughly 61px header + suggestions row + two-row key bar + footer, leaving about 113px of terminal.  
   *Fix:* Make the rail safe-area-aware and compact/scrollable in short landscape; select the compact key bar by device rather than width; enable the landscape-focus/auto-hide logic for coarse-pointer devices with short viewport height; add an iPhone-landscape assertion for every nav button's bottom edge.  

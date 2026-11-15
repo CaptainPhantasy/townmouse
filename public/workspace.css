@@ -1109,3 +1109,18 @@ body.split-dragging { user-select: none; }
     bottom: calc(env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
   }
 }
+
+/* iOS zooms the whole layout when a focused field is under 16px. */
+@media (pointer: coarse) {
+  body.workspace input,
+  body.workspace select,
+  body.workspace textarea,
+  .workspace-drawer input,
+  .workspace-drawer select,
+  .workspace-drawer textarea,
+  #settingsModal input,
+  #settingsModal select,
+  #settingsModal textarea {
+    font-size: 16px;
+  }
+}

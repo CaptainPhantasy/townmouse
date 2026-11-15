@@ -66,15 +66,18 @@ and stays small enough never to compete with the product brand.
 **Desktop (1440×900 and wider).** A 208px sidebar holds the brand, Terminal,
 Browser, the tab list, New tab, Agent, Tools, and the real local server
 address. The terminal fills the main frame. Opening a browser splits the frame
-horizontally with a 60px header and a 30px footer. Browser tabs live in the
-sidebar; sharing controls are always visible in the browser surface.
+horizontally with a 60px header and a 30px footer. The 12px separator between
+terminal and browser is draggable left and right; the terminal keeps at least
+320px and the browser at least 420px. Browser tabs live in the sidebar; sharing
+controls are always visible in the browser surface.
 
 **Tablet (820×1180).** A 72px labeled rail holds the mark, Terminal, Browser,
 Agent, and Tools. The terminal fills the frame. Opening a browser stacks the
-terminal above the browser with a draggable split handle; the key bar and
-footer leave the split so the browser gets the space. Browser tabs, Share,
-Expand, and Hide live in the browser tab strip. Share reveals the permissions
-row. Expand gives the browser the whole frame.
+terminal above the browser with a draggable separator; the key bar and footer
+leave the split so the browser gets the space. The separator can be dragged up
+and down between a 25% and 75% browser share. Browser tabs, Share, Expand, and
+Hide live in the browser tab strip. Share reveals the permissions row. Expand
+gives the browser the whole frame.
 
 **Phone (393×852).** A bottom navigation holds Terminal, Browser, Agent, and
 Tools. One task surface is visible at a time. The terminal key bar collapses to
@@ -82,7 +85,11 @@ one row of essentials plus a chevron that reveals the rest. In the browser, the
 state row sits at the top. The tab strip, address bar, and Share sit at the
 bottom above the remote keyboard, within thumb reach. The address bar carries
 back, forward, reload, the URL, and Go; Share opens the permissions row above
-the address bar. The tab itself carries Close.
+the address bar. The tab itself carries Close. The control rows keep their 44pt
+targets but carry almost no outer padding. After seven seconds without a touch,
+every chrome row except the bottom navigation collapses, and the terminal or
+browser fills the frame. The first touch wakes the chrome; the bottom
+navigation stays awake and operable throughout.
 
 ## Navigation and browser model
 
@@ -120,9 +127,14 @@ scroller. No parallax or continuous motion is used.
   `role="tablist"`. Workspace navigation uses `aria-current="page"`.
 - The phone permission select keeps an accessible name; the visual label is
   present when Share is open.
-- Primary controls and tab close are at least 44pt. The tablet split handle is a
-  44pt row with a visible grip and keyboard-arrow support. Safe-area insets are
-  respected at the top, bottom, and around the phone sheet.
+- Primary controls and tab close are at least 44pt. The split separator is a
+  visible line with a grip, pointer and touch drag, and keyboard support: Left
+  and Right arrows on the desktop vertical separator, Up and Down on the tablet
+  horizontal separator, with Home and End jumping to the bounds. Safe-area
+  insets are respected at the top, bottom, and around the phone sheet.
+- The phone's collapsed state is not a trap: keydown wakes the chrome, the
+  bottom navigation remains reachable, and the first touch on the content only
+  restores the chrome instead of activating the page or terminal underneath.
 - The destructive Close terminal action uses an in-design confirmation with
   Cancel and Close terminal. The settings dialog uses the workspace type system
   and 44px fields.
@@ -152,7 +164,9 @@ Reviewed against the Open Design checklist:
 - `npm run test:workspace` covers terminal input, human and agent tabs,
   sharing/revocation, page text, hidden-agent navigation, reduced motion, the
   tablet split drag and expand, and phone/tablet/desktop layouts at
-  393×852, 820×1180, 1440×900, and 1920×1080.
+  393×852, 820×1180, 1440×900, and 1920×1080. The desktop separator drag and
+  both orientation bounds are verified in the split-handle pass recorded in
+  `docs/evidence/mascot-correction/` and `stewardship/screens/pass16`.
 - `npm test` covers the engine suite and responsive layout tests.
 - Accepted screenshots are recorded in the stewardship evidence directory.
 - The adversarial secondary-model grade is recorded in the stewardship

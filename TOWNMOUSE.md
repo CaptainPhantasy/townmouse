@@ -57,9 +57,11 @@ Version 0.1.0. Three deliberate layouts: desktop sidebar, tablet rail, phone
 bottom navigation. Phone shows one task surface at a time; the key bar collapses
 to one row and expands with the chevron. Tablet and phone put browser tabs and
 sharing controls in the browser surface; on phone the tab strip, address bar,
-and Share sit together at the bottom. The session pill opens a Sessions sheet
-with switching and New session. Tools is a grouped surface; Close terminal uses
-an in-design confirmation.
+and Share sit together at the bottom. Those rows are tightly padded, and after
+seven seconds without a touch the content takes the whole frame while the bottom
+navigation stays; the next touch wakes the chrome. The session pill opens a
+Sessions sheet with switching and New session. Tools is a grouped surface;
+Close terminal uses an in-design confirmation.
 
 ## Naming
 

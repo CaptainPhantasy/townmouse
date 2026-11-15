@@ -285,6 +285,7 @@ body.workspace {
   flex-direction: column;
   overflow: hidden;
 }
+.workspace-drawer:not([open]) { pointer-events: none; }
 .workspace-drawer > header, .workspace-drawer > #tool-filter,
 .workspace-drawer > .drawer-empty, .workspace-drawer > .drawer-credit { flex: 0 0 auto; }
 .workspace-drawer::backdrop { background: #20283240; backdrop-filter: blur(3px); }
@@ -553,25 +554,68 @@ body.workspace {
 #browser-type input { flex: 1; width: 0; }
 #browser-type button { min-width: 44px; padding: 0 10px; }
 
-/* Tablet split handle */
-.split-handle { display: none; }
+/* Split handle: a draggable separator between terminal and browser */
+.split-handle {
+  display: none;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
 .workspace.browser-open .split-handle {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.workspace.browser-open .split-handle[data-orientation="horizontal"] {
   height: 44px;
   flex: 0 0 44px;
   cursor: row-resize;
-  touch-action: none;
+}
+.workspace.browser-open .split-handle[data-orientation="vertical"] {
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+}
+.workspace.browser-open .split-handle::after {
+  content: '';
+  position: absolute;
+  background: var(--ws-line);
+  transition: background 160ms var(--ws-ease);
+}
+.workspace.browser-open .split-handle[data-orientation="horizontal"]::after {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+.workspace.browser-open .split-handle[data-orientation="vertical"]::after {
+  top: 0;
+  bottom: 0;
+  width: 1px;
 }
 .workspace.browser-open .split-handle::before {
   content: '';
-  width: 52px;
-  height: 4px;
+  position: relative;
+  z-index: 1;
   border-radius: 999px;
   background: var(--ws-line);
+  transition: background 160ms var(--ws-ease);
 }
+.workspace.browser-open .split-handle[data-orientation="horizontal"]::before {
+  width: 52px;
+  height: 4px;
+}
+.workspace.browser-open .split-handle[data-orientation="vertical"]::before {
+  width: 4px;
+  height: 52px;
+}
+.workspace.browser-open .split-handle:hover::before,
+.workspace.browser-open .split-handle:hover::after,
+.workspace.browser-open .split-handle:focus-visible::before,
+.workspace.browser-open .split-handle:focus-visible::after,
+.workspace.browser-open .split-handle.split-drag::before,
+.workspace.browser-open .split-handle.split-drag::after { background: var(--ws-blue); }
 .workspace.browser-open .split-handle:focus-visible { outline: 2px solid var(--ws-blue); outline-offset: 2px; }
+body.split-dragging { user-select: none; }
 
 /* Tablet key grid */
 .workspace .keybar.ipad {
@@ -598,14 +642,15 @@ body.workspace {
 @media (min-width: 1100px) {
   .workspace.browser-open .app-shell {
     display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(480px, 1.15fr);
+    grid-template-columns: minmax(320px, var(--terminal-split, 47%)) 12px minmax(420px, 1fr);
     grid-template-rows: 60px 1fr 30px;
   }
   .workspace.browser-open .terminal-header { grid-column: 1; grid-row: 1; }
   .workspace.browser-open .terminal-container { grid-column: 1; grid-row: 2; }
   .workspace.browser-open .terminal-footer { grid-column: 1; grid-row: 3; }
-  .workspace.browser-open .browser-surface { grid-column: 2; grid-row: 1 / 4; border-left: 1px solid var(--ws-line); }
-  .workspace.browser-open .keybar, .workspace.browser-open .t1session-tabs, .workspace.browser-open .split-handle { display: none !important; }
+  .workspace.browser-open .split-handle { grid-column: 2; grid-row: 1 / 4; }
+  .workspace.browser-open .browser-surface { grid-column: 3; grid-row: 1 / 4; }
+  .workspace.browser-open .keybar, .workspace.browser-open .t1session-tabs { display: none !important; }
   #browser-title-compact { display: inline-block; }
   .browser-tabstrip { display: none; }
 }
@@ -695,7 +740,7 @@ body.workspace {
   .workspace-brand { border-bottom: 0; padding-bottom: 0; }
   .nav-bottom { margin: 0; }
 
-  .workspace .terminal-header { min-height: 56px; padding: 6px 10px; gap: 6px; }
+  .workspace .terminal-header { min-height: 48px; padding: 4px 8px; gap: 5px; }
   .workspace .terminal-title { font-size: 12px; gap: 6px; }
   .workspace .terminal-title::before { width: 20px; height: 20px; }
   .workspace .terminal-title::after { content: ''; }
@@ -707,7 +752,8 @@ body.workspace {
   .workspace .terminal-container { padding: 8px; }
   .workspace .terminal-footer { display: none; }
   .workspace .t1-smart-suggest { display: none !important; }
-  .workspace .keybar { padding: 4px 6px; gap: 4px; }
+  .workspace .keybar { padding: 2px 4px; gap: 3px; }
+  .workspace .keybar.ipad { display: none !important; }
   .workspace .keybar .kb-key { min-height: 44px; }
   .workspace .keybar .kb-keys-toggle svg { width: 18px; height: 18px; }
   .workspace[data-device="iphone"] .keybar .kb-group:nth-child(n+2) { display: none; }
@@ -721,30 +767,32 @@ body.workspace {
   .workspace.browser-open .t1-smart-suggest,
   .workspace.browser-open .split-handle { display: none !important; }
   .browser-surface { height: 100%; display: flex; flex-direction: column; }
-  #browser-message { order: 0; padding: 4px 10px; min-height: 30px; font-size: 11px; }
+  #browser-message { order: 0; padding: 2px 8px; min-height: 28px; font-size: 10px; gap: 4px; flex-wrap: nowrap; }
   .browser-canvas { order: 1; flex: 1; min-height: 0; }
-  .browser-tabstrip { display: flex; order: 2; padding: 6px 8px; }
+  .browser-tabstrip { display: flex; order: 2; padding: 0 6px; gap: 4px; }
+  .browser-tablist { height: 44px; align-items: center; }
   #browser-permissions { order: 3; }
-  #browser-address { order: 4; margin: 0 10px 8px; gap: 4px; flex-wrap: nowrap; }
+  #browser-address { order: 4; margin: 0 8px 2px; gap: 3px; flex-wrap: nowrap; }
   #browser-type { order: 5; }
   #browser-expand, #hide-browser-compact { display: none !important; }
   #browser-share-bottom { display: none !important; }
   .browser-heading { display: none; }
   .browser-permissions { display: none; }
-  .browser-surface.share-open .browser-permissions { display: flex; padding: 0 10px 8px; }
+  .browser-surface.share-open .browser-permissions { display: flex; padding: 0 8px 6px; }
   .browser-permissions label { display: block; width: 100%; font-size: 11px; color: var(--ws-muted); }
   .browser-permissions button, .browser-permissions select { font-size: 11px; padding: 4px 8px; min-height: 44px; }
   #browser-address button { min-width: 44px; padding: 0 6px; font-size: 15px; }
   #browser-address #browser-url { min-height: 44px; font-size: 12px; }
-  #browser-message-text { flex: 1 1 100%; }
-  #browser-title-compact { display: inline-block; max-width: 18ch; }
+  #browser-message-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #browser-title-compact { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .browser-badge { font-size: 9px; padding: 1px 4px; }
   .browser-tab { max-width: 260px; }
   .browser-tab-badge { display: none; }
   #browser-empty .browser-mascot { width: min(170px, 55%); }
   .browser-tab:not(.selected) .browser-tab-close { display: none; }
   .browser-tab:not(.selected) .browser-tab-label { display: none; }
   .browser-tab:not(.selected) { width: 44px; min-width: 44px; max-width: 44px; padding: 4px; justify-content: center; }
-  #browser-type { padding: 6px 8px; gap: 4px; }
+  #browser-type { padding: 1px 6px; gap: 3px; }
   #browser-type input { min-height: 44px; font-size: 12px; }
   #browser-type button { min-width: 44px; padding: 0 6px; font-size: 11px; }
   .workspace-drawer {
@@ -758,6 +806,27 @@ body.workspace {
   .workspace-drawer h2 { font-size: 20px; }
   .drawer-groups { max-height: none; }
   .drawer-row { min-height: 48px; }
+
+  /* After 7s without a touch, the content takes the screen; the bottom nav stays. */
+  body.chrome-idle .terminal-header,
+  body.chrome-idle .keybar,
+  body.chrome-idle .t1session-tabs,
+  body.chrome-idle .t1-smart-suggest,
+  body.chrome-idle #browser-message,
+  body.chrome-idle .browser-tabstrip,
+  body.chrome-idle #browser-permissions,
+  body.chrome-idle #browser-address,
+  body.chrome-idle #browser-type { display: none !important; }
+  body.chrome-idle .app-shell { position: relative; }
+  body.chrome-idle .app-shell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+  }
+  body.chrome-idle .terminal-container { flex: 1 1 auto; }
+  body.chrome-idle .browser-canvas { flex: 1 1 auto; }
+  body.chrome-idle .browser-surface { height: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

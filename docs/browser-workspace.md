@@ -6,9 +6,9 @@ Each tab has its own cookie context. These are workspace browser tabs, not an at
 
 ## Layouts
 
-- **Desktop:** persistent sidebar, browser tabs in the sidebar, terminal and browser split horizontally when a browser is open.
-- **Tablet:** labeled rail, browser tabs in a strip above the address bar, terminal and browser stacked vertically when a browser is open.
-- **Phone:** bottom navigation with Terminal, Browser, Agent, and Tools. One task surface is visible at a time. The key bar collapses to one row; the chevron reveals the remaining keys. Browser tabs and sharing controls live in the browser surface.
+- **Desktop:** persistent sidebar, browser tabs in the sidebar, terminal and browser split horizontally when a browser is open. The separator is draggable left and right; the terminal keeps at least 320px and the browser at least 420px.
+- **Tablet:** labeled rail, browser tabs in a strip above the address bar, terminal and browser stacked vertically when a browser is open. The separator is draggable up and down between a 25% and 75% browser share.
+- **Phone:** bottom navigation with Terminal, Browser, Agent, and Tools. One task surface is visible at a time. The key bar collapses to one row; the chevron reveals the remaining keys. Browser tabs and sharing controls live in the browser surface. The browser and terminal chrome is tightly padded, and after seven seconds without a touch it collapses to the content; the bottom navigation stays and the next touch wakes the chrome.
 
 ## Sharing
 

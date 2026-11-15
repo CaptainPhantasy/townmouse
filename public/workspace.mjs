@@ -373,34 +373,100 @@ export async function init(T1) {
   }
 
   // ── Split handle and browser expand ────────────────────────────────────────
+  const desktopSplitQuery = window.matchMedia('(min-width: 1100px)');
+  function splitOrientation() {
+    return desktopSplitQuery.matches ? 'vertical' : 'horizontal';
+  }
+  function splitVariable() {
+    return splitOrientation() === 'vertical' ? '--terminal-split' : '--browser-split';
+  }
   function currentSplit() {
-    const value = parseFloat(getComputedStyle(shell).getPropertyValue('--browser-split'));
-    return Number.isFinite(value) ? value : 60;
+    const fallback = splitOrientation() === 'vertical' ? 47 : 60;
+    const value = parseFloat(getComputedStyle(shell).getPropertyValue(splitVariable()));
+    return Number.isFinite(value) ? value : fallback;
+  }
+  function splitBounds() {
+    if (splitOrientation() === 'vertical') {
+      const width = shell.getBoundingClientRect().width || 0;
+      if (width > 0) {
+        const min = Math.max(25, (320 / width) * 100);
+        const max = Math.min(75, ((width - 12 - 420) / width) * 100);
+        if (max > min) return { min, max };
+      }
+    }
+    return { min: 25, max: 75 };
   }
   function setSplit(value) {
-    const next = Math.max(30, Math.min(80, value));
-    shell.style.setProperty('--browser-split', next + '%');
+    const bounds = splitBounds();
+    const next = Math.max(bounds.min, Math.min(bounds.max, value));
+    shell.style.setProperty(splitVariable(), next + '%');
+    splitHandle.setAttribute('aria-valuemin', String(Math.round(bounds.min)));
+    splitHandle.setAttribute('aria-valuemax', String(Math.round(bounds.max)));
     splitHandle.setAttribute('aria-valuenow', String(Math.round(next)));
+    splitHandle.setAttribute('aria-valuetext',
+      (splitOrientation() === 'vertical' ? 'Terminal ' : 'Browser ') + Math.round(next) + ' percent');
   }
-  setSplit(60);
+  function syncSplitOrientation() {
+    const orientation = splitOrientation();
+    splitHandle.dataset.orientation = orientation;
+    splitHandle.setAttribute('aria-orientation', orientation);
+    setSplit(currentSplit());
+  }
+  window.addEventListener('resize', () => {
+    if (!browser.hidden) setSplit(currentSplit());
+  });
+  shell.style.setProperty('--terminal-split', '47%');
+  shell.style.setProperty('--browser-split', '60%');
+  syncSplitOrientation();
+  desktopSplitQuery.addEventListener?.('change', syncSplitOrientation);
   let splitDrag = null;
   splitHandle.addEventListener('pointerdown', (event) => {
-    splitDrag = { y: event.clientY, split: currentSplit() };
+    if (event.button !== undefined && event.button !== 0) return;
+    const rect = shell.getBoundingClientRect();
+    splitDrag = {
+      x: event.clientX,
+      y: event.clientY,
+      split: currentSplit(),
+      orientation: splitOrientation(),
+      width: rect.width || 1,
+      height: rect.height || 1
+    };
     splitHandle.setPointerCapture?.(event.pointerId);
+    splitHandle.classList.add('split-drag');
+    document.body.classList.add('split-dragging');
     event.preventDefault();
   });
   splitHandle.addEventListener('pointermove', (event) => {
     if (!splitDrag) return;
-    const height = shell.getBoundingClientRect().height || 1;
-    setSplit(splitDrag.split - ((event.clientY - splitDrag.y) / height) * 100);
+    if (splitDrag.orientation === 'vertical') {
+      setSplit(splitDrag.split + ((event.clientX - splitDrag.x) / splitDrag.width) * 100);
+    } else {
+      setSplit(splitDrag.split - ((event.clientY - splitDrag.y) / splitDrag.height) * 100);
+    }
   });
-  const endSplit = () => { splitDrag = null; };
+  const endSplit = () => {
+    splitDrag = null;
+    splitHandle.classList.remove('split-drag');
+    document.body.classList.remove('split-dragging');
+  };
   splitHandle.addEventListener('pointerup', endSplit);
   splitHandle.addEventListener('pointercancel', endSplit);
+  splitHandle.addEventListener('lostpointercapture', endSplit);
   splitHandle.addEventListener('keydown', (event) => {
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    const orientation = splitOrientation();
+    let delta = 0;
+    if (orientation === 'vertical') {
+      if (event.key === 'ArrowLeft') delta = -3;
+      if (event.key === 'ArrowRight') delta = 3;
+    } else {
+      if (event.key === 'ArrowUp') delta = -3;
+      if (event.key === 'ArrowDown') delta = 3;
+    }
+    if (event.key === 'Home') delta = 25 - currentSplit();
+    if (event.key === 'End') delta = 75 - currentSplit();
+    if (!delta) return;
     event.preventDefault();
-    setSplit(currentSplit() + (event.key === 'ArrowUp' ? 5 : -5));
+    setSplit(currentSplit() + delta);
   });
 
   $('browser-expand').addEventListener('click', () => {
@@ -542,6 +608,7 @@ export async function init(T1) {
     browser.classList.remove('share-open');
     setShareExpanded(false);
     renderTabs();
+    wakeChrome();
     window.dispatchEvent(new Event('resize'));
   }
 
@@ -550,12 +617,14 @@ export async function init(T1) {
     current = tab;
     browser.hidden = false;
     body.classList.add('browser-open');
+    setSplit(currentSplit());
     browser.classList.remove('share-open');
     setShareExpanded(false);
     $('browser-share').value = tab.permission || 'private';
     $('browser-url').value = tab.url === 'about:blank' ? '' : tab.url;
     updateBrowserState();
     renderTabs();
+    wakeChrome();
     await resizeViewer();
     await refresh();
     window.dispatchEvent(new Event('resize'));
@@ -849,5 +918,92 @@ export async function init(T1) {
   // first fit. Refit once the new layout has settled.
   requestAnimationFrame(() => { T1.fit?.(); window.dispatchEvent(new Event('resize')); });
   setTimeout(() => { T1.fit?.(); }, 200);
+
+  // ── Phone chrome auto-collapse ─────────────────────────────────────────────
+  // The terminal and browser are the product. On a phone, all chrome except the
+  // bottom navigation collapses after seven seconds without a touch; the next
+  // touch brings it back. The first touch on the content only wakes the chrome.
+  const phoneChromeQuery = window.matchMedia('(max-width: 699px)');
+  const CHROME_IDLE_MS = 7000;
+  let chromeIdleTimer = null;
+  let swallowWakeClick = false;
+
+  function chromeIdleBlocked() {
+    if (document.hidden) return true;
+    if (document.querySelector('dialog[open]')) return true;
+    const active = document.activeElement;
+    return !!(active && active.matches('input, textarea, select, [contenteditable="true"]') &&
+      !active.closest('.terminal-container'));
+  }
+  function clearChromeIdleTimer() {
+    if (chromeIdleTimer) { clearTimeout(chromeIdleTimer); chromeIdleTimer = null; }
+  }
+  function refitAfterChromeChange() {
+    requestAnimationFrame(() => { T1.fit?.(); window.dispatchEvent(new Event('resize')); });
+  }
+  function collapseChrome() {
+    if (!phoneChromeQuery.matches || chromeIdleBlocked()) return;
+    body.classList.add('chrome-idle');
+    clearChromeIdleTimer();
+    refitAfterChromeChange();
+  }
+  function wakeChrome() {
+    if (body.classList.contains('chrome-idle')) {
+      body.classList.remove('chrome-idle');
+      refitAfterChromeChange();
+    }
+    scheduleChromeIdle();
+  }
+  function scheduleChromeIdle() {
+    clearChromeIdleTimer();
+    if (!phoneChromeQuery.matches) { body.classList.remove('chrome-idle'); return; }
+    if (chromeIdleBlocked()) {
+      if (!document.hidden) chromeIdleTimer = setTimeout(scheduleChromeIdle, 1000);
+      return;
+    }
+    chromeIdleTimer = setTimeout(() => {
+      chromeIdleTimer = null;
+      if (chromeIdleBlocked()) scheduleChromeIdle();
+      else collapseChrome();
+    }, CHROME_IDLE_MS);
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    if (body.classList.contains('chrome-idle')) {
+      if (event.target.closest?.('.app-shell')) {
+        swallowWakeClick = true;
+        event.preventDefault();
+        event.stopPropagation();
+        setTimeout(() => { swallowWakeClick = false; }, 500);
+      }
+      wakeChrome();
+      return;
+    }
+    wakeChrome();
+  }, { capture: true });
+  document.addEventListener('click', (event) => {
+    if (!swallowWakeClick || !event.target.closest?.('.app-shell')) return;
+    swallowWakeClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, { capture: true });
+  document.addEventListener('keydown', () => wakeChrome(), { capture: true });
+  document.addEventListener('input', () => wakeChrome(), { capture: true });
+  document.addEventListener('focusin', () => { clearChromeIdleTimer(); scheduleChromeIdle(); });
+  document.addEventListener('focusout', () => setTimeout(scheduleChromeIdle, 0));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearChromeIdleTimer();
+    else scheduleChromeIdle();
+  });
+  phoneChromeQuery.addEventListener?.('change', () => {
+    if (!phoneChromeQuery.matches) {
+      body.classList.remove('chrome-idle');
+      clearChromeIdleTimer();
+    } else {
+      scheduleChromeIdle();
+    }
+  });
+  scheduleChromeIdle();
+
   window.__workspace = { ready: true };
 }

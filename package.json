@@ -64,14 +64,16 @@
     "README.md",
     "TOWNMOUSE.md",
     "DESIGN.md",
-    "docs/",
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md",
     "assets/",
     "npm-shrinkwrap.json",
     "scripts/panes",
-    "native/"
+    "native/",
+    "docs/panes.md",
+    "docs/browser-workspace.md",
+    "docs/PACKAGING.md"
   ],
   "author": "Floyd's Labs",
   "bin": {

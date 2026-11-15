@@ -1,17 +1,17 @@
 #!/bin/bash
 #
-# t1 — open TerminalOne. Ensures the always-on service is running, waits for it to
+# t1 — open Townmouse. Ensures the always-on service is running, waits for it to
 # be healthy, then opens the UI as a chrome-less app window (falls back to the
 # default browser). This is the volume-resident implementation; install-service.sh
 # generates a self-contained `t1` binary on the internal disk that delegates here,
-# plus ~/Applications/TerminalOne.app. Run install once, then use `t1` or Spotlight.
+# plus ~/Applications/Townmouse.app. Run install once, then use `t1` or Spotlight.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PORT="${PORT:-11001}"
 APP_DIR="${TERMINALONE_APP_DIR:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
-LOG_DIR="${TERMINALONE_LOG_DIR:-$HOME/Library/Logs/TerminalOne}"
+LOG_DIR="${TERMINALONE_LOG_DIR:-$HOME/Library/Logs/Townmouse}"
 URL="${TERMINALONE_URL:-http://localhost:$PORT}"
 HEALTH_URL="${TERMINALONE_HEALTH_URL:-$URL/health}"
 LABEL="com.floyd.terminalone"
@@ -23,7 +23,7 @@ show_usage() {
   cat <<'EOF'
 Usage: t1 [--serve-only]
 
-Open TerminalOne, or ensure its service is healthy without opening a browser.
+Open Townmouse, or ensure its service is healthy without opening a browser.
 
 Options:
   --serve-only  Start or verify the service, then exit
@@ -42,7 +42,7 @@ show_error() {
   local msg="$1"
   printf 't1: %s\n' "$msg" >&2
   if [ ! -t 2 ] && command -v osascript >/dev/null 2>&1; then
-    osascript -e "display dialog \"$msg\" with title \"TerminalOne\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
+    osascript -e "display dialog \"$msg\" with title \"Townmouse\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
   fi
 }
 
@@ -73,17 +73,17 @@ if ! wait_for_health 1; then
     # mistaken for a foreign process.
     if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null \
       | awk 'NR > 1 && tolower($1) !~ /node/ { foreign = 1 } END { exit !foreign }'; then
-      show_error "Port $PORT is already in use by another process. Free the port or change TerminalOne's port."
+      show_error "Port $PORT is already in use by another process. Free the port or change Townmouse's port."
       exit 1
     fi
 
     if ! "$APP_DIR/scripts/node-runtime.sh" doctor >/dev/null 2>&1; then
-      show_error "TerminalOne runtime is not ready. Run: t1 repair"
+      show_error "Townmouse runtime is not ready. Run: t1 repair"
       exit 1
     fi
 
     if [ ! -f "$APP_DIR/src/server.js" ]; then
-      show_error "TerminalOne files are missing at $APP_DIR."
+      show_error "Townmouse files are missing at $APP_DIR."
       exit 1
     fi
 
@@ -91,7 +91,7 @@ if ! wait_for_health 1; then
 
     if ! wait_for_health 32; then
       "$APP_DIR/scripts/run-hooks" start-error --best-effort
-      show_error "TerminalOne failed to start. Logs: $LOG_DIR/local-launch.err.log"
+      show_error "Townmouse failed to start. Logs: $LOG_DIR/local-launch.err.log"
       exit 1
     fi
     "$APP_DIR/scripts/run-hooks" post-start --best-effort
@@ -99,7 +99,7 @@ if ! wait_for_health 1; then
 fi
 
 if $SERVE_ONLY; then
-  echo "TerminalOne service ready -> $URL"
+  echo "Townmouse service ready -> $URL"
   exit 0
 fi
 
@@ -110,4 +110,4 @@ elif [ -d "/Applications/Google Chrome Beta.app" ]; then
 else
   open "$URL"
 fi
-echo "TerminalOne -> $URL"
+echo "Townmouse -> $URL"

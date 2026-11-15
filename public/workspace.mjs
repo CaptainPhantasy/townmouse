@@ -72,12 +72,14 @@ export async function init(T1) {
     '<div class="workspace-label">Agent</div>' +
     '<button id="agent-browser" type="button">' + icon('agent') + '<span>Agent</span></button>' +
     '<button id="workspace-panes" type="button">' + icon('split') + '<span>Panes</span></button>' +
+    '<button id="workspace-attach" type="button">' + icon('plus') + '<span>Attach</span></button>' +
     '<div class="nav-bottom"><button id="workspace-tools" type="button">' + icon('tools') + '<span>Tools</span></button><a class="workspace-credit" href="https://floydslabs.com" target="_blank" rel="noreferrer"><img src="/brand/floydslabs-credit.webp" alt=""><span>Built at Floyd’s Labs</span></a><p class="nav-status" id="workspace-server">Local server</p></div>';
   body.append(sidebar);
   sidebar.querySelectorAll('button').forEach((button) => button.setAttribute('aria-label', button.textContent.trim()));
   sidebar.querySelector('#agent-browser')?.setAttribute('aria-label', 'Agent browser');
   sidebar.querySelector('#workspace-browser')?.setAttribute('aria-label', 'Browser workspace');
   sidebar.querySelector('#workspace-panes')?.setAttribute('aria-label', 'Pane workspace');
+  sidebar.querySelector('#workspace-attach')?.setAttribute('aria-label', 'Attach a file to the terminal');
   sidebar.querySelector('#workspace-tools')?.setAttribute('aria-label', 'Tools and settings');
 
   const browser = document.createElement('section');
@@ -724,6 +726,34 @@ export async function init(T1) {
   $('workspace-browser').onclick = safe(openBrowser);
   $('agent-browser').onclick = safe(openAgent);
   $('workspace-panes').onclick = () => location.assign('/panes.html');
+
+  const attachInput = document.createElement('input');
+  attachInput.type = 'file';
+  attachInput.multiple = true;
+  attachInput.accept = 'image/*,.pdf,.txt,.json,.md,.zip';
+  attachInput.hidden = true;
+  body.append(attachInput);
+  $('workspace-attach').onclick = () => attachInput.click();
+  attachInput.onchange = async () => {
+    const files = Array.from(attachInput.files || []);
+    attachInput.value = '';
+    for (const file of files) {
+      try {
+        const response = await fetch('/api/attachments', {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'attachment') },
+          body: file
+        });
+        const attachment = await response.json();
+        if (!response.ok) throw new Error(attachment.error || `Upload failed (${response.status}).`);
+        const quoted = `'${String(attachment.path).replace(/'/g, `'\\''`)}'`;
+        window.__terminalOne?.sendData?.(quoted + ' ');
+        T1.toast?.(`Attached ${file.name}`);
+      } catch (error) {
+        T1.toast?.(error.message || `Could not attach ${file.name}.`);
+      }
+    }
+  };
   $('workspace-terminal').onclick = hide;
   $('hide-browser').onclick = hide;
   $('hide-browser-compact').onclick = hide;

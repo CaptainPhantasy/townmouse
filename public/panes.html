@@ -10,6 +10,7 @@
 </head>
 <body>
 <div class="panes-app" id="panes-app">
+  <nav class="tabstrip" id="tabstrip" aria-label="Workspace tabs" hidden></nav>
   <main class="workspace" id="workspace" aria-label="Workspace panes">
     <div class="pane-grid" id="pane-grid" data-count="0" hidden></div>
     <section class="empty-state" id="empty-state" aria-labelledby="empty-title">
@@ -89,9 +90,15 @@
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
         <span><strong>New tab</strong><small>A fresh workspace tab.</small></span>
       </button>
+      <button type="button" class="menu-item" id="menu-attach">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg>
+        <span><strong>Attach file</strong><small>Upload into the active terminal.</small></span>
+      </button>
     </div>
   </div>
 </dialog>
+
+<input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
 
 <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
 <p class="sr-only" id="sr-status" role="status" aria-live="polite"></p>

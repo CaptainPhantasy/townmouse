@@ -76,10 +76,25 @@ async function check(name, fn) {
   }
 }
 
+let ownerCookie = '';
+
+async function getOwnerCookie() {
+  if (ownerCookie) return ownerCookie;
+  const page = await fetch(`${BASE}/panes.html`, { headers: { Accept: 'text/html' } });
+  const cookies = typeof page.headers.getSetCookie === 'function'
+    ? page.headers.getSetCookie()
+    : [page.headers.get('set-cookie')];
+  const line = (cookies || []).filter(Boolean).find((value) => value.startsWith('townmouse_owner='));
+  if (!line) throw new Error('owner page did not set the owner cookie');
+  ownerCookie = line.split(';')[0];
+  return ownerCookie;
+}
+
 async function request(method, route, options = {}) {
   const { body, token, timeoutMs = 30000 } = options;
   const headers = {};
   if (token) headers[TOKEN_HEADER] = token;
+  else headers.Cookie = await getOwnerCookie();
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const response = await fetch(BASE + route, {
     method,
@@ -266,6 +281,11 @@ async function main() {
       ensure(response.status === 200, 'fixture should respond 200', html);
       ensure(html.includes('<title>Pane Fixture</title>'), 'fixture should have title Pane Fixture', html);
       ensure(html.includes('<h1>Pane Fixture</h1>'), 'fixture should render the Pane Fixture heading', html);
+    });
+
+    await check('bootstrap: denies a header-less local client', async () => {
+      const response = await fetch(`${BASE}/api/panes/bootstrap`, { signal: AbortSignal.timeout(5000) });
+      ensure(response.status === 403, 'bootstrap without an owner capability should be forbidden', response.status);
     });
 
     await check('bootstrap: returns a workspace token', async () => {

@@ -140,7 +140,7 @@ TERMINALONE_LOG_DIR="$TMP/logs" \
 PORT=11001 \
 bash "$ROOT/scripts/t1.sh" --serve-only > "$TMP/state/node-listener.out" 2>&1
 
-grep -q 'TerminalOne service ready' "$TMP/state/node-listener.out"
+grep -q 'Townmouse service ready' "$TMP/state/node-listener.out"
 if grep -q 'already in use by another process' "$TMP/state/node-listener.out"; then
   echo "Node listener must not be treated as a foreign port owner"
   exit 1
@@ -168,8 +168,8 @@ bash "$ROOT/scripts/t1.sh" --serve-only > "$TMP/state/overlap-2.out" 2>&1 &
 second_pid=$!
 wait "$first_pid"
 wait "$second_pid"
-grep -q 'TerminalOne service ready' "$TMP/state/overlap-1.out"
-grep -q 'TerminalOne service ready' "$TMP/state/overlap-2.out"
+grep -q 'Townmouse service ready' "$TMP/state/overlap-1.out"
+grep -q 'Townmouse service ready' "$TMP/state/overlap-2.out"
 if grep -q 'already in use by another process' "$TMP/state/overlap-1.out" "$TMP/state/overlap-2.out"; then
   echo "overlapping launches must not report a false port conflict"
   exit 1

@@ -591,6 +591,12 @@
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     });
+    document.addEventListener('dragover', (event) => {
+      if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+    }, true);
+    document.addEventListener('drop', (event) => {
+      if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+    }, true);
     host.addEventListener('drop', async (event) => {
       if (!event.dataTransfer?.files?.length) return;
       event.preventDefault();
@@ -605,13 +611,18 @@
         }
       }
     });
-    host.addEventListener('paste', async (event) => {
+    // xterm's helper-textarea paste handler stops propagation, so capture at
+    // document level, before it sees the event, and handle clipboard files.
+    document.addEventListener('paste', async (event) => {
+      const target = event.target;
+      if (!target || !target.closest || !target.closest('#terminal')) return;
       const files = Array.from(event.clipboardData?.items || [])
         .filter((item) => item.kind === 'file')
         .map((item) => item.getAsFile())
         .filter(Boolean);
       if (!files.length) return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       for (const file of files) {
         try {
           const attachment = await uploadTerminalAttachment(file);
@@ -621,7 +632,7 @@
           showBanner(error.message || `Could not attach ${file.name}.`, 'error');
         }
       }
-    });
+    }, true);
   }
 
   const $ = (sel) => document.querySelector(sel);
@@ -1509,7 +1520,7 @@
     'recent-commands', 'search', 'command-palette', 'toast-status',
     'osc-bridge', 'links', 'zoom', 'keybar-config', 'voice-input', 'session-manager',
     'status-metrics', 'export', 'clipboard', 'snippets', 'fontsize',
-    'wake-fullscreen', 'desktop-palette', 'file-drop', 'floating-palette',
+    'wake-fullscreen', 'desktop-palette', 'floating-palette',
     'haptic-keys', 'keepalive', 'multi-window-sync', 'phone-landscape-focus',
     'session-lock', 'settings-sync', 'shortcut-help', 'smart-completions',
     'smart-suggest', 'split-view', 'stylus-support', 'swipe-history',

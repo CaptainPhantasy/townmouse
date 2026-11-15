@@ -26,7 +26,7 @@ export function init(T1) {
   function update() {
     const footer = document.getElementById('footerMeta')?.textContent || '';
     const cwd = parseCwd(footer);
-    if (cwd) document.title = `TerminalOne — ${basename(cwd)}`;
+    if (cwd) document.title = `Townmouse — ${basename(cwd)}`;
   }
 
   const footerEl = document.getElementById('footerMeta');

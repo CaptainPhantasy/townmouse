@@ -50,6 +50,23 @@ function installBrowserWorkspace(app) {
     if (!['http:','https:'].includes(u.protocol) || u.username || u.password) deny('Use an HTTP or HTTPS address without embedded credentials.',400);
     return u.href;
   }
+  // A popup can fire before its main frame exists; calling popup.url() then
+  // throws asynchronously and used to take the whole server down. Never let
+  // popup bookkeeping escape the emitter.
+  function followPopup(popup, page) {
+    void (async () => {
+      try {
+        await Promise.resolve();
+        const popupUrl = popup.url();
+        await popup.close().catch(() => {});
+        if (popupUrl && popupUrl !== 'about:blank' && /^https?:/i.test(popupUrl)) {
+          await page.goto(address(popupUrl)).catch(() => {});
+        }
+      } catch (_) {
+        try { await popup.close(); } catch (_) { /* already gone */ }
+      }
+    })();
+  }
 
   // Internal control surface for the pane workspace. These bypass the human
   // header key because the caller already holds the pane workspace token.
@@ -69,11 +86,7 @@ function installBrowserWorkspace(app) {
         s.dialog = { type: dialog.type(), message: dialog.message(), at: new Date().toISOString() };
         try { await dialog.dismiss(); } catch (_) { /* dialog already gone */ }
       });
-      page.on('popup', async (popup) => {
-        const popupUrl = popup.url();
-        await popup.close();
-        try { await page.goto(address(popupUrl)); } catch (_) { /* popup target was not addressable */ }
-      });
+      page.on('popup', (popup) => followPopup(popup, page));
       if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
       s.title = await page.title();
       sessions.set(s.id, s);
@@ -147,6 +160,7 @@ function installBrowserWorkspace(app) {
   }
   app.get('/api/browser/bootstrap',route(async(req,res)=>{
     if(req.get('Authorization')) deny('Agent tokens cannot manage workspace permissions.');
+    if(!req.isOwner) deny('Owner page required.');
     const site = req.get('Sec-Fetch-Site');
     if (site && site !== 'same-origin' && site !== 'none') deny('Owner page required.');
     res.json({key:humanKey});
@@ -169,7 +183,7 @@ function installBrowserWorkspace(app) {
     page.on('dialog',async dialog=>{s.dialog={type:dialog.type(),message:dialog.message(),at:new Date().toISOString()};try{await dialog.dismiss();}catch{}});
     sessions.set(s.id,s);
     // Popups remain in this permission boundary; follow in the same tab.
-    page.on('popup',async popup=>{const url=popup.url();await popup.close();try{await page.goto(address(url));}catch{}});
+    page.on('popup', (popup) => followPopup(popup, page));
     res.json(describe(s));
     } catch(error) { if(context) await context.close();throw error; } finally { opening--; }
   }));

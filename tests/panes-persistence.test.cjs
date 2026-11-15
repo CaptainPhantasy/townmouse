@@ -31,6 +31,20 @@ function startApp(stateDir) {
   });
 }
 
+async function bootstrapOwner() {
+  const page = await fetch(`${BASE}/panes.html`, { headers: { Accept: 'text/html' } });
+  const cookies = typeof page.headers.getSetCookie === 'function'
+    ? page.headers.getSetCookie()
+    : [page.headers.get('set-cookie')];
+  const cookie = (cookies || []).filter(Boolean).find((value) => value.startsWith('townmouse_owner='));
+  assert(cookie, 'owner page did not set the owner cookie');
+  const response = await fetch(`${BASE}/api/panes/bootstrap`, {
+    headers: { Cookie: cookie.split(';')[0] }
+  });
+  assert(response.ok, `bootstrap failed: ${response.status}`);
+  return response.json();
+}
+
 async function stop(child) {
   await new Promise((resolve) => {
     const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch (_) {} }, 4000);
@@ -49,7 +63,7 @@ async function stop(child) {
   let app = startApp(stateDir);
   try {
     await waitHealth();
-    const boot = await (await fetch(`${BASE}/api/panes/bootstrap`)).json();
+    const boot = await bootstrapOwner();
     const headers = { 'Content-Type': 'application/json', 'X-Townmouse-Token': boot.token };
     const post = async (suffix, body) => {
       const response = await fetch(`${BASE}/api/panes${suffix}`, { method: 'POST', headers, body: JSON.stringify(body || {}) });
@@ -60,18 +74,24 @@ async function stop(child) {
     const tab = await post('/tabs', { title: 'Persisted', activate: true });
     await post(`/tabs/${tab.id}/panes`, { kind: 'terminal', cwd: '/tmp', title: 'Restored Shell' });
     await post(`/tabs/${tab.id}/panes`, { kind: 'browser', url: `http://127.0.0.1:${FIXTURE_PORT}/` });
+    // A browser pane that has never navigated saves about:blank. It must not be
+    // discarded when the workspace is restored.
+    await post(`/tabs/${tab.id}/panes`, { kind: 'browser' });
     await wait(500);
     await stop(app);
 
     app = startApp(stateDir);
     await waitHealth();
-    const boot2 = await (await fetch(`${BASE}/api/panes/bootstrap`)).json();
+    const boot2 = await bootstrapOwner();
     const persisted = boot2.state.tabs.find((candidate) => candidate.title === 'Persisted');
     assert(persisted, 'Persisted tab was not restored');
-    assert.strictEqual(persisted.panes.length, 2, 'Persisted pane count changed');
-    assert.deepStrictEqual(persisted.panes.map((pane) => pane.kind).sort(), ['browser', 'terminal']);
+    assert.strictEqual(persisted.panes.length, 3, 'Persisted pane count changed');
+    assert.deepStrictEqual(persisted.panes.map((pane) => pane.kind).sort(), ['browser', 'browser', 'terminal']);
     const browser = persisted.panes.find((pane) => pane.kind === 'browser');
     assert(browser.url.includes(String(FIXTURE_PORT)), `Browser URL not restored: ${browser.url}`);
+    const blank = persisted.panes.find((pane) => pane.kind === 'browser' && pane.id !== browser.id);
+    assert(blank, 'The blank browser pane was not restored');
+    assert(!blank.url || blank.url === 'about:blank', `Blank browser gained a URL: ${blank.url}`);
     assert(boot2.state.activeTabId === persisted.id, 'Persisted tab was not restored as active');
     console.log(`PASS persistence: restored ${persisted.panes.length} panes and the active tab`);
     console.log('RESULT passed=1 total=1 failures=0');

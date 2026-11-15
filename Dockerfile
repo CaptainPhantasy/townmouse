@@ -13,13 +13,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package.json package-lock.json npm-shrinkwrap.json ./
+COPY scripts ./scripts
 RUN npm ci --omit=dev
 
 COPY src ./src
 COPY public ./public
-COPY scripts ./scripts
 COPY assets ./assets
-COPY docs ./docs
+COPY docs/panes.md docs/browser-workspace.md docs/PACKAGING.md ./docs/
 COPY bin ./bin
 COPY README.md TOWNMOUSE.md DESIGN.md LICENSE SECURITY.md CHANGELOG.md ./
 RUN chmod +x scripts/panes bin/townmouse \

@@ -88,7 +88,6 @@ async function run() {
       sessionTabs: !!document.querySelector('.t1session-tabs'),
       statusPanel: !!document.querySelector('.t1status-panel'),
       lockOverlay: !!document.querySelector('.t1-lock-overlay'),
-      fileDrop: !!document.querySelector('.t1-file-drop-target'),
       shortcutOverlay: !!document.querySelector('.t1-shortcut-overlay'),
       voiceButton: !!document.querySelector('.t1voice-button'),
       voiceHook: !!window.__terminalOneVoiceInput,
@@ -98,7 +97,6 @@ async function run() {
     }));
     // desktop-palette must load on desktop (was skipped before the T1.device fix).
     assert(dState.features.includes('desktop-palette'), 'desktop-palette loaded on desktop device');
-    assert(dState.features.includes('file-drop'), 'file-drop loaded on desktop device');
     assert(dState.features.includes('settings-sync'), 'settings-sync loaded on desktop device');
     assert(dState.features.includes('session-lock'), 'session-lock loaded on desktop device');
     assert(dState.toolbarBtns >= 10, `desktop toolbar rendered ${dState.toolbarBtns} buttons (>=10)`);
@@ -108,7 +106,6 @@ async function run() {
     assert(dState.sessionTabs, 'session tabs element created');
     assert(dState.statusPanel, 'status panel element created');
     assert(dState.lockOverlay, 'session-lock overlay created');
-    assert(dState.fileDrop, 'file-drop overlay created');
     assert(dState.shortcutOverlay, 'shortcut-help overlay created');
     assert(dState.features.includes('voice-input'), 'voice-input feature loaded');
     assert(dState.voiceButton, 'voice-input toolbar button rendered');

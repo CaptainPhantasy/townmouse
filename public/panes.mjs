@@ -12,6 +12,7 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const byId = (id) => document.getElementById(id);
 const els = {
   grid: byId('pane-grid'),
+  tabStrip: byId('tabstrip'),
   workspace: byId('workspace'),
   emptyState: byId('empty-state'),
   emptyTitle: byId('empty-title'),
@@ -37,6 +38,8 @@ const els = {
   menuAddTerminal: byId('menu-add-terminal'),
   menuAddBrowser: byId('menu-add-browser'),
   menuNewTab: byId('menu-new-tab'),
+  menuAttach: byId('menu-attach'),
+  attachInput: byId('attach-input'),
   notice: byId('notice'),
   srStatus: byId('sr-status')
 };
@@ -150,8 +153,9 @@ function wireDrop(root, paneId) {
       .filter(Boolean);
     if (!files.length) return;
     event.preventDefault();
+    event.stopImmediatePropagation();
     void attachFiles(recordFor(), files);
-  });
+  }, true);
 }
 
 function logStatus(message) {
@@ -273,6 +277,32 @@ function updateChrome() {
     els.tabsLimits.textContent = `Up to ${limits.maxTabs} tabs, ${limits.maxPanesPerTab} panes per tab.`;
   }
   updateAddLimits();
+  renderTabStrip();
+}
+
+function renderTabStrip() {
+  if (!els.tabStrip) return;
+  const tabs = (currentState && currentState.tabs) || [];
+  els.tabStrip.hidden = tabs.length < 2;
+  if (tabs.length < 2) { els.tabStrip.replaceChildren(); return; }
+  const fragment = document.createDocumentFragment();
+  for (const tab of tabs) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tabstrip-tab' + (tab.id === currentState.activeTabId ? ' is-active' : '');
+    button.textContent = tab.title;
+    if (tab.id === currentState.activeTabId) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => { void activateTab(tab.id); });
+    fragment.append(button);
+  }
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'tabstrip-add';
+  add.textContent = '+ Tab';
+  add.setAttribute('aria-label', 'New workspace tab');
+  add.addEventListener('click', () => { void newTab(); });
+  fragment.append(add);
+  els.tabStrip.replaceChildren(fragment);
 }
 
 function rebuild(tab) {
@@ -401,11 +431,14 @@ function onPanePointerDown(event) {
 }
 
 function teardownPanes() {
-  for (const record of records.values()) disposeRecord(record);
+  // Switching tabs disposes the terminal view but not the server-side shell.
+  // Let already-queued input (an editor paste, a command plus Enter) finish
+  // instead of silently truncating it when the user changes views.
+  for (const record of records.values()) disposeRecord(record, { keepInput: true });
   records.clear();
 }
 
-function disposeRecord(record) {
+function disposeRecord(record, { keepInput = false } = {}) {
   if (!record || record.disposed) return;
   record.disposed = true;
   if (record.readTimer) { clearTimeout(record.readTimer); record.readTimer = 0; }
@@ -413,7 +446,20 @@ function disposeRecord(record) {
     try { record.streamController.abort(); } catch (_) { /* already ended */ }
     record.streamController = null;
   }
-  if (record.inputTimer) { clearTimeout(record.inputTimer); record.inputTimer = 0; }
+  if (keepInput && record.kind === 'terminal') {
+    // No timer and no request in flight means nothing would deliver what is
+    // already queued; restart the flush before dropping the view.
+    if (record.pendingInput && !record.inputBusy && !record.inputTimer) {
+      record.inputTimer = window.setTimeout(() => {
+        record.inputTimer = 0;
+        void flushTerminalInput(record);
+      }, 12);
+    }
+  } else {
+    record.inputStopped = true;
+    record.pendingInput = '';
+    if (record.inputTimer) { clearTimeout(record.inputTimer); record.inputTimer = 0; }
+  }
   if (record.snapshotTimer) { clearTimeout(record.snapshotTimer); record.snapshotTimer = 0; }
   if (record.wheelTimer) { clearTimeout(record.wheelTimer); record.wheelTimer = 0; }
   if (record.fitFrame) { cancelAnimationFrame(record.fitFrame); record.fitFrame = 0; }
@@ -458,6 +504,7 @@ function createTerminalPane(pane) {
     pendingInput: '',
     inputTimer: 0,
     inputBusy: false,
+    inputStopped: false,
     streamController: null,
     offset: cursors.get(pane.id) || 0,
     lastResize: '',
@@ -565,7 +612,7 @@ function sendTerminalResize(record, cols, rows) {
 }
 
 function sendTerminalInput(record, data) {
-  if (record.disposed || !data) return;
+  if (record.inputStopped || !data) return;
   // Coalesce fast typing and pastes into one ordered request instead of one
   // HTTP round-trip per keystroke. This is the difference between smooth and
   // jittery input when the agent or a build is also producing output.
@@ -578,20 +625,20 @@ function sendTerminalInput(record, data) {
 }
 
 async function flushTerminalInput(record) {
-  if (record.disposed || record.inputBusy || !record.pendingInput) return;
+  if (record.inputStopped || record.inputBusy || !record.pendingInput) return;
   const payload = record.pendingInput;
   record.pendingInput = '';
   record.inputBusy = true;
   try {
     // Keep each request below the global JSON body limit so large pastes work.
-    for (let offset = 0; offset < payload.length && !record.disposed; offset += 24000) {
+    for (let offset = 0; offset < payload.length && !record.inputStopped; offset += 24000) {
       await api(`/panes/${record.id}/input`, { method: 'POST', body: { data: payload.slice(offset, offset + 24000) } });
     }
   } catch (error) {
-    if (!record.disposed) logStatus('Terminal input could not be sent.');
+    if (!record.inputStopped) logStatus('Terminal input could not be sent.');
   } finally {
     record.inputBusy = false;
-    if (!record.disposed && record.pendingInput) {
+    if (!record.inputStopped && record.pendingInput) {
       record.inputTimer = window.setTimeout(() => {
         record.inputTimer = 0;
         void flushTerminalInput(record);
@@ -1266,6 +1313,12 @@ function bindEvents() {
   els.menuNewTab.addEventListener('click', () => { void newTab(); });
   els.menuAddTerminal.addEventListener('click', () => { void addPane('terminal'); });
   els.menuAddBrowser.addEventListener('click', () => { void addPane('browser'); });
+  els.menuAttach.addEventListener('click', () => { closeSheets(); els.attachInput.click(); });
+  els.attachInput.addEventListener('change', () => {
+    const files = Array.from(els.attachInput.files || []);
+    els.attachInput.value = '';
+    void attachFiles(records.get(effectiveActivePaneId()), files);
+  });
 
   document.querySelectorAll('[data-close]').forEach((button) => {
     button.addEventListener('click', () => {

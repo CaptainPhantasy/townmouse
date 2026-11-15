@@ -83,7 +83,15 @@ async function openShare(page) {
   const results = { retrievedAt: new Date().toISOString(), viewports: [], permissions: [] };
   try {
     await waitForHealth();
-    const bootstrap = await (await fetch(BASE + '/api/browser/bootstrap')).json();
+    const ownerPage = await fetch(BASE + '/index.html', { headers: { Accept: 'text/html' } });
+    const ownerCookies = typeof ownerPage.headers.getSetCookie === 'function'
+      ? ownerPage.headers.getSetCookie()
+      : [ownerPage.headers.get('set-cookie')];
+    const ownerCookie = (ownerCookies || []).filter(Boolean).find((value) => value.startsWith('townmouse_owner='));
+    if (!ownerCookie) throw new Error('owner page did not set the owner cookie');
+    const bootstrap = await (await fetch(BASE + '/api/browser/bootstrap', {
+      headers: { Cookie: ownerCookie.split(';')[0] }
+    })).json();
     const api = async (route = '', method = 'GET', data, token) => {
       const res = await fetch(BASE + '/api/browser' + route, {
         method,

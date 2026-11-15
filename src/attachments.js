@@ -24,6 +24,10 @@ function installAttachments(app) {
 
   app.post('/api/attachments', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
     try {
+      if (!req.isOwner) {
+        res.status(403).json({ error: 'Owner page required.' });
+        return;
+      }
       const data = req.body;
       if (!Buffer.isBuffer(data) || data.length === 0) {
         res.status(400).json({ error: 'No file body was received.' });

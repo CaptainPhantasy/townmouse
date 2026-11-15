@@ -176,9 +176,15 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       const tab = createTab(typeof savedTab.title === 'string' ? savedTab.title : 'Workspace');
       for (const savedPane of (savedTab.panes || []).slice(0, MAX_PANES_PER_TAB)) {
         try {
+          // A browser pane that was never navigated saves about:blank, which
+          // the address validator correctly rejects. Omitting it creates a
+          // fresh blank browser pane instead of silently dropping the pane.
+          const savedUrl = typeof savedPane.url === 'string' && savedPane.url !== 'about:blank'
+            ? savedPane.url
+            : undefined;
           await createPane(tab.id, savedPane.kind === 'browser' ? 'browser' : 'terminal', {
             title: typeof savedPane.title === 'string' ? savedPane.title : undefined,
-            url: typeof savedPane.url === 'string' ? savedPane.url : undefined,
+            url: savedUrl,
             cwd: typeof savedPane.cwd === 'string' ? savedPane.cwd : undefined
           });
         } catch (_) { /* one bad pane must not lose the rest of the workspace */ }
@@ -256,6 +262,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
 
   app.get('/api/panes/bootstrap', route(async (req, res) => {
     if (req.get('Authorization')) throw Object.assign(new Error('Agent tokens cannot bootstrap the owner workspace.'), { status: 403 });
+    if (!req.isOwner) throw Object.assign(new Error('Owner page required.'), { status: 403 });
     const site = req.get('Sec-Fetch-Site');
     if (site && site !== 'same-origin' && site !== 'none') throw Object.assign(new Error('Owner page required.'), { status: 403 });
     await ensureInitial();

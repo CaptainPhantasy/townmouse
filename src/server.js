@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const os = require('os');
@@ -815,6 +816,35 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
   next();
 });
+
+// Owner capability cookie. Terminal agents must never be able to bootstrap the
+// human workspace just because they can reach loopback: an Authorization header
+// is denied at the bootstrap routes, and a header-less local client has no
+// capability at all. The cookie is minted only on a real page navigation and is
+// HttpOnly + SameSite=Strict, so page scripts and cross-site requests cannot
+// read or replay it.
+const OWNER_COOKIE = 'townmouse_owner';
+const OWNER_CAPABILITY = crypto.randomBytes(32).toString('hex');
+app.use((req, res, next) => {
+  const ownerPage = req.method === 'GET' &&
+    (req.path === '/' || req.path === '/index.html' || req.path === '/panes' || req.path === '/panes.html');
+  // Node's fetch (used by the integration tests) cannot send Sec-Fetch-Mode;
+  // a document navigation also identifies itself with Accept: text/html.
+  const navigates = req.get('Sec-Fetch-Mode') === 'navigate' ||
+    String(req.get('Accept') || '').includes('text/html');
+  if (ownerPage && !req.get('Authorization') && navigates) {
+    res.cookie(OWNER_COOKIE, OWNER_CAPABILITY, {
+      httpOnly: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 12 * 60 * 60 * 1000
+    });
+  }
+  const cookies = String(req.headers.cookie || '').split(/;\s*/);
+  req.isOwner = cookies.includes(`${OWNER_COOKIE}=${OWNER_CAPABILITY}`);
+  next();
+});
+
 // Attachments must be mounted before the global JSON parser: JSON files are
 // valid uploads and the raw parser, not express.json, must consume their body.
 require('./attachments').installAttachments(app);

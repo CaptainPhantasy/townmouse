@@ -60,7 +60,7 @@ button { cursor: pointer; }
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--bg);
 }
 
@@ -783,3 +783,39 @@ button { cursor: pointer; }
   }
   .pane-bar { padding-bottom: env(safe-area-inset-bottom); }
 }
+
+
+/* Visible workspace tab strip: only when there is more than one tab. */
+.tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 3px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.tabstrip[hidden] { display: none; }
+.tabstrip::-webkit-scrollbar { display: none; }
+.tabstrip-tab,
+.tabstrip-add {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 11px/1 var(--font-ui);
+  cursor: pointer;
+}
+.tabstrip-tab.is-active {
+  border-color: rgba(127, 227, 192, 0.5);
+  background: rgba(127, 227, 192, 0.08);
+  color: var(--text);
+}
+.tabstrip-tab:hover,
+.tabstrip-add:hover { background: var(--hover); color: var(--text); }
+.tabstrip-add { color: var(--mint); }

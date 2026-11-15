@@ -35,7 +35,7 @@ export function init(T1) {
       while ((m = osc777Re.exec(data)) !== null) {
         try {
           const payload = m[1];
-          const title = 'TerminalOne';
+          const title = 'Townmouse';
           const body = payload.startsWith('notify;') ? payload.slice(7) : payload;
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, { body, tag: 'terminalone' });

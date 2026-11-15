@@ -1,37 +1,35 @@
 #!/bin/bash
 
-# TerminalOne Startup Script
+# Townmouse startup script (developer convenience).
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=${PORT:-11001}
 
-echo "📦 TerminalOne"
-echo "============="
+echo "Townmouse"
+echo "========="
 echo ""
 echo "Checking dependencies..."
 
-# Check if Node.js is installed
-if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js first."
+if ! command -v node > /dev/null; then
+    echo "ERROR: Node.js is not installed. Install Node.js 22.x first."
     exit 1
 fi
 
-echo "✓ Node.js: $(node -v)"
+echo "OK: Node.js $(node -v)"
 
-# Check if npm dependencies are installed
 if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
     echo ""
-    echo "📥 Installing dependencies..."
+    echo "Installing dependencies..."
     cd "$SCRIPT_DIR"
     npm install
 else
-    echo "✓ Dependencies already installed"
+    echo "OK: dependencies already installed"
 fi
 
 echo ""
-echo "🚀 Starting TerminalOne..."
+echo "Starting Townmouse..."
 echo "   URL: http://localhost:$PORT"
 echo "   Ctrl+C to stop"
 echo ""

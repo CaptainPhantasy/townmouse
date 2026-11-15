@@ -226,7 +226,11 @@ async function checkViewport(browser, vp) {
     await pg.waitForFunction(() => !!document.querySelector('.t1-chrome-fab'), { timeout: 8000 });
     const fabM = await pg.evaluate(() => {
       const r = (el) => { if (!el) return null; const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, width: b.width, height: b.height, display: getComputedStyle(el).display }; };
-      return { fab: r(document.querySelector('.t1-chrome-fab')), key: r(document.querySelector('#keybarIpad .kb-key') || document.querySelector('.kb-key')), vw: window.innerWidth, vh: window.innerHeight };
+      // At split widths the phone layout hides the duplicate iPad key row.
+      // Measure the visible key surface, never a hidden duplicate.
+      const visibleKey = [...document.querySelectorAll('#keybarIpad .kb-key, #keybarIphone .kb-key, .kb-key')]
+        .find((el) => el.getBoundingClientRect().height > 0);
+      return { fab: r(document.querySelector('.t1-chrome-fab')), key: r(visibleKey), vw: window.innerWidth, vh: window.innerHeight };
     });
     if (workspaceMode) {
       // Workspace navigation intentionally replaces the legacy chrome toggle.
@@ -237,7 +241,11 @@ async function checkViewport(browser, vp) {
       assert(fabM.fab.top >= -1 && fabM.fab.bottom <= fabM.vh + 1, `${vp.name}: chrome toggle within viewport Y (top=${Math.round(fabM.fab.top)}, bottom=${Math.round(fabM.fab.bottom)})`);
       assert(fabM.fab.width >= 44 && fabM.fab.height >= 44, `${vp.name}: chrome toggle >=44pt (${Math.round(fabM.fab.width)}x${Math.round(fabM.fab.height)})`);
     }
-    assert(fabM.key && fabM.key.height >= 44, `${vp.name}: keybar key >=44pt tall (${Math.round(fabM.key.height)})`);
+    // At split widths the workspace may intentionally hide both keybars and
+    // keep the bottom navigation as the only control surface. When a keybar is
+    // visible, its keys must still be full-size.
+    if (fabM.key) assert(fabM.key.height >= 44, `${vp.name}: keybar key >=44pt tall (${Math.round(fabM.key.height)})`);
+    else assert(workspaceMode, `${vp.name}: keybar key must exist outside workspace mode`);
   } finally {
     await closePageSession(pg);
   }

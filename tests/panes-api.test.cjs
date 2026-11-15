@@ -585,6 +585,10 @@ async function main() {
         body: { state: 'exploded' }
       });
       ensure(invalid.status === 400, 'invalid agent states should be rejected', invalid.body);
+      await request('POST', `/api/panes/panes/${paneId}/status`, { token, body: { state: 'unknown' } });
+      const unknown = await request('GET', `/api/panes/panes/${paneId}/wait?state=unknown&timeout=5000`, { token });
+      ensure(unknown.status === 200 && unknown.body.matched === true, 'wait should normalize the unknown state', unknown.body);
+      ensure(unknown.body.reason === 'state', 'unknown wait should report the state reason', unknown.body);
       await request('POST', `/api/panes/panes/${paneId}/status`, { token, body: { state: 'working' } });
     });
 

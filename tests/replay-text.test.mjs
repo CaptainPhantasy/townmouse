@@ -19,6 +19,12 @@ test('replayTranscript applies backspace and overwrite without duplicate charact
   assert.equal(replayTranscript('echo helloo\b \r\n'), 'echo hello\n');
 });
 
+test('replayTranscript never splits a surrogate pair at a row boundary', () => {
+  const text = replayTranscript('abc😀x\r\n', 4);
+  assert.ok(!/\ud83d\n|\n\ude00/.test(text), JSON.stringify(text));
+  assert.ok(text.includes('😀x'), JSON.stringify(text));
+});
+
 test('replayTranscript applies each segment at the width that produced it', () => {
   const first = 'Mac-mini:~ floyd$ echo BEGIN_RESUME_MARKER_0123456789_AB \rCDEFGHIJ_END\r\nBEGIN_RESUME_MARKER_0123456789_ABCDEFGHIJ_END\r\n';
   const second = 'Mac-mini:~ floyd$ echo SECOND_AT_WIDE\r\nSECOND_AT_WIDE\r\n';

@@ -612,7 +612,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       };
       const check = () => {
         const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
-        if (state && pane.agentState === state) return snapshot(true, 'state');
+        if (state && pane.agentState === (state === 'unknown' ? null : state)) return snapshot(true, 'state');
         if (match && data.includes(match)) return snapshot(true, 'match');
         if (matcher && matcher.test(data)) return snapshot(true, 'match');
         if (idleMs && Date.now() - pane.lastOutputAt >= idleMs) return snapshot(true, 'idle');

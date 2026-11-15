@@ -23,3 +23,17 @@ live headless-browser pages.
 
 Screenshots: `panes-desktop.png`, `panes-phone.png`, `panes-tabs-dialog.png`.
 The acceptance script is archived here as `panes-ui-test.cjs`.
+
+## Attachment and reflow pass — 2026-11-15
+
+- Dropped a 68-byte PNG onto a terminal pane. It uploaded once to
+  `~/.townmouse/attachments/20261115/…` and the terminal received the
+  shell-quoted absolute path, not a base64 stream.
+- `POST /api/attachments` returned `{path, url, ...}`; the returned URL served
+  HTTP 200 and the file existed on disk.
+- In a two-pane tab the browser view measured 709 px and the snapshot image was
+  exactly 709 px wide (height 804), proving the browser viewport reflows to the
+  pane instead of staying fixed at 1280×800.
+- `tests/panes-api.test.cjs` still passes 16/16; the four-pane UI acceptance
+  still renders 4 panes / 2 terminals / 2 browsers with no console errors.
+- The archival attachment test is `panes-attach-test.cjs`.

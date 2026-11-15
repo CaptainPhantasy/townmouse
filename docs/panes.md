@@ -16,7 +16,12 @@ limits.
 - **Keyboard**: focus the active terminal; in a browser pane it focuses the
   page-type field.
 - Browser panes accept clicks, wheel scrolling, typing, Back, Reload, and an
-  address. The browser is a real Chromium page rendered by the server.
+  address. The browser is a real Chromium page rendered by the server, and its
+  viewport reflows to the pane's actual size so text wraps at the pane edge.
+- Drop or paste files/images onto a terminal pane. The file is uploaded once to
+  `~/.townmouse/attachments/<date>/` (25 MB limit) and a shell-quoted absolute
+  path is inserted into the PTY; the terminal never receives a base64 stream.
+  Dropping onto a browser pane opens the attachment URL instead.
 
 ## Agent
 

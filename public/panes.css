@@ -761,3 +761,9 @@ button { cursor: pointer; }
 /* Inactive browser panes show the page, not the editing rows. */
 .pane-browser:not(.is-active) .browser-toolbar,
 .pane-browser:not(.is-active) .browser-type-row { display: none; }
+
+/* Drop target feedback for native file attachment. */
+.pane.drop-target {
+  border-color: var(--mint);
+  box-shadow: inset 0 0 0 1px rgba(127, 227, 192, 0.5), 0 0 0 1px rgba(127, 227, 192, 0.2);
+}

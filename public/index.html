@@ -560,6 +560,70 @@
   // Modifier toggle state for the on-screen key bar (Ctrl / Alt as sticky).
   let modState = { ctrl: false, alt: false };
 
+  // File/image drops become a server-side attachment plus a shell-quoted path
+  // in the terminal. Never paste a data: URI or base64 stream into the PTY.
+  let attachmentDropBound = false;
+  function shellQuotePath(value) {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+  }
+  async function uploadTerminalAttachment(file) {
+    const response = await fetch('/api/attachments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(file.name || 'attachment')
+      },
+      body: file
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch (_) { payload = null; }
+    if (!response.ok) throw new Error((payload && payload.error) || `Upload failed (${response.status}).`);
+    return payload;
+  }
+  function bindAttachmentDrop() {
+    if (attachmentDropBound) return;
+    const host = document.getElementById('terminal');
+    if (!host) return;
+    attachmentDropBound = true;
+    const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+    host.addEventListener('dragover', (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    host.addEventListener('drop', async (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      for (const file of Array.from(event.dataTransfer.files)) {
+        try {
+          const attachment = await uploadTerminalAttachment(file);
+          if (sendInputFn) sendInputFn(`${shellQuotePath(attachment.path)} `);
+          showBanner(`Attached ${file.name}`, 'info');
+        } catch (error) {
+          showBanner(error.message || `Could not attach ${file.name}.`, 'error');
+        }
+      }
+    });
+    host.addEventListener('paste', async (event) => {
+      const files = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.kind === 'file')
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (!files.length) return;
+      event.preventDefault();
+      for (const file of files) {
+        try {
+          const attachment = await uploadTerminalAttachment(file);
+          if (sendInputFn) sendInputFn(`${shellQuotePath(attachment.path)} `);
+          showBanner(`Attached ${file.name}`, 'info');
+        } catch (error) {
+          showBanner(error.message || `Could not attach ${file.name}.`, 'error');
+        }
+      }
+    });
+  }
+
   const $ = (sel) => document.querySelector(sel);
 
   function addTerminalResource(disposer) {
@@ -1006,6 +1070,7 @@
   const guard = new InputGuard({ send: sendInput, identicalDedupeMs: 500 });
   // Expose the sender to the on-screen key bar (outside this closure).
   sendInputFn = (data) => guard.send(data);
+  bindAttachmentDrop();
 
   addTerminalResource(bindInputGuard(term, guard));
 

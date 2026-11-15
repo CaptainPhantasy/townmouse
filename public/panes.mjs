@@ -84,6 +84,76 @@ const cursors = new Map();
 const histories = new Map();
 const records = new Map();
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+async function uploadAttachment(file) {
+  const response = await fetch('/api/attachments', {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Filename': encodeURIComponent(file.name || 'attachment')
+    },
+    body: file
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { payload = null; }
+  if (!response.ok) throw new Error((payload && payload.error) || `Upload failed (${response.status}).`);
+  return payload;
+}
+
+async function attachFiles(record, files) {
+  if (!record || !files || !files.length) return;
+  for (const file of files) {
+    try {
+      const attachment = await uploadAttachment(file);
+      if (record.kind === 'terminal' && record.term) {
+        record.term.paste(`${shellQuote(attachment.path)} `);
+        showNotice(`Attached ${file.name}`, 'info', 2600);
+      } else if (record.kind === 'browser') {
+        await api(`/panes/${record.id}/url`, { method: 'POST', body: { url: attachment.url } });
+        record.lastViewport = '';
+        requestSnapshot(record, 120);
+        showNotice(`Opened ${file.name} in the browser pane`, 'info', 2600);
+      }
+    } catch (error) {
+      showNotice(error.message || `Could not attach ${file.name}.`, 'error');
+    }
+  }
+}
+
+function wireDrop(root, paneId) {
+  const recordFor = () => records.get(paneId);
+  const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+  root.addEventListener('dragover', (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    root.classList.add('drop-target');
+  });
+  root.addEventListener('dragleave', (event) => {
+    if (!root.contains(event.relatedTarget)) root.classList.remove('drop-target');
+  });
+  root.addEventListener('drop', (event) => {
+    if (!event.dataTransfer?.files?.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    root.classList.remove('drop-target');
+    void attachFiles(recordFor(), Array.from(event.dataTransfer.files));
+  });
+  root.addEventListener('paste', (event) => {
+    const files = Array.from(event.clipboardData?.items || [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault();
+    void attachFiles(recordFor(), files);
+  });
+}
+
 function logStatus(message) {
   els.srStatus.textContent = message;
 }
@@ -343,6 +413,7 @@ function disposeRecord(record) {
     try { record.resizeObserver.disconnect(); } catch (_) { /* already detached */ }
     record.resizeObserver = null;
   }
+  if (record.resizeTimer) { clearTimeout(record.resizeTimer); record.resizeTimer = 0; }
   if (record.term) {
     try { record.term.dispose(); } catch (_) { /* already disposed */ }
     record.term = null;
@@ -388,6 +459,7 @@ function createTerminalPane(pane) {
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
   record.closeButton.addEventListener('click', () => { void closePane(pane.id, record.titleEl.textContent); });
   records.set(pane.id, record);
+  wireDrop(root, pane.id);
   requestAnimationFrame(() => {
     if (!record.disposed && root.isConnected) mountTerminal(record);
   });
@@ -435,11 +507,22 @@ function mountTerminal(record) {
     safeFit(record);
     sendTerminalResize(record, record.term.cols, record.term.rows);
   });
+  const applyFontSize = () => {
+    if (record.disposed || !record.term) return;
+    const width = record.host.getBoundingClientRect().width;
+    const size = width >= 560 ? 13 : width >= 430 ? 12 : width >= 320 ? 11 : 10;
+    if (record.term.options.fontSize !== size) {
+      record.term.options.fontSize = size;
+      safeFit(record);
+    }
+  };
+  applyFontSize();
   record.resizeObserver = new ResizeObserver(() => {
     if (record.disposed) return;
     if (record.fitFrame) cancelAnimationFrame(record.fitFrame);
     record.fitFrame = requestAnimationFrame(() => {
       record.fitFrame = 0;
+      applyFontSize();
       safeFit(record);
     });
   });
@@ -572,6 +655,9 @@ function createBrowserPane(pane) {
     snapshotTimer: 0,
     wheelDelta: 0,
     wheelTimer: 0,
+    resizeObserver: null,
+    resizeTimer: 0,
+    lastViewport: '',
     disposed: false
   };
   record.titleEl.textContent = pane.title || 'Browser';
@@ -603,8 +689,39 @@ function createBrowserPane(pane) {
   record.view.addEventListener('wheel', (event) => onBrowserWheel(record, event), { passive: false });
 
   records.set(pane.id, record);
+  wireDrop(root, pane.id);
+  const resizeBrowser = () => {
+    if (record.disposed || !record.root.isConnected) return;
+    const rect = record.view.getBoundingClientRect();
+    const width = Math.round(rect.width);
+    const height = Math.round(rect.height);
+    if (width < 50 || height < 50) return;
+    const key = `${width}x${height}`;
+    if (record.lastViewport === key) return;
+    record.lastViewport = key;
+    api(`/panes/${record.id}/resize`, { method: 'POST', body: { width, height } })
+      .then((size) => {
+        if (record.disposed) return;
+        if (size && Number.isFinite(size.width)) record.width = size.width;
+        if (size && Number.isFinite(size.height)) record.height = size.height;
+        requestSnapshot(record, 120);
+      })
+      .catch(() => { record.lastViewport = ''; });
+  };
+  record.resizeObserver = new ResizeObserver(() => {
+    if (record.disposed) return;
+    if (record.resizeTimer) clearTimeout(record.resizeTimer);
+    record.resizeTimer = window.setTimeout(() => {
+      record.resizeTimer = 0;
+      resizeBrowser();
+    }, 180);
+  });
+  record.resizeObserver.observe(record.view);
   requestAnimationFrame(() => {
-    if (!record.disposed && root.isConnected) requestSnapshot(record, 0);
+    if (!record.disposed && root.isConnected) {
+      resizeBrowser();
+      requestSnapshot(record, 0);
+    }
   });
   return root;
 }
@@ -982,6 +1099,16 @@ function triggerBack() {
 }
 
 function bindEvents() {
+  window.addEventListener('dragover', (event) => {
+    if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+  });
+  window.addEventListener('drop', (event) => {
+    if (!event.dataTransfer?.files?.length) return;
+    if (event.target.closest?.('.pane')) return;
+    event.preventDefault();
+    const record = records.get(effectiveActivePaneId());
+    void attachFiles(record, Array.from(event.dataTransfer.files));
+  });
   els.emptyAddTerminal.addEventListener('click', () => { void addPane('terminal'); });
   els.emptyAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.emptyNewTab.addEventListener('click', () => { void newTab(); });

@@ -819,6 +819,7 @@ app.use(express.json({ limit: '64kb' }));
 const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
 const closeBrowsers = () => browserWorkspace.closeAll();
 const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
+require('./attachments').installAttachments(app);
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs

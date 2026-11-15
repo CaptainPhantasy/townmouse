@@ -69,6 +69,7 @@ async function dispatchFile(page, selector, name, type, eventName) {
   let browser = null;
   let page = null;
   let uploads = 0;
+  let pageErrors = [];
 
   try {
     await waitHealth();
@@ -77,10 +78,15 @@ async function dispatchFile(page, selector, name, type, eventName) {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
     page = await browser.newPage();
-    const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
+    const paneInputs = [];
     page.on('request', (request) => {
       if (request.method() === 'POST' && request.url().endsWith('/api/attachments')) uploads++;
+      if (request.method() === 'POST' && request.url().includes('/api/panes/panes/') && request.url().endsWith('/input')) {
+        let parsed = null;
+        try { parsed = request.postDataJSON(); } catch (_) { /* not JSON */ }
+        paneInputs.push({ raw: request.postData(), parsed });
+      }
     });
 
     await page.setViewport({ width: 393, height: 852, deviceScaleFactor: 1 });
@@ -108,6 +114,22 @@ async function dispatchFile(page, selector, name, type, eventName) {
     await fileInput.uploadFile(pickerFile);
     await waitForTerminalText(page, 'picker-attachment.txt');
     assert.strictEqual(uploads, 1, `file picker should upload exactly once, saw ${uploads}`);
+
+    const card = await page.evaluate(() => {
+      const el = document.querySelector('#attachment-card');
+      return el ? {
+        hidden: el.hidden,
+        text: el.textContent,
+        url: el.dataset.url,
+        copyUrl: Boolean(el.querySelector('[data-attachment-action="copy-url"]')),
+        openUrl: Boolean(el.querySelector('[data-attachment-action="open-url"]'))
+      } : null;
+    });
+    assert(card && !card.hidden, 'attachment card should be visible after upload');
+    assert(card.url.includes(`http://127.0.0.1:${PORT}/attachments/`), `attachment card URL is wrong: ${card.url}`);
+    assert(card.text.includes('picker-attachment.txt'), 'attachment card should name the file');
+    assert(card.text.includes(card.url), 'attachment card should show the URL text');
+    assert(card.copyUrl && card.openUrl, 'attachment card needs Copy URL and Open URL actions');
 
     await dispatchFile(page, '#terminal .xterm-helper-textarea', 'pasted-image.png', 'image/png', 'paste');
     await waitForTerminalText(page, 'pasted-image.png');
@@ -138,6 +160,98 @@ async function dispatchFile(page, selector, name, type, eventName) {
       { timeout: 15000 }
     );
     assert.strictEqual(uploads, beforePanePaste + 1, 'pane image paste should upload exactly once');
+    const paneNotice = await page.evaluate(() => {
+      const el = document.querySelector('#notice');
+      return { text: el.textContent, copyUrl: el.dataset.copyUrl || '' };
+    });
+    assert(paneNotice.text.includes('/attachments/'), `pane notice should expose the attachment URL: ${paneNotice.text}`);
+    assert(paneNotice.copyUrl.includes('/attachments/'), 'pane notice should carry a copyable URL');
+
+    const keybar = await page.evaluate(() => {
+      const bar = document.querySelector('#pane-keybar');
+      const keys = Array.from(document.querySelectorAll('#pane-keybar .pane-key'));
+      return {
+        hidden: bar.hidden,
+        visible: Boolean(bar.offsetParent !== null && bar.getBoundingClientRect().height > 0),
+        keys: keys.map((key) => {
+          const rect = key.getBoundingClientRect();
+          return { label: key.textContent, width: rect.width, height: rect.height };
+        })
+      };
+    });
+    assert(!keybar.hidden && keybar.visible, 'pane key bar should be visible at 393x852');
+    assert(keybar.keys.length >= 10, `pane key bar is missing keys: ${JSON.stringify(keybar.keys)}`);
+    for (const key of keybar.keys) {
+      assert(key.width >= 44 && key.height >= 44, `key ${key.label} is below 44x44 (${key.width}x${key.height})`);
+    }
+
+    await page.evaluate(() => {
+      document.querySelector('#pane-keybar [data-mod="ctrl"]').click();
+      document.querySelector('#pane-keybar [data-key="c"]').click();
+    });
+    let ctrlC = false;
+    for (let i = 0; i < 60 && !ctrlC; i++) {
+      ctrlC = paneInputs.some((body) => (body && body.parsed && body.parsed.data === '\u0003') ||
+        (body && typeof body.raw === 'string' && body.raw.includes('\\u0003')));
+      if (!ctrlC) await wait(50);
+    }
+    assert(ctrlC, `Ctrl+C from the pane key bar did not reach the PTY: ${JSON.stringify(paneInputs)}`);
+
+    // A UI-created terminal must spawn at its measured dimensions, not 100x30.
+    const firstPaneId = await page.evaluate(() => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return tab.panes[0].id;
+    });
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-add-terminal', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-add-terminal').click());
+    await page.waitForFunction((knownId) => {
+      const state = window.__panes.state();
+      const tab = state && state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      return Boolean(tab && tab.panes.length === 2 && tab.panes.some((pane) => pane.id !== knownId));
+    }, { timeout: 20000 }, firstPaneId);
+    await page.waitForFunction((knownId) => {
+      const state = window.__panes.state();
+      const tab = state && state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      const pane = tab && tab.panes.find((candidate) => candidate.id !== knownId);
+      return Boolean(pane && pane.status === 'running' && pane.cols < 100);
+    }, { timeout: 20000 }, firstPaneId);
+    const spawned = await page.evaluate((knownId) => {
+      const state = window.__panes.state();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeTabId);
+      const pane = tab.panes.find((candidate) => candidate.id !== knownId);
+      return { pane, dimensions: window.__panes.dimensions(pane.id) };
+    }, firstPaneId);
+    assert(spawned.dimensions, 'new terminal pane has no client dimensions');
+    assert(
+      spawned.dimensions.cols === spawned.pane.cols && spawned.dimensions.rows === spawned.pane.rows,
+      `PTY and client disagree at spawn: client ${JSON.stringify(spawned.dimensions)} vs PTY ${spawned.pane.cols}x${spawned.pane.rows}`
+    );
+    assert(spawned.pane.cols < 100, `PTY spawned at the old default width: ${spawned.pane.cols}`);
+
+    // Closing a running pane asks first; Cancel keeps the shell alive.
+    await page.evaluate((paneId) => {
+      document.querySelector(`[data-pane-id="${paneId}"] .pane-close`).click();
+    }, spawned.pane.id);
+    await page.waitForFunction('document.querySelector("#close-confirm").open', { timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#close-cancel').click());
+    await page.waitForFunction('!document.querySelector("#close-confirm").open', { timeout: 5000 });
+    const stillOpen = await page.evaluate((paneId) => {
+      const state = window.__panes.state();
+      return state.tabs.some((tab) => tab.panes.some((pane) => pane.id === paneId));
+    }, spawned.pane.id);
+    assert(stillOpen, 'Cancel must keep the pane and its shell alive');
+
+    await page.evaluate((paneId) => {
+      document.querySelector(`[data-pane-id="${paneId}"] .pane-close`).click();
+    }, spawned.pane.id);
+    await page.waitForFunction('document.querySelector("#close-confirm").open', { timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#close-approve').click());
+    await page.waitForFunction((paneId) => {
+      const state = window.__panes.state();
+      return !state.tabs.some((tab) => tab.panes.some((pane) => pane.id === paneId));
+    }, { timeout: 10000 }, spawned.pane.id);
 
     assert(pageErrors.length === 0, `page errors: ${pageErrors.join(' | ')}`);
     console.log('PASS attachments UI: picker, paste, outside drop ignored, terminal drop');
@@ -149,6 +263,7 @@ async function dispatchFile(page, selector, name, type, eventName) {
       try {
         console.error('DEBUG text', (await terminalText(page)).slice(-800));
       } catch (_) { /* page gone */ }
+      console.error('DEBUG pageErrors', pageErrors);
     }
     if (stderr) console.error(stderr.slice(-1200));
     console.log('RESULT passed=0 total=1 failures=1');

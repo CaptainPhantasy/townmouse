@@ -380,6 +380,19 @@ button { cursor: pointer; }
 
 .btn-quiet { background: transparent; color: var(--muted); }
 
+.btn-danger {
+  border-color: rgba(255, 154, 154, 0.4);
+  background: rgba(255, 154, 154, 0.12);
+  color: var(--danger);
+}
+
+.btn-danger:hover { background: rgba(255, 154, 154, 0.2); border-color: var(--danger); }
+
+.sheet-confirm { width: min(400px, calc(100vw - 24px)); }
+.confirm-copy { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-actions .btn { min-height: 44px; min-width: 88px; }
+
 .btn:disabled,
 .btn:disabled:hover {
   opacity: 0.42;
@@ -393,6 +406,49 @@ button { cursor: pointer; }
 .btn-primary:disabled:hover {
   background: var(--mint);
   border-color: var(--mint);
+  color: var(--mint-ink);
+}
+
+.bottom-stack { min-width: 0; }
+
+.pane-keybar {
+  display: none;
+  gap: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pane-keybar::-webkit-scrollbar { display: none; }
+
+@media (pointer: coarse), (max-width: 900px) {
+  .pane-keybar:not([hidden]) { display: flex; }
+}
+
+.pane-key {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.pane-key:active { background: var(--hover); }
+
+.pane-key.toggle.active {
+  border-color: var(--mint);
+  background: var(--mint);
   color: var(--mint-ink);
 }
 

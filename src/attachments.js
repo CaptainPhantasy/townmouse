@@ -25,8 +25,10 @@ function installAttachments(app) {
 
   app.post('/api/attachments', express.raw({ type: '*/*', limit: '25mb' }), async (req, res) => {
     try {
-      if (!req.isOwner) {
-        res.status(403).json({ error: 'Owner page required.' });
+      const paneToken = req.get('X-Townmouse-Token') || (req.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+      const agentUpload = Boolean(paneToken && app.locals.townmousePaneToken && paneToken === app.locals.townmousePaneToken);
+      if (!req.isOwner && !agentUpload) {
+        res.status(403).json({ error: 'Owner page or workspace token required.' });
         return;
       }
       const data = req.body;

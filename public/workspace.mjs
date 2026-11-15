@@ -727,6 +727,70 @@ export async function init(T1) {
   $('agent-browser').onclick = safe(openAgent);
   $('workspace-panes').onclick = () => location.assign('/panes.html');
 
+  let attachmentCardTimer = 0;
+  function copyAttachmentText(value, success) {
+    const fallback = () => {
+      const area = document.createElement('textarea');
+      area.value = value;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      body.append(area);
+      area.select();
+      try { document.execCommand('copy'); } catch (_) { /* nothing else to try */ }
+      area.remove();
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => T1.toast?.(success), () => { fallback(); T1.toast?.(success); });
+    } else {
+      fallback();
+      T1.toast?.(success);
+    }
+  }
+
+  function showAttachmentCard(attachment, file) {
+    let card = document.getElementById('attachment-card');
+    if (!card) {
+      card = document.createElement('aside');
+      card.id = 'attachment-card';
+      card.className = 'attachment-card';
+      card.setAttribute('role', 'status');
+      card.setAttribute('aria-live', 'polite');
+      card.hidden = true;
+      card.innerHTML =
+        '<div class="attachment-card-head">' +
+          '<span class="attachment-card-name"></span>' +
+          '<button type="button" class="attachment-card-close" aria-label="Dismiss attachment">×</button>' +
+        '</div>' +
+        '<div class="attachment-card-row"><span>Path</span><code data-field="path"></code></div>' +
+        '<div class="attachment-card-row"><span>URL</span><code data-field="url"></code></div>' +
+        '<div class="attachment-card-actions">' +
+          '<button type="button" data-attachment-action="copy-path">Copy path</button>' +
+          '<button type="button" data-attachment-action="copy-url">Copy URL</button>' +
+          '<button type="button" data-attachment-action="open-url">Open URL</button>' +
+        '</div>';
+      card.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-attachment-action]')?.dataset.attachmentAction;
+        if (event.target.closest('.attachment-card-close')) {
+          card.hidden = true;
+          return;
+        }
+        if (action === 'copy-path') copyAttachmentText(card.dataset.path || '', 'Attachment path copied');
+        if (action === 'copy-url') copyAttachmentText(card.dataset.url || '', 'Attachment URL copied');
+        if (action === 'open-url' && card.dataset.url) window.open(card.dataset.url, '_blank', 'noopener');
+      });
+      body.append(card);
+    }
+    card.dataset.path = attachment.path || '';
+    card.dataset.url = attachment.url || '';
+    card.querySelector('.attachment-card-name').textContent = `Attached ${file.name || 'file'}`;
+    card.querySelector('[data-field="path"]').textContent = attachment.path || '';
+    card.querySelector('[data-field="url"]').textContent = attachment.url || '';
+    card.hidden = false;
+    clearTimeout(attachmentCardTimer);
+    attachmentCardTimer = window.setTimeout(() => { card.hidden = true; }, 15000);
+  }
+
   const attachInput = document.createElement('input');
   attachInput.type = 'file';
   attachInput.multiple = true;
@@ -747,8 +811,8 @@ export async function init(T1) {
         const attachment = await response.json();
         if (!response.ok) throw new Error(attachment.error || `Upload failed (${response.status}).`);
         const quoted = `'${String(attachment.path).replace(/'/g, `'\\''`)}'`;
-        window.__terminalOne?.sendData?.(quoted + ' ');
-        T1.toast?.(`Attached ${file.name}`);
+        T1.sendData?.(quoted + ' ');
+        showAttachmentCard(attachment, file);
       } catch (error) {
         T1.toast?.(error.message || `Could not attach ${file.name}.`);
       }

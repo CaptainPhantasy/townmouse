@@ -41,6 +41,17 @@ function args(list) {
 
 function print(value) { console.log(JSON.stringify(value, null, 2)); }
 
+const MIME_BY_EXT = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf',
+  '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+  '.zip': 'application/zip'
+};
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 async function main() {
   const [scope, action, ...rest] = process.argv.slice(2);
   if (scope === 'pane' && (action === 'run' || action === 'input')) {
@@ -55,6 +66,33 @@ async function main() {
     return;
   }
   const a = args(rest);
+  if (scope === 'attach') {
+    const attachArgs = args([action, ...rest].filter((value) => value !== undefined));
+    const file = attachArgs._[0];
+    if (!file) throw new Error('attach requires a file path.');
+    if (!token) throw new Error('No workspace token. Run from a Townmouse terminal pane or set TOWNMOUSE_TOKEN.');
+    const stat = fs.statSync(file);
+    if (stat.size > 25 * 1024 * 1024) throw new Error('Attachment exceeds the 25 MB limit.');
+    const root = api.replace(/\/api\/panes\/?$/, '');
+    const type = attachArgs.type || MIME_BY_EXT[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    const response = await fetch(root + '/api/attachments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': type,
+        'X-Filename': encodeURIComponent(path.basename(file)),
+        'X-Townmouse-Token': token
+      },
+      body: fs.readFileSync(file)
+    });
+    const attachment = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(attachment.error || `Upload failed (${response.status}).`);
+    if (attachArgs.pane) {
+      await call('POST', `/panes/${attachArgs.pane}/input`, { data: shellQuote(attachment.path) + ' ' });
+      attachment.insertedPane = attachArgs.pane;
+    }
+    print(attachment);
+    return;
+  }
   if (!scope || scope === 'help' || scope === '--help') {
     console.log(`Usage:
   panes state
@@ -68,6 +106,7 @@ async function main() {
   panes pane text <pane-id>
   panes pane input <pane-id> <text...>
   panes pane close <pane-id>
+  panes attach <file> [--pane <pane-id>] [--type MIME]
   panes active --tab <tab-id> [--pane <pane-id>]
 
 Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID.`);

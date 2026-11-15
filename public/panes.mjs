@@ -40,6 +40,12 @@ const els = {
   menuNewTab: byId('menu-new-tab'),
   menuAttach: byId('menu-attach'),
   attachInput: byId('attach-input'),
+  closeConfirm: byId('close-confirm'),
+  closeConfirmTitle: byId('close-confirm-title'),
+  closeConfirmCopy: byId('close-confirm-copy'),
+  closeCancel: byId('close-cancel'),
+  closeApprove: byId('close-approve'),
+  keybar: byId('pane-keybar'),
   notice: byId('notice'),
   srStatus: byId('sr-status')
 };
@@ -82,6 +88,7 @@ let noticeText = '';
 let noticeAt = 0;
 let tabsDialogSignature = '';
 let booting = false;
+let pendingClose = null;
 
 const cursors = new Map();
 const histories = new Map();
@@ -113,7 +120,7 @@ async function attachFiles(record, files) {
       const attachment = await uploadAttachment(file);
       if (record.kind === 'terminal' && record.term) {
         record.term.paste(`${shellQuote(attachment.path)} `);
-        showNotice(`Attached ${file.name}`, 'info', 2600);
+        showAttachmentNotice(attachment, file);
       } else if (record.kind === 'browser') {
         await api(`/panes/${record.id}/url`, { method: 'POST', body: { url: attachment.url } });
         record.lastViewport = '';
@@ -162,7 +169,7 @@ function logStatus(message) {
   els.srStatus.textContent = message;
 }
 
-function showNotice(message, kind = 'error', duration = 4200) {
+function showNotice(message, kind = 'error', duration = 4200, copyUrl = '') {
   if (!message) return;
   const now = Date.now();
   if (kind === 'error' && message === noticeText && now - noticeAt < 1200) return;
@@ -170,11 +177,24 @@ function showNotice(message, kind = 'error', duration = 4200) {
   noticeAt = now;
   els.notice.textContent = message;
   els.notice.dataset.kind = kind;
+  if (copyUrl) {
+    els.notice.dataset.copyUrl = copyUrl;
+    els.notice.title = 'Tap to copy the attachment URL';
+  } else {
+    delete els.notice.dataset.copyUrl;
+    els.notice.removeAttribute('title');
+  }
   els.notice.hidden = false;
   clearTimeout(noticeTimer);
   if (duration > 0) {
     noticeTimer = window.setTimeout(() => { els.notice.hidden = true; }, duration);
   }
+}
+
+function showAttachmentNotice(attachment, file) {
+  // The URL is part of the message, not a filename that disappears. Tapping
+  // the notice copies it; agents can get the same URL from `panes attach`.
+  showNotice(`Attached ${file.name} · ${attachment.url}`, 'info', 8000, attachment.url);
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -213,6 +233,107 @@ function paneTitle(pane, index) {
     return 'Browser';
   }
   return `Terminal ${index + 1}`;
+}
+
+// ─── Terminal key bar ──────────────────────────────────────────────────────
+// Phones have no Esc/Tab/Ctrl/arrow keys. Emit the same xterm sequences as the
+// main terminal directly through the pane input queue, independent of focus.
+
+const PANE_SEQ = {
+  esc: '\x1b', tab: '\t',
+  up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D',
+  home: '\x1b[H', end: '\x1b[F', pgup: '\x1b[5~', pgdn: '\x1b[6~'
+};
+const paneMods = { ctrl: false, alt: false };
+
+function activeTerminalRecord() {
+  const record = records.get(effectiveActivePaneId());
+  return record && record.kind === 'terminal' && !record.disposed ? record : null;
+}
+
+function syncPaneMods() {
+  if (!els.keybar) return;
+  els.keybar.querySelectorAll('.pane-key.toggle[data-mod]').forEach((button) => {
+    const active = Boolean(paneMods[button.dataset.mod]);
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function clearPaneMods() {
+  paneMods.ctrl = false;
+  paneMods.alt = false;
+  syncPaneMods();
+}
+
+function emitPaneSequence(sequence) {
+  const record = activeTerminalRecord();
+  if (!record) return;
+  sendTerminalInput(record, sequence);
+  clearPaneMods();
+  if (record.term) record.term.focus();
+}
+
+function emitPaneLiteral(character) {
+  const record = activeTerminalRecord();
+  if (!record) return;
+  let output = character;
+  if (paneMods.ctrl && output.length === 1) output = String.fromCharCode(output.charCodeAt(0) & 0x1f);
+  if (paneMods.alt && output.length === 1) output = '\x1b' + output;
+  sendTerminalInput(record, output);
+  clearPaneMods();
+  if (record.term) record.term.focus();
+}
+
+function makePaneKey(label, options = {}) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'pane-key';
+  button.textContent = label;
+  if (options.title) button.title = options.title;
+  if (options.key) button.dataset.key = options.key;
+  if (options.toggle) {
+    button.classList.add('toggle');
+    button.dataset.mod = options.toggle;
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => {
+      paneMods[options.toggle] = !paneMods[options.toggle];
+      Object.keys(paneMods).forEach((name) => {
+        if (name !== options.toggle) paneMods[name] = false;
+      });
+      syncPaneMods();
+    });
+  } else if (options.sequence) {
+    button.addEventListener('click', () => emitPaneSequence(options.sequence));
+  } else if (options.literal) {
+    button.addEventListener('click', () => emitPaneLiteral(options.literal));
+  }
+  return button;
+}
+
+function buildPaneKeybar() {
+  if (!els.keybar) return;
+  const keys = [
+    makePaneKey('ESC', { sequence: PANE_SEQ.esc, title: 'Escape' }),
+    makePaneKey('TAB', { sequence: PANE_SEQ.tab, title: 'Tab' }),
+    makePaneKey('CTRL', { toggle: 'ctrl', title: 'Ctrl (sticky)' }),
+    makePaneKey('ALT', { toggle: 'alt', title: 'Alt (sticky)' }),
+    makePaneKey('C', { literal: 'c', key: 'c', title: 'C; with CTRL active sends Ctrl+C' }),
+    makePaneKey('←', { sequence: PANE_SEQ.left, title: 'Left' }),
+    makePaneKey('↑', { sequence: PANE_SEQ.up, title: 'Up' }),
+    makePaneKey('↓', { sequence: PANE_SEQ.down, title: 'Down' }),
+    makePaneKey('→', { sequence: PANE_SEQ.right, title: 'Right' }),
+    makePaneKey('HOME', { sequence: PANE_SEQ.home, title: 'Home' }),
+    makePaneKey('END', { sequence: PANE_SEQ.end, title: 'End' }),
+    makePaneKey('PGUP', { sequence: PANE_SEQ.pgup, title: 'Page Up' }),
+    makePaneKey('PGDN', { sequence: PANE_SEQ.pgdn, title: 'Page Down' })
+  ];
+  els.keybar.replaceChildren(...keys);
+}
+
+function updateKeybar() {
+  if (!els.keybar) return;
+  els.keybar.hidden = !activeTerminalRecord();
 }
 
 function paneCountLabel(count) {
@@ -360,7 +481,7 @@ function updateEmptyState(tab) {
 }
 
 function updatePaneChrome(tab) {
-  if (!tab) { updateBackButton(); return; }
+  if (!tab) { updateBackButton(); updateKeybar(); return; }
   const activeId = effectiveActivePaneId(tab);
   tab.panes.forEach((pane, index) => {
     const record = records.get(pane.id);
@@ -383,6 +504,7 @@ function updatePaneChrome(tab) {
       record.currentUrl = pane.url || record.currentUrl;
     }
   });
+  updateKeybar();
   updateBackButton();
 }
 
@@ -392,6 +514,7 @@ function updateActiveClasses() {
   for (const [id, record] of records) {
     record.root.classList.toggle('is-active', id === activeId);
   }
+  updateKeybar();
   updateBackButton();
 }
 
@@ -509,13 +632,15 @@ function createTerminalPane(pane) {
     offset: cursors.get(pane.id) || 0,
     lastResize: '',
     exited: false,
+    pendingStart: pane.status === 'starting',
+    starting: false,
     disposed: false
   };
   record.titleEl.textContent = pane.title || 'Terminal';
   record.closeButton.setAttribute('aria-label', `Close terminal pane ${pane.title || 'Terminal'}`);
   root.addEventListener('pointerdown', onPanePointerDown);
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
-  record.closeButton.addEventListener('click', () => { void closePane(pane.id, record.titleEl.textContent); });
+  record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
   records.set(pane.id, record);
   wireDrop(root, pane.id);
   requestAnimationFrame(() => {
@@ -554,8 +679,13 @@ function mountTerminal(record) {
   // Terminal copy: Cmd/Ctrl+C with a selection copies; with no selection it
   // still reaches the PTY as SIGINT, matching terminal expectations.
   term.attachCustomKeyEventHandler((event) => {
-    const mod = event.metaKey || event.ctrlKey;
-    if (!mod || event.key.toLowerCase() !== 'c' || !term.hasSelection()) return true;
+    const platform = navigator.userAgentData?.platform || navigator.platform || '';
+    const copyChord = /mac|iphone|ipad/i.test(platform)
+      ? event.metaKey && !event.ctrlKey
+      : event.ctrlKey && event.shiftKey;
+    // Bare Ctrl+C must always interrupt the foreground process, even when
+    // text is selected. Swallowing it for copy is a terminal cardinal sin.
+    if (!copyChord || event.key.toLowerCase() !== 'c' || !term.hasSelection()) return true;
     try { navigator.clipboard?.writeText(term.getSelection()); } catch (_) { /* clipboard denied */ }
     return false;
   });
@@ -566,12 +696,18 @@ function mountTerminal(record) {
     if (!record.disposed) sendTerminalResize(record, cols, rows);
   });
   const history = histories.get(record.id);
-  if (history) term.write(history);
-  void startTerminalStream(record);
   requestAnimationFrame(() => {
     if (record.disposed || !record.term) return;
+    // Fit before replaying or spawning: the first prompt and the local history
+    // must be laid out at the pane's real width, not xterm's default grid.
     safeFit(record);
-    sendTerminalResize(record, record.term.cols, record.term.rows);
+    if (history) term.write(history);
+    if (record.pendingStart) {
+      void startPendingTerminal(record);
+    } else {
+      void startTerminalStream(record);
+      sendTerminalResize(record, record.term.cols, record.term.rows);
+    }
   });
   const applyFontSize = () => {
     if (record.disposed || !record.term) return;
@@ -593,6 +729,27 @@ function mountTerminal(record) {
     });
   });
   record.resizeObserver.observe(record.host);
+}
+
+async function startPendingTerminal(record) {
+  if (!record || record.disposed || record.starting || !record.term) return;
+  record.starting = true;
+  try {
+    await api(`/panes/${record.id}/start`, {
+      method: 'POST',
+      body: { cols: record.term.cols, rows: record.term.rows }
+    });
+    if (record.disposed) return;
+    record.pendingStart = false;
+    void startTerminalStream(record);
+  } catch (error) {
+    if (!record.disposed) {
+      showNotice(error.message || 'The terminal could not start.', 'error');
+      void startTerminalStream(record);
+    }
+  } finally {
+    record.starting = false;
+  }
 }
 
 function safeFit(record) {
@@ -805,7 +962,7 @@ function createBrowserPane(pane) {
 
   root.addEventListener('pointerdown', onPanePointerDown);
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
-  record.closeButton.addEventListener('click', () => { void closePane(pane.id, record.titleEl.textContent); });
+  record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
   record.backButton.addEventListener('click', () => { void browserAction(record, 'back'); });
   record.reloadButton.addEventListener('click', () => { void browserAction(record, 'reload'); });
   record.addressForm.addEventListener('submit', (event) => {
@@ -1052,7 +1209,8 @@ async function addPane(kind) {
       const created = await api('/tabs', { method: 'POST', body: {} });
       tabId = created.id;
     }
-    const pane = await api(`/tabs/${tabId}/panes`, { method: 'POST', body: { kind } });
+    const body = kind === 'terminal' ? { kind, start: false } : { kind };
+    const pane = await api(`/tabs/${tabId}/panes`, { method: 'POST', body });
     await refresh();
     if (pane && pane.id) {
       window.setTimeout(() => {
@@ -1076,6 +1234,22 @@ async function newTab() {
   } catch (error) {
     showNotice(error.message || 'Could not create a tab.', 'error');
   }
+}
+
+function requestClose(kind, id, title) {
+  pendingClose = { kind, id, title };
+  els.closeConfirmTitle.textContent = `Close ${title}?`;
+  if (kind === 'tab') {
+    const tab = currentState && currentState.tabs.find((candidate) => candidate.id === id);
+    const count = tab ? tab.panes.length : 0;
+    els.closeConfirmCopy.textContent = count
+      ? `Closing this tab ends ${count === 1 ? 'its pane' : `all ${count} panes`} and any running jobs. This cannot be undone.`
+      : 'Closing this tab cannot be undone.';
+  } else {
+    els.closeConfirmCopy.textContent = 'Closing this pane ends its shell and any running job. This cannot be undone.';
+  }
+  els.closeApprove.textContent = kind === 'tab' ? 'Close tab' : 'Close pane';
+  els.closeConfirm.showModal();
 }
 
 async function closeTab(tabId, title) {
@@ -1166,7 +1340,7 @@ function renderTabsDialog() {
     close.className = 'tab-close';
     close.innerHTML = CLOSE_ICON;
     close.setAttribute('aria-label', `Close tab ${tab.title}`);
-    close.addEventListener('click', () => { void closeTab(tab.id, tab.title); });
+    close.addEventListener('click', () => { requestClose('tab', tab.id, tab.title); });
 
     row.append(select, close);
     fragment.append(row);
@@ -1302,6 +1476,29 @@ function bindEvents() {
   els.emptyAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.emptyNewTab.addEventListener('click', () => { void newTab(); });
 
+  els.closeCancel.addEventListener('click', () => {
+    pendingClose = null;
+    els.closeConfirm.close();
+  });
+  els.closeConfirm.addEventListener('cancel', () => { pendingClose = null; });
+  els.closeApprove.addEventListener('click', () => {
+    const target = pendingClose;
+    pendingClose = null;
+    els.closeConfirm.close();
+    if (!target) return;
+    if (target.kind === 'tab') void closeTab(target.id, target.title);
+    else void closePane(target.id, target.title);
+  });
+  els.notice.addEventListener('click', async () => {
+    const url = els.notice.dataset.copyUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      showNotice('Attachment URL copied', 'info', 2200);
+    } catch (_) {
+      showNotice('Copy blocked by the browser; select the URL instead.', 'error', 3200);
+    }
+  });
   els.backButton.addEventListener('click', triggerBack);
   els.tabsButton.addEventListener('click', openTabsDialog);
   els.keyboardButton.addEventListener('click', focusActive);
@@ -1389,6 +1586,10 @@ async function bootstrap() {
 window.__panes = {
   refresh: () => refresh(),
   state: () => currentState,
+  dimensions: (paneId) => {
+    const record = records.get(paneId || effectiveActivePaneId());
+    return record && record.term ? { cols: record.term.cols, rows: record.term.rows } : null;
+  },
   render: (next) => {
     if (next && Array.isArray(next.tabs)) {
       applyState(next, { force: true });
@@ -1404,6 +1605,7 @@ Object.defineProperty(window.__panes, '__debug', {
   enumerable: false
 });
 
+buildPaneKeybar();
 bindEvents();
 void bootstrap();
 

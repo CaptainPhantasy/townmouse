@@ -29,10 +29,10 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 | Area | Scope | Open items |
 |---|---|---|
-| A. Attachments and file transfer | Drop, paste, file picker, attachment URL handoff, upload security, storage | P1-7, P2-91, P2-92 |
+| A. Attachments and file transfer | Drop, paste, file picker, upload security, storage | P2-91, P2-92 |
 | B. Terminal rendering and typography | Word breaking, columns, font scaling, prose/status overflow | P1-9, P2-62, P2-63 |
 | C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
-| D. Panes workspace: tabs, layout, lifecycle | Visible tabs, splitters, shortcuts, close/undo, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-11, P1-12, P1-16, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
+| D. Panes workspace: tabs, layout, lifecycle | Visible tabs, splitters, shortcuts, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-11, P1-12, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | PTY spawn size, on-screen keys, Ctrl+C, search/copy/font/themes/links/OSC | P1-8, P1-13, P1-14, P1-15 |
 | F. Browser panes: interaction and input | Dialogs, touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-18, P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
@@ -89,13 +89,15 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## P1 - Important usability gaps
 
-- [ ] **P1-7 - The attachment URL is created but never shown to the human or the agent**
+- [x] **P1-7 - The attachment URL is created but never shown to the human or the agent**
+  *Resolved 2026-11-15:* The main workspace shows an attachment card with the path, URL, Copy path, Copy URL, and Open URL actions. The pane workspace includes the URL in its attach notice and tapping the notice copies it. Agents get the same URL through `panes attach <file>`, authenticated by the scoped pane token; `POST /api/attachments` accepts either the owner cookie or the pane token. `tests/attachments-ui.test.cjs` asserts the card and pane notice expose a working `/attachments/` URL; `tests/panes-api.test.cjs` uploads with the pane token, fetches the URL, and verifies the sandbox CSP.
   *Expectation:* After attaching, the user sees and can copy the URL; the agent in the terminal can see or use a URL for the file, not only a filesystem path.  
   *Current:* `POST /api/attachments` returns `name`, `path`, `url`, `relativeUrl`, `mime`, and `bytes` (`src/attachments.js:38-46`), but `index.html` inserts only the quoted path (`public/index.html:601,618`) and `panes.mjs` inserts only the quoted path (`public/panes.mjs:112`); `url` is used only for browser-pane navigation (`:115`). There is no chip, Copy URL action, attachment list, or CLI attach command (`scripts/panes` has no attach verb), so the agent cannot discover the URL. The main terminal's success banner is also invisible (P2-92).  
   *Fix:* Show an attachment chip/toast with thumbnail, name, path, URL, and Copy Path/Copy URL actions; make the URL available to agents (insert it on a separate line when safe, add `GET /api/attachments` plus a `panes attach` command, or write an attachment manifest); return a `127.0.0.1` local URL in addition to the request-host URL. Test: drop a file, assert the exact URL is visible and returns HTTP 200.  
   *Evidence:* `src/attachments.js:38-46`; `public/index.html:601,618`; `public/panes.mjs:110-118`; `scripts/panes` has no attach command.  
 
-- [ ] **P1-8 - Pane PTYs spawn at 100x30 before the pane has been measured**
+- [x] **P1-8 - Pane PTYs spawn at 100x30 before the pane has been measured**
+  *Resolved 2026-11-15:* UI-created terminals are created with `start:false`, mounted and fitted at the real pane width, then started through `POST /api/panes/panes/:id/start` with the measured cols/rows. The PTY spawns at those dimensions, and stream replay waits until after the fit. Terminal dimensions are saved and restored with the workspace. `tests/attachments-ui.test.cjs` adds a pane at 393x852 and asserts client and PTY dimensions match and the PTY did not spawn at 100 columns.
   *Expectation:* A new pane starts at the dimensions it is displayed at, so its first prompt, banner, and agent output wrap at the visible edge.  
   *Current:* `createPane` hardcodes `cols: 100` and `rows: 30` and spawns the PTY immediately (`src/workspace-panes.js:81,111`); the client fits and posts `/resize` only after `mountTerminal` has already started reading and replaying output (`public/panes.mjs:518-545`). Live: a new pane reported 100x30 while the 393px page rendered 54 columns; startup/replayed output was re-wrapped at the pane width and zsh/ZLE redraw sequences were corrupted. The same class affects history replay after a tab switch at a different size.  
   *Fix:* Accept `cols`/`rows` in `POST /api/panes/tabs/:id/panes` and pass the measured pane size, or defer PTY spawn until the first client `/resize` (with a short timeout fallback). Send the initial resize before starting the output stream and record the buffer width for replay. Test at 393, 820, and 1440px: the first prompt must be formatted at the rendered column count.  
@@ -125,7 +127,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Add a capture-phase keydown router that preserves terminal input except reserved chords, supports tab/cycle/close/new/split/maximize and arrow navigation in the tab strip/sheet, and lists shortcuts in Menu or a help overlay. Test each chord with focus in a pane and in the tab sheet.  
   *Evidence:* `public/panes.mjs:1218-1243`; `public/panes.html:41-44`; audit observed no application keydown before 8f33c3b.  
 
-- [ ] **P1-13 - The Panes view has no on-screen key bar or terminal keys on mobile**
+- [x] **P1-13 - The Panes view has no on-screen key bar or terminal keys on mobile**
+  *Resolved 2026-11-15:* The pane workspace renders a horizontally scrollable 44px key bar above the bottom navigation: Esc, Tab, sticky Ctrl/Alt, C, arrows, Home, End, PgUp, PgDn. Keys write through the pane input queue, not xterm focus, and the bar hides when the active pane is a browser. `tests/attachments-ui.test.cjs` verifies visibility at 393x852, every key at least 44x44, and Ctrl then C posting `\u0003` to the PTY.
   *Expectation:* Esc, Tab, Ctrl/Alt, arrows, Home/End, and PgUp/PgDn must be reachable on touch devices in every terminal surface.  
   *Current:* `index.html` builds device-specific key bars with sticky Ctrl/Alt and arrows (`buildKeyBars` and `SEQ`), but `panes.html` contains only Tabs/Keyboard/Menu bottom-bar buttons (`public/panes.html:27-49`) and `panes.mjs` has no key emission or keybar builder. The Keyboard button only focuses the active terminal (`public/panes.mjs:1164`). Vim, less, Ctrl+C, Ctrl+R, and shell completion are unusable in panes on touch.  
   *Fix:* Extract the index keybar/`SEQ`/`emitSeq` code into a shared module and render it in the panes page bound to the active pane's terminal, with sticky modifiers and 44px targets. Test at 393x852 that Esc/Ctrl/arrows are visible and emit the expected sequences.  
@@ -143,7 +146,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Share a terminal feature kit or load the existing feature modules against a pane-scoped T1 facade; add `SearchAddon` and an overlay plus copy/paste/select-all/font controls to the pane header or menu; port `osc-bridge` and `links`. Test each action in `/panes`.  
   *Evidence:* `public/panes.html:99`; `public/panes.mjs:1-3,479-495`; feature list at `public/index.html:1507-1518`.  
 
-- [ ] **P1-16 - Closing a pane or tab kills its running process without confirmation**
+- [x] **P1-16 - Closing a pane or tab kills its running process without confirmation**
+  *Resolved 2026-11-15:* Pane and tab close buttons open a modal confirmation that names the target, explains that running jobs end, and offers Cancel. The confirm path remains asynchronous; Cancel leaves the shell untouched. `tests/attachments-ui.test.cjs` closes a running pane, cancels (pane survives), then confirms and asserts the pane is gone.
   *Expectation:* Closing a pane that is running a build or agent asks first, like the main terminal's Close dialog, or offers an undo grace period; a dead shell can be restarted.  
   *Current:* Each pane's Close button calls `closePane` immediately (`public/panes.mjs:468,754`; `closePane` at `1044-1053`); the DELETE route leads to `killPty` SIGTERM/SIGKILL (`src/workspace-panes.js:155-176`). The main terminal has a close-confirm dialog (`public/workspace.mjs:161-169`), but panes has no equivalent, no undo toast, no recently-closed list, and no restart route. An exited pane still consumes one of the four per-tab slots and can only be removed by closing it.  
   *Fix:* Show a confirmation when a pane is running or a tab has multiple/live panes (title plus do-not-ask-again), or provide an undo grace period before killing the PTY; add a Recently closed list and a Restart action that preserves id/title/cwd. Guard CLI self-close with `--force`. Test closing a pane running `sleep 60`.  
@@ -621,22 +625,22 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## Top 10 - do next
 
-All six P0 items are closed with regression tests: `tests/panes-api.test.cjs`, `tests/panes-persistence.test.cjs`, `tests/resume-width.test.cjs`, and `tests/attachments-ui.test.cjs`. This ordering now starts at P1 and follows user impact, not area order.
+All six P0 items and P1-7, P1-8, P1-13, and P1-16 are closed with regression tests: `tests/panes-api.test.cjs`, `tests/panes-persistence.test.cjs`, `tests/resume-width.test.cjs`, and `tests/attachments-ui.test.cjs`. This ordering now starts with the remaining P1s and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
-| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue: `Please` splitting into `Pleas`/`e`; narrow panes silently shrink to unreadable columns. | Prose produced at 393px and 820px wraps at word boundaries or uses a transcript mode; exact PTY/client cols at spawn and resume; no single-character orphan. |
-| 2 | **P1-13** Panes key bar | Without Esc/Tab/Ctrl/arrows, vim/less/Ctrl+C are unusable in panes on a phone. | Key bar visible at 393x852 and emits the same sequences as the main terminal. |
-| 3 | **P1-7** Attachment URL handoff | The API creates a URL but neither the human nor the agent can see it; this is the "agent can see the URL" part of the request. | Chip/toast shows path and URL with Copy URL; a CLI or manifest path lets the agent discover the same URL. |
-| 4 | **P1-16** Close is immediate and irreversible | A mis-tap kills a running build/agent with no confirm or undo. | Closing a running pane/tab requires confirmation or offers undo; exited panes can restart. |
-| 5 | **P1-8** PTY spawn size | Terminals spawn at a default size and only resize later, producing early wrapping damage. | PTY spawns at the client's measured cols/rows on the first shell request. |
-| 6 | **P1-18** Dialogs auto-dismissed | Recorded dialogs are dismissed, but the human never sees or answers them. | Dialog state is visible with a safe answer path; destructive prompts are not silently accepted. |
-| 7 | **P1-33** Agent lifecycle/wait | Agents cannot reliably wait for a command or page state before acting. | CLI/API exposes bounded wait-for-output and wait-for-page conditions with a documented result. |
-| 8 | **P1-34** Agent send-keys | Agents can type text but cannot reliably send control keys and named key sequences. | CLI/API supports named keys and modifiers with tests. |
-| 9 | **P1-36** Attachment auth/quota | Uploads are owner-gated but have no quota or cleanup policy. | Per-workspace quota, retention policy, and a test for both. |
-| 10 | **P1-41** 44pt targets | Remaining small controls break the phone interaction contract. | Every interactive control measures at least 44x44 at 393x852. |
+| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue: `Please` splitting into `Pleas`/`e`; narrow screens can still split prose at arbitrary cells. | Responsive font sizing keeps readable columns and a transcript mode word-wraps prose without corrupting TUI output. |
+| 2 | **P1-18** Dialogs auto-dismissed | Recorded dialogs are dismissed, but the human never sees or answers them. | Dialog state is visible with a safe answer path; destructive prompts are not silently accepted. |
+| 3 | **P1-33** Agent lifecycle/wait | Agents cannot reliably wait for a command or page state before acting. | CLI/API exposes bounded wait-for-output and wait-for-page conditions with a documented result. |
+| 4 | **P1-34** Agent send-keys | Agents can type text but cannot reliably send control keys and named key sequences. | CLI/API supports named keys and modifiers with tests. |
+| 5 | **P1-36** Attachment auth/quota | Uploads are owner- or pane-token gated but have no quota or cleanup policy. | Per-workspace quota, retention policy, and a test for both. |
+| 6 | **P1-41** 44pt targets | Remaining small controls break the phone interaction contract. | Every interactive control measures at least 44x44 at 393x852. |
+| 7 | **P1-10** Visible tab context | The active tab is invisible outside the modal sheet. | Persistent tab strip or active-tab control with `role=tab`, active state, close, and overflow. |
+| 8 | **P1-11** Pane splitters | Pane sizes are a fixed template; the user asked for draggable dividers. | Separator elements with pointer and keyboard resizing, persisted per tab. |
+| 9 | **P1-12** Pane shortcuts | Only Alt+T and Alt+arrows exist; close/new/split/maximize help is missing. | Capture-phase router for reserved chords plus discoverable shortcut help. |
+| 10 | **P1-14** Ctrl+C with selection | Bare Ctrl+C must always interrupt, even with text selected. | Copy is Cmd+C on macOS and Ctrl+Shift+C elsewhere; bare Ctrl+C sends `\x03`. |
 
-**Runners-up, start immediately after the top 10:** P1-10 (pane splitters), P1-11 (pane shortcuts), P1-12 (close/undo for tabs), P1-17 (pane reorder), P1-19 (browser keyboard), P1-20 (native select), P1-24 (forward/history), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
+**Runners-up, start immediately after the top 10:** P1-15 (pane search/copy/font/themes/links), P1-17 (pane reorder), P1-19 (browser keyboard), P1-20 (native select), P1-24 (forward/history), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

@@ -25,6 +25,8 @@
     </section>
   </main>
 
+  <div class="bottom-stack">
+  <div class="pane-keybar" id="pane-keybar" role="toolbar" aria-label="Terminal keys" hidden></div>
   <footer class="pane-bar" id="pane-bar" aria-label="Workspace bar">
     <button type="button" class="bar-button bar-back" id="back-button" aria-label="Back" disabled>
       <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -48,6 +50,7 @@
       <span class="bar-label">Menu</span>
     </button>
   </footer>
+  </div>
 </div>
 
 <dialog class="sheet" id="tabs-dialog" aria-labelledby="tabs-dialog-title">
@@ -94,6 +97,19 @@
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg>
         <span><strong>Attach file</strong><small>Upload into the active terminal.</small></span>
       </button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-confirm" id="close-confirm" aria-labelledby="close-confirm-title">
+  <div class="sheet-inner">
+    <header class="sheet-header">
+      <h2 id="close-confirm-title">Close this pane?</h2>
+    </header>
+    <p class="confirm-copy" id="close-confirm-copy">Closing this pane ends its shell and any running job. This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-quiet" id="close-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="close-approve">Close</button>
     </div>
   </div>
 </dialog>

@@ -316,6 +316,35 @@ async function main() {
       ensure(agent.status === 403, 'a pane token must not obtain the owner browser key', agent.body);
     });
 
+    await check('attachments: pane token uploads and serves a URL', async () => {
+      const bare = await fetch(`${BASE}/api/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', 'X-Filename': 'bare.txt' },
+        body: 'no token',
+        signal: AbortSignal.timeout(5000)
+      });
+      ensure(bare.status === 403, 'header-less attachment upload should be forbidden', bare.status);
+      const token = required('workspace token', context.token);
+      const uploaded = await fetch(`${BASE}/api/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', 'X-Filename': 'agent-note.txt', 'X-Townmouse-Token': token },
+        body: 'agent attachment body',
+        signal: AbortSignal.timeout(5000)
+      });
+      const attachment = await uploaded.json();
+      ensure(uploaded.status === 200, 'pane token should upload an attachment', attachment);
+      ensure(typeof attachment.url === 'string' && attachment.url.includes('/attachments/'), 'attachment should return a URL', attachment);
+      ensure(typeof attachment.path === 'string' && attachment.path.endsWith('agent-note.txt'), 'attachment should return a path', attachment);
+      const served = await fetch(attachment.url, { signal: AbortSignal.timeout(5000) });
+      ensure(served.status === 200, 'attachment URL should serve the upload', served.status);
+      ensure((await served.text()) === 'agent attachment body', 'attachment URL should return the uploaded bytes');
+      ensure(
+        String(served.headers.get('content-security-policy') || '').startsWith('sandbox'),
+        'attachment response should keep the sandbox CSP',
+        served.headers.get('content-security-policy')
+      );
+    });
+
     await check('bootstrap: seeds one tab with a terminal orchestrator pane', async () => {
       required('workspace token', context.token);
       const response = await request('GET', '/api/panes/bootstrap');

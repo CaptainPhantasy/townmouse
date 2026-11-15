@@ -4,6 +4,40 @@ All notable changes to Townmouse and the TerminalOne engine it embeds.
 
 Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
 
+## [0.1.0] — 2026-11-15
+
+### Workspace
+
+- Four-pane workspace tabs: any mix of PTY terminals and real Chromium browsers, up to four panes per tab and 24 tabs.
+- Terminal agents receive `TOWNMOUSE_API`, `TOWNMOUSE_TOKEN`, `TOWNMOUSE_TAB_ID`, `TOWNMOUSE_PANE_ID`, and `TOWNMOUSE_PANES_CLI` in every pane; `scripts/panes` controls tabs, panes, URLs, input, and reads.
+- Workspace state, tab titles, pane cwd, browser URLs, and active selection survive a server restart.
+- Visible tab strip, draggable terminal/browser separators, 7-second idle chrome collapse, and phone/tablet/desktop layouts.
+
+### Attachments
+
+- Attach button in the main bottom navigation and pane menu, backed by a multi-file picker.
+- Image and file paste uploads once and inserts a shell-quoted path; terminal agents and humans see the stored path.
+- Drops outside a terminal never type file bytes or `data:` URIs into a PTY.
+
+### Fixed
+
+- Resuming a session at a different width no longer corrupts scrollback: buffered output replays at its original PTY dimensions, then the terminal fits the new viewport.
+- Blank browser panes survive restart instead of being discarded.
+- Queued terminal input survives a workspace tab switch.
+- A page popup can no longer crash the server or take down every PTY.
+- The attachment picker now inserts its path; the missing `sendData` hook was the silent failure.
+
+### Security
+
+- Owner bootstrap and attachment uploads require an HttpOnly SameSite owner capability minted on page navigation. Header-less local callers and pane-token callers receive 403.
+- Attachments are served with a sandbox CSP and `Cross-Origin-Resource-Policy: same-origin`.
+- Chromium runs with container-safe flags; session and pane APIs bind loopback only.
+
+### Packaging and tests
+
+- npm CLI (`bin/townmouse`), Dockerfile, npm files allowlist, and AGPL-3.0-only licensing.
+- New regression coverage for pane API limits, persistence, resume width, attachment picker/paste/drop, and popup safety.
+
 ## [1.0.3] — 2026-11-08
 
 - The engine learned to take dictation. Voice / speech-to-text has a settings section; the STT command, model, language, and argument template are saved server-side in `~/.config/terminalone/voice.json` and used at transcription time.

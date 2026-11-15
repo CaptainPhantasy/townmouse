@@ -551,6 +551,10 @@
   let currentStyle = DEFAULT_STYLE;
   let rain = null; // lazily created digital-rain controller
   let fitTimer = null;
+  // Non-null while replaying a resumed session's old-width buffer. The xterm
+  // stays at the PTY's old dimensions so wrapped lines and cursor addressing
+  // survive; fitting waits until the replay-end marker arrives.
+  let resumeReplay = null;
   let terminalResourceDisposers = [];
 
   // Module-level input sender. initTerminal() (which owns the dictation guard
@@ -764,7 +768,7 @@
    if (fitTimer) clearTimeout(fitTimer);
    fitTimer = window.setTimeout(() => {
     fitTimer = null;
-    if (!fitAddon || !term) return;
+    if (!fitAddon || !term || resumeReplay) return;
     try { fitAddon.fit(); } catch (_) {}
    }, delay);
   }
@@ -1046,6 +1050,7 @@
   // ── Terminal ────────────────────────────────────────────────────────────────
   function initTerminal() {
    cleanupTerminalResources();
+   resumeReplay = null;
    if (term) {
     try { term.dispose(); } catch (_) {}
    }
@@ -1115,6 +1120,9 @@
    }, true);
 
    addTerminalResource(term.onResize(({ cols, rows }) => {
+    // While replaying, xterm is deliberately at the old PTY width. Sending
+    // that as a resize would yank the live PTY back to the old width.
+    if (resumeReplay) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
@@ -1131,10 +1139,21 @@
      currentSessionId = msg.sessionId;
      lsSet(LS_SESSION, msg.sessionId);
      if (msg.resumed) {
-      // Buffer replay lands in the fresh terminal from connect(); don't reset.
+      // Replay the buffered output at the dimensions it was produced with,
+      // then fit to this viewport after replay-end. Otherwise old wraps and
+      // cursor-addressed lines are reflowed into fragments.
+      if (term && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
+       resumeReplay = { cols: msg.cols, rows: msg.rows };
+       try {
+        term.resize(msg.cols, msg.rows);
+       } catch (_) {
+        resumeReplay = null;
+       }
+      }
       updateStatus('Resumed', 'connected');
       setFooter(`Resumed · ${msg.cwd}`);
      } else {
+      resumeReplay = null;
       updateStatus('Connected', 'connected');
       setFooter(`${msg.command} · ${msg.cwd}`);
      }
@@ -1146,6 +1165,13 @@
     }
     case 'output': {
      term?.write(msg.data);
+     break;
+    }
+    case 'replay-end': {
+     // The old-width buffer is fully written. Fit to the real viewport now;
+     // the resulting resize event tells the PTY its new dimensions.
+     resumeReplay = null;
+     scheduleFit();
      break;
     }
     case 'exit': {
@@ -1163,6 +1189,8 @@
     }
     case 'resume-failed': {
      // Target session gone/expired — fall back to a fresh shell on this open ws.
+     resumeReplay = null;
+     scheduleFit();
      infoResumeFail(msg);
      lsDel(LS_SESSION);
      currentSessionId = null;
@@ -1590,7 +1618,23 @@
     const bar = (document.body.dataset.device === 'iphone' ? $('#keybarIphone') : $('#keybarIpad'));
     return bar ? bar.querySelectorAll('.kb-key').length : 0;
    },
-   savedSession: () => lsGet(LS_SESSION, null)
+   savedSession: () => lsGet(LS_SESSION, null),
+   // Attachment controls insert a shell-quoted path through the same guarded
+   // input path as the keyboard and key bar.
+   sendData: (data) => {
+    if (sendInputFn && typeof data === 'string') sendInputFn(data);
+   },
+   dimensions: () => term ? { cols: term.cols, rows: term.rows } : null,
+   text: () => {
+    if (!term) return '';
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) {
+     const line = buffer.getLine(i);
+     lines.push(line ? line.translateToString(true) : '');
+    }
+    return lines.join('\n');
+   }
   };
  </script>
  <script>

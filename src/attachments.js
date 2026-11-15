@@ -6,7 +6,8 @@ const path = require('path');
 const express = require('express');
 
 function installAttachments(app) {
-  const root = path.join(os.homedir(), '.townmouse', 'attachments');
+  const stateDir = process.env.TOWNMOUSE_STATE_DIR || path.join(os.homedir(), '.townmouse');
+  const root = path.join(stateDir, 'attachments');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
 
   app.use('/attachments', express.static(root, {

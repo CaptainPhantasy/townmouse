@@ -1,6 +1,6 @@
 # Townmouse Punch List
 
-This is the living punch list for Townmouse: every item here is an open gap between what an average user expects and what the app currently does. It is a working document, not a release note. Nothing in this file is a claim that an item is fixed, closed, or verified; an item leaves this list only when a failing repro has been turned into a passing test and the evidence is linked.
+This is the living punch list for Townmouse: each unchecked item is an open gap between what an average user expects and what the app currently does. It is a working document, not a release note. An item is checked only after its failing repro has been turned into a passing regression test; the resolution line names that test. The six P0 items were checked on 2026-11-15 after the regression suite reproduced the old failures.
 
 **Repo root:** `/Volumes/SanDisk1Tb/TOWNMOUSE/repo`. Paths below are repo-relative. Line numbers are from the audit snapshots (commits `4dc692f` through `8f33c3b`, plus `ff66920`) and will drift; use the named functions, routes, and selectors to relocate them.
 
@@ -29,53 +29,59 @@ This is the living punch list for Townmouse: every item here is an open gap betw
 
 | Area | Scope | Open items |
 |---|---|---|
-| A. Attachments and file transfer | Drop, paste, file picker, attachment URL handoff, upload security, storage | P0-2, P0-3, P0-4, P1-7, P2-91, P2-92 |
+| A. Attachments and file transfer | Drop, paste, file picker, attachment URL handoff, upload security, storage | P1-7, P2-91, P2-92 |
 | B. Terminal rendering and typography | Word breaking, columns, font scaling, prose/status overflow | P1-9, P2-62, P2-63 |
-| C. Sessions, reconnect, and scrollback | Resume at width, multi-window ownership, reconnect, input loss, spawn failure, paste safety | P0-1, P1-46, P2-58, P2-59, P2-60, P2-61 |
+| C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
 | D. Panes workspace: tabs, layout, lifecycle | Visible tabs, splitters, shortcuts, close/undo, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-11, P1-12, P1-16, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | PTY spawn size, on-screen keys, Ctrl+C, search/copy/font/themes/links/OSC | P1-8, P1-13, P1-14, P1-15 |
-| F. Browser panes: interaction and input | Dialogs, touch, keyboard, pointer, native select, popups, text access, activation reflow, crash safety | P0-6, P1-18, P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
+| F. Browser panes: interaction and input | Dialogs, touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-18, P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
 | H. Browser panes: rendering, freshness, error states | Polling, DPR, offline state, media/PDF | P2-71, P2-72, P2-73, P2-74 |
 | I. Agent orchestration and CLI | Browser control, lifecycle/wait, prompt/send-keys, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P1-33, P1-34, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
-| J. Security and permissions | Owner bootstrap, token scoping, attachment boundary | P0-5, P1-35, P1-36 |
+| J. Security and permissions | Token scoping, attachment boundary | P1-35, P1-36 |
 | K. Mobile, touch, and PWA | Keyboard avoidance, auto-zoom, safe areas, landscape, targets, long-press, idle chrome, palette, share, offline install, tab management, Android back | P1-37, P1-38, P1-39, P1-40, P1-41, P1-42, P1-43, P1-44, P2-77, P2-78, P2-79, P2-80, P2-81 |
 | L. Settings, shortcuts, notifications, links, accessibility | Shortcut conflicts/help, bell/OSC/unread, stored settings, link routing, screen reader, reduced motion | P1-48, P2-64, P2-65, P2-66, P2-67, P2-68 |
 | M. Packaging, release, and tests | Docker, uninstall/version, evidence/SSOT, automated coverage | P1-45, P2-88, P2-89, P2-90 |
 
 ## P0 - Breaks a basic expectation or loses data
 
-- [ ] **P0-1 - Resuming or switching a session at a different width corrupts and truncates scrollback**
+- [x] **P0-1 - Resuming or switching a session at a different width corrupts and truncates scrollback**
+  *Resolved 2026-11-15:* `resumeSession` captures the PTY dimensions the buffer was produced at, sends them in `ready`, replays at those dimensions, sends `replay-end`, then resizes the PTY to the new viewport. The client holds xterm at the old width and suppresses resize until `replay-end`. Verified by `tests/resume-width.test.cjs`: 44x33 -> 134x34 with the full command and output marker intact twice; reverting the server change reproduces the fragment corruption.
   *Expectation:* Returning to a session (page reload or session-pill switch) shows the same command history and output the user saw, with no fragments, lost lines, or split words.  
   *Current:* `resumeSession` overwrites `target.lastCols`/`lastRows` with the new client dimensions (`src/server.js:341-344`) and then replays the raw PTY `outputBuffer` (`src/server.js:361-366`) into a fresh xterm created at the new width (`public/index.html:1136-1137`). Cursor-addressed output and line wraps produced at the old width are replayed at the new width, and the old dimensions are gone after line 341. A 41-column session reloaded at 1440px showed only the fragment `for wrapping\n` plus the output line, losing the command prefix. `evidence/workspace-820x1180.png` shows the same signature (`printf "WORKSPACE_TERMI` / `NAL_OK\n"`).  
   *Fix:* Capture old cols/rows before overwriting, send them in the resume `ready` message, resize the client xterm to those dimensions before writing the replay, then fit to the viewport. Stronger: persist a serialized terminal snapshot per session (`@xterm/addon-serialize`) and replay only output produced after the snapshot; keep hidden xterm instances for in-page switches. Test: create at 41 cols, reload/switch at 1440px, assert full command and output with no fragmentary rows.  
   *Evidence:* `src/server.js:324-366`; `public/index.html:1136-1137`; `evidence/workspace-820x1180.png`; `/tmp/townmouse-audit/resume-wide.png`.  
 
-- [ ] **P0-2 - Pasting an image or file into either terminal is a no-op**
+- [x] **P0-2 - Pasting an image or file into either terminal is a no-op**
+  *Resolved 2026-11-15:* Main terminal and pane roots capture `paste` before xterm's helper textarea, upload clipboard files once, and insert a shell-quoted path. `tests/attachments-ui.test.cjs` dispatches a synthetic PNG paste on both surfaces and asserts one upload plus the visible attach notice/path; text paste is untouched.
   *Expectation:* Cmd/Ctrl+V of a screenshot or a file copied in Finder uploads it and inserts its path/URL, exactly like a drop.  
   *Current:* Paste handlers are bound on ancestors: `#terminal` (`public/index.html:608-624`) and each pane root (`public/panes.mjs:146-154`). xterm's own paste handler on the helper textarea reads only `text/plain` and calls `event.stopPropagation()` (`node_modules/@xterm/xterm/lib/xterm.mjs`, function `qs`), so the ancestor handlers never run. Live: an image clipboard item produced 0 `/api/attachments` requests and only the empty bracketed-paste frame `\x1b[200~\x1b[201~`; text paste worked.  
   *Fix:* Register a capture-phase paste listener on `document` or `term.textarea` (`capture: true`) so it runs before xterm's listener. Inspect `clipboardData.items` for `kind === 'file'`, call `preventDefault()`/`stopImmediatePropagation()`, upload, then insert the quoted path and surface the URL. Leave text paste unchanged. Test the main terminal and a pane with a real or synthetic image clipboard.  
   *Evidence:* `public/index.html:608-624`; `public/panes.mjs:146-154`; xterm `qs`; live probe (0 uploads, empty bracketed-paste frame).  
 
-- [ ] **P0-3 - No visible Attach/file-picker control; an iPhone cannot attach an image at all**
+- [x] **P0-3 - No visible Attach/file-picker control; an iPhone cannot attach an image at all**
+  *Resolved 2026-11-15:* The main workspace bottom navigation exposes Attach at 393x852 (verified 62.5x54 within the viewport), backed by a hidden multi-file input; the pane menu exposes the same control. `tests/attachments-ui.test.cjs` uploads once through the picker and asserts the shell-quoted path arrives in the terminal. The missing `window.__terminalOne.sendData` hook that made the picker upload silently was also fixed.
   *Expectation:* Every terminal surface offers an Attach button that opens the file picker (and camera on iOS), so users can attach without drag-and-drop.  
   *Current:* There is no `input[type=file]` or file-picker call anywhere in `public/`. Attachments are reachable only through drag events and the broken image-paste path. The legacy file-drop module is explicitly desktop-only (`public/features/file-drop.mjs:8`), and the pane handlers only listen for drag/paste. On iPhone there is no drag source and image paste does nothing, so no attachment can be created.  
   *Fix:* Add an Attach control to the main toolbar/Tools drawer/keybar and the panes bottom bar or Menu, backed by a hidden `input[type=file]` (`multiple`, `accept="image/*"` plus common documents, optional `capture` on iOS) that feeds the existing upload pipeline. Test at 393x852: choose a file, assert one upload and one inserted quoted path.  
   *Evidence:* grep finds no file input in `public/`; `public/features/file-drop.mjs:8`; `public/index.html:583-624`; `public/panes.mjs:126-155`; `public/panes.html:27-49`.  
 
-- [ ] **P0-4 - Legacy window-level file-drop still sends base64 into the PTY anywhere outside `#terminal`**
+- [x] **P0-4 - Legacy window-level file-drop still sends base64 into the PTY anywhere outside `#terminal`**
+  *Resolved 2026-11-15:* The legacy `file-drop` module is no longer loaded; global capture handlers prevent navigation for file drops, and only terminal surfaces upload and insert a path. `tests/attachments-ui.test.cjs` drops a PNG on `.terminal-header` and asserts zero uploads and no `data:image/png;base64` in the PTY, then drops on `#terminal` and asserts exactly one upload plus the path.
   *Expectation:* No file drop anywhere in the app types file bytes into the shell; only terminals accept attachments and receive a short path or URL. Other drop targets behave normally.  
   *Current:* `public/features/file-drop.mjs` is still loaded (`public/index.html:1512`). Its window handlers read images with `FileReader.readAsDataURL` and call `T1.sendData(dataUrl)` (`:49-59`), and send bare filenames for other files (`:66-71`). The new `#terminal` handler stops propagation only for drops on `#terminal`, so drops on the header, toolbar, or browser surface hit the legacy handler. Live: dropping a 2 KB PNG on `.terminal-header` sent a 2,780-byte WebSocket frame beginning `{"type":"input","data":"data:image/png;base64,...`; the base64 stream appeared in the terminal, and the legacy overlay stayed `.active` after a successful terminal drop because its window drop handler never ran.  
   *Fix:* Remove `file-drop` from `FEATURE_MODULES` and delete or rewrite the module to delegate to the attachment uploader; scope drag overlays and drop handling to terminal panes; prevent default navigation for file drops without sending bytes; use one overlay and hide it on drop/dragend. Update `tests/feature-behavior-test.js`, which currently only asserts the old overlay exists. Test: drop an image outside `#terminal`, assert the PTY receives a path/URL and no `data:` URI.  
   *Evidence:* `public/features/file-drop.mjs:39-71`; `public/index.html:1512`; live probe (2,780-byte base64 frame; overlay class still `t1-file-drop-target active`).  
 
-- [ ] **P0-5 - Owner bootstrap endpoints hand workspace keys to any local caller**
+- [x] **P0-5 - Owner bootstrap endpoints hand workspace keys to any local caller**
+  *Resolved 2026-11-15:* Both bootstrap endpoints and attachment uploads require an owner capability minted only on a page navigation (`Sec-Fetch-Mode: navigate` or `Accept: text/html`), stored in an HttpOnly SameSite=Strict cookie. Header-less callers and pane-token callers receive 403; the owner page still bootstraps. `tests/panes-api.test.cjs` covers both endpoints. Residual same-OS-user impersonation is a platform boundary; cooperative agents cannot escalate through the API. Attachment storage now follows `TOWNMOUSE_STATE_DIR`, so tests do not write to the real home directory.
   *Expectation:* Only the human owner UI can obtain the pane workspace token or the human browser key. An agent holding a pane token must not escalate to owner control.  
   *Current:* `GET /api/browser/bootstrap` returns `{key: humanKey}` whenever the request has no `Authorization` header and no `Sec-Fetch-Site` (or `none`) (`src/browser-workspace.js:148-153`). `GET /api/panes/bootstrap` uses the same pattern and returns the pane token (`src/workspace-panes.js:257-263`). A plain header-less curl returned both. The human key bypasses sharing checks because `session(req)` returns immediately when `human(req)` is true, so any agent inside a pane can list/read/close human browser tabs and change permissions. The only guard is "reject if `Authorization` is present," which a cooperative agent using curl does not trigger.  
   *Fix:* Require an owner capability a local agent cannot obtain (one-time nonce bound to an HttpOnly SameSite owner cookie plus a user gesture, or an owner-only Unix socket with filesystem permissions). Reject header-less bootstrap requests; do not treat absence of `Sec-Fetch-Site` as owner; give agents scoped capabilities. Add tests that call both bootstrap endpoints with no headers and with a pane token and expect 403.  
   *Evidence:* Verified on `127.0.0.1:11391`: no-header `GET /api/browser/bootstrap` returned `200 {"key":"ec7d56e0..."}`, no-header `GET /api/panes/bootstrap` returned 200 with token. `src/browser-workspace.js:24,38-46,142-153`; `src/workspace-panes.js:257-263`.  
 
-- [ ] **P0-6 - A page popup can crash the entire Townmouse server**
+- [x] **P0-6 - A page popup can crash the entire Townmouse server**
+  *Resolved 2026-11-15:* `followPopup` owns the whole popup lifecycle in a bounded async wrapper, catches early `url()`/`close()` failures, and never rejects into Puppeteer's emitter. `tests/panes-api.test.cjs` creates a browser pane whose page calls `window.open('/second')`, then asserts the pane follows the target and `/health` still returns 200. The same wrapper is used by human and pane tabs.
   *Expectation:* Opening a page that calls `window.open`, or any site with popups, must not terminate the server or the user's terminals; popups are ignored, recorded, or handled with a bounded error.  
   *Current:* The popup listener calls `popup.url()` synchronously inside Puppeteer's event emitter before the popup main frame exists, and awaits `popup.close()` outside the try block (`src/browser-workspace.js:72-76`; same at `:172` for human tabs). Reproduced with a local page calling `window.open`: `POST /api/panes/tabs/:id/panes` failed with fetch failed and the server exited code 1; stderr was `Error: Requesting main frame too early!` with the stack through `CdpPage.url` at line 73. One popup kills every PTY in the workspace.  
   *Fix:* Wrap the entire popup handler in try/catch and do not await it from the emitter; wait for the popup target/frame to initialize or ignore `about:blank`; catch `popup.close()` rejections; apply the same guard to dialog handlers; add process-level `unhandledRejection`/`uncaughtException` logging with safe shutdown; add a popup-fixture regression test for human and pane tabs.  
@@ -615,22 +621,22 @@ This is the living punch list for Townmouse: every item here is an open gap betw
 
 ## Top 10 - do next
 
-This ordering follows user impact, not area order. The first six are P0. Do not start P2 polish until the P0 set has failing tests and fixes in review.
+All six P0 items are closed with regression tests: `tests/panes-api.test.cjs`, `tests/panes-persistence.test.cjs`, `tests/resume-width.test.cjs`, and `tests/attachments-ui.test.cjs`. This ordering now starts at P1 and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
-| 1 | **P0-1** Resume/switch at a different width | The user's exact screenshot signature: lost command prefix and split words after reload. Loses scrollback. | A 41-column session reloaded at 1440px shows the full command and output; test asserts no fragmentary rows. |
-| 2 | **P0-2** Image/file paste no-op | Paste is the primary attachment gesture on a laptop and is currently silent. | Image paste on main terminal and a pane produces exactly one upload and one inserted quoted path/URL; text paste unchanged. |
-| 3 | **P0-3** No Attach/file picker | On iPhone there is no other way to attach; this blocks the requested mobile workflow. | Attach button at 393x852 opens the picker, uploads once, inserts one quoted path; camera option available. |
-| 4 | **P0-4** Legacy base64 drop | Direct terminal drop works, but a drop on the header/toolbar still floods the PTY with megabytes of base64, the original user complaint. | Drop anywhere outside `#terminal` sends no `data:` URI; PTY receives only a path/URL; overlay hides on drop. |
-| 5 | **P0-5** Bootstrap key leak | Any local process can obtain owner control; this breaks the agent permission boundary the product claims. | No-header and pane-token calls to both bootstrap endpoints return 403; owner UI still works. |
-| 6 | **P0-6** Popup crash | One `window.open` kills every terminal in the workspace. | A popup fixture leaves the server alive and all PTYs intact; popup is recorded or ignored with a bounded error. |
-| 7 | **P1-9** Word splitting and column fidelity | The user's named polish issue: `Please` splitting into `Pleas`/`e`; narrow panes silently shrink to unreadable columns. | Prose produced at 393px and 820px wraps at word boundaries or uses a transcript mode; exact PTY/client cols at spawn and resume; no single-character orphan. |
-| 8 | **P1-13** Panes key bar | Without Esc/Tab/Ctrl/arrows, vim/less/Ctrl+C are unusable in panes on a phone. | Key bar visible at 393x852 and emits the same sequences as the main terminal. |
-| 9 | **P1-7** Attachment URL handoff | The API creates a URL but neither the human nor the agent can see it; this is the "agent can see the URL" part of the request. | Chip/toast shows path and URL with Copy URL; a CLI or manifest path lets the agent discover the same URL. |
-| 10 | **P1-16** Close is immediate and irreversible | A mis-tap kills a running build/agent with no confirm or undo. | Closing a running pane/tab requires confirmation or offers undo; exited panes can restart. |
+| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue: `Please` splitting into `Pleas`/`e`; narrow panes silently shrink to unreadable columns. | Prose produced at 393px and 820px wraps at word boundaries or uses a transcript mode; exact PTY/client cols at spawn and resume; no single-character orphan. |
+| 2 | **P1-13** Panes key bar | Without Esc/Tab/Ctrl/arrows, vim/less/Ctrl+C are unusable in panes on a phone. | Key bar visible at 393x852 and emits the same sequences as the main terminal. |
+| 3 | **P1-7** Attachment URL handoff | The API creates a URL but neither the human nor the agent can see it; this is the "agent can see the URL" part of the request. | Chip/toast shows path and URL with Copy URL; a CLI or manifest path lets the agent discover the same URL. |
+| 4 | **P1-16** Close is immediate and irreversible | A mis-tap kills a running build/agent with no confirm or undo. | Closing a running pane/tab requires confirmation or offers undo; exited panes can restart. |
+| 5 | **P1-8** PTY spawn size | Terminals spawn at a default size and only resize later, producing early wrapping damage. | PTY spawns at the client's measured cols/rows on the first shell request. |
+| 6 | **P1-18** Dialogs auto-dismissed | Recorded dialogs are dismissed, but the human never sees or answers them. | Dialog state is visible with a safe answer path; destructive prompts are not silently accepted. |
+| 7 | **P1-33** Agent lifecycle/wait | Agents cannot reliably wait for a command or page state before acting. | CLI/API exposes bounded wait-for-output and wait-for-page conditions with a documented result. |
+| 8 | **P1-34** Agent send-keys | Agents can type text but cannot reliably send control keys and named key sequences. | CLI/API supports named keys and modifiers with tests. |
+| 9 | **P1-36** Attachment auth/quota | Uploads are owner-gated but have no quota or cleanup policy. | Per-workspace quota, retention policy, and a test for both. |
+| 10 | **P1-41** 44pt targets | Remaining small controls break the phone interaction contract. | Every interactive control measures at least 44x44 at 393x852. |
 
-**Runners-up, start immediately after the top 10:** P1-8 (PTY spawn at 100x30), P1-18 (dialogs auto-dismissed), P1-33 and P1-34 (agent lifecycle/wait and send-keys), P1-36 (attachment auth/quota), P1-41 (44pt targets), P1-50 (restart recovery proof).
+**Runners-up, start immediately after the top 10:** P1-10 (pane splitters), P1-11 (pane shortcuts), P1-12 (close/undo for tabs), P1-17 (pane reorder), P1-19 (browser keyboard), P1-20 (native select), P1-24 (forward/history), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

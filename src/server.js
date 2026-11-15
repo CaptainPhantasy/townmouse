@@ -325,6 +325,11 @@ function spawnShell(session, cwd) {
 function resumeSession(target, ws, dims, placeholder) {
   const { id } = target;
   const bufferedBytes = target.outputBuffer ? target.outputBuffer.length : 0;
+  // The buffer was produced at the old PTY width. Replay it into an xterm set
+  // to those dimensions, then fit the client to the new viewport. Replaying
+  // old cursor-addressed output at a new width splits words and loses lines.
+  const replayCols = target.lastCols || dims.cols;
+  const replayRows = target.lastRows || dims.rows;
 
   // Retire the placeholder connection session (the one created at connect).
   activeSessions.delete(placeholder.id);
@@ -338,24 +343,20 @@ function resumeSession(target, ws, dims, placeholder) {
   // Cancel the resume grace countdown — we're live again.
   clearGraceTimer(target);
 
-  // Resize the live PTY to the new client viewport.
-  target.lastCols = dims.cols;
-  target.lastRows = dims.rows;
-  if (target.ptyProcess && !target.processExited) {
-    try { target.ptyProcess.resize(dims.cols, dims.rows); }
-    catch (e) { warn(id, 'resume resize failed', { err: e.message }); }
-  }
-
   // Restart heartbeat for the new socket.
   startHeartbeat(target);
 
-  // Acknowledge resume, then replay buffered output into the fresh terminal.
+  // Acknowledge resume with the dimensions the buffered output was rendered
+  // at. The client resizes its xterm to these before writing any replay bytes
+  // and waits for `replay-end` before fitting to the viewport.
   sendToSession(target, {
     type: 'ready',
     sessionId: id,
     command: target.command || resolveShell(),
     cwd: target.shellCwd,
-    resumed: true
+    resumed: true,
+    cols: replayCols,
+    rows: replayRows
   });
 
   if (target.outputBuffer) {
@@ -367,8 +368,19 @@ function resumeSession(target, ws, dims, placeholder) {
       sendToSession(target, { type: 'output', data: buf.slice(i, i + CHUNK) });
     }
   }
+  sendToSession(target, { type: 'replay-end' });
 
-  info(id, 'Session resumed', { bufferedBytes });
+  // Only after the replay is on the wire do we resize the live PTY to the new
+  // client viewport. New output is therefore produced at the new width while
+  // the old buffer remains coherent at the old width.
+  target.lastCols = dims.cols;
+  target.lastRows = dims.rows;
+  if (target.ptyProcess && !target.processExited) {
+    try { target.ptyProcess.resize(dims.cols, dims.rows); }
+    catch (e) { warn(id, 'resume resize failed', { err: e.message }); }
+  }
+
+  info(id, 'Session resumed', { bufferedBytes, replayCols, replayRows, cols: dims.cols, rows: dims.rows });
 }
 
 // ─── Speech-to-text helpers ─────────────────────────────────────────────────

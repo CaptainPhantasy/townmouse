@@ -133,7 +133,8 @@ async function waitForHealth(timeoutMs = 30000) {
 
 const FIXTURE_PAGES = {
   '/': { title: 'Pane Fixture', heading: 'Pane Fixture' },
-  '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' }
+  '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' },
+  '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" }
 };
 
 function startFixtureServer() {
@@ -153,7 +154,7 @@ function startFixtureServer() {
       return;
     }
     res.statusCode = 200;
-    res.end(`<!doctype html><html><head><title>${page.title}</title></head><body><h1>${page.heading}</h1></body></html>`);
+    res.end(`<!doctype html><html><head><title>${page.title}</title></head><body><h1>${page.heading}</h1>${page.script ? `<script>${page.script}</script>` : ''}</body></html>`);
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -302,6 +303,17 @@ async function main() {
         response.body
       );
       context.token = response.body.token;
+    });
+
+    await check('browser bootstrap: denies header-less and agent callers', async () => {
+      const bare = await fetch(`${BASE}/api/browser/bootstrap`, { signal: AbortSignal.timeout(5000) });
+      ensure(bare.status === 403, 'header-less browser bootstrap should be forbidden', bare.status);
+      const owner = await request('GET', '/api/browser/bootstrap');
+      ensure(owner.status === 200, 'owner page should receive the browser key', owner.body);
+      ensure(typeof owner.body.key === 'string' && owner.body.key.length >= 32, 'owner bootstrap should return a key', owner.body);
+      const token = required('workspace token', context.token);
+      const agent = await request('GET', '/api/browser/bootstrap', { token });
+      ensure(agent.status === 403, 'a pane token must not obtain the owner browser key', agent.body);
     });
 
     await check('bootstrap: seeds one tab with a terminal orchestrator pane', async () => {
@@ -485,6 +497,28 @@ async function main() {
         'snapshot title should reflect the second fixture page',
         snapshot.body
       );
+    });
+
+    await check('browser: a page popup does not crash the server or pane', async () => {
+      required('workspace token', context.token);
+      const paneId = required('browser pane', context.browserB);
+      const navigation = await request('POST', `/api/panes/panes/${paneId}/url`, {
+        token: context.token,
+        body: { url: `${FIXTURE_BASE}/popup` }
+      });
+      ensure(navigation.status === 200, 'popup opener navigation should respond 200', navigation.body);
+      const snapshot = await snapshotUntil(
+        paneId,
+        (body) => typeof body.url === 'string' && body.url.includes('/second')
+      );
+      ensure(snapshot && snapshot.status === 200, 'popup follow snapshot should respond 200', snapshot ? snapshot.body : 'no response');
+      ensure(
+        typeof snapshot.body.title === 'string' && snapshot.body.title.includes('Pane Fixture Two'),
+        'popup target should be followed in the pane',
+        snapshot.body
+      );
+      const health = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
+      ensure(health.status === 200, 'server should remain healthy after a popup', health.status);
     });
 
     await check('active: POST /api/panes/active and GET /api/panes/state agree', async () => {

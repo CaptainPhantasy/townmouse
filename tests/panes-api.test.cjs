@@ -660,6 +660,24 @@ async function main() {
         'snapshot title should reflect the second fixture page',
         snapshot.body
       );
+      ensure(snapshot.body.canGoBack === true, 'snapshot should report back history', snapshot.body);
+    });
+
+    await check('browser: Back exposes forward history', async () => {
+      required('workspace token', context.token);
+      const paneId = required('browser pane', context.browserA);
+      const back = await request('POST', `/api/panes/panes/${paneId}/browser/action`, {
+        token: context.token,
+        body: { action: 'back' }
+      });
+      ensure(back.status === 200, 'back should respond 200', back.body);
+      const snapshot = await snapshotUntil(paneId, (body) => body.canGoForward === true);
+      ensure(snapshot && snapshot.status === 200, 'snapshot should expose forward history', snapshot ? snapshot.body : 'no response');
+      ensure(
+        typeof snapshot.body.url === 'string' && snapshot.body.url.includes(String(FIXTURE_PORT)),
+        'back should return to the fixture root',
+        snapshot.body
+      );
     });
 
     await check('browser: a page popup does not crash the server or pane', async () => {

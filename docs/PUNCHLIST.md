@@ -209,7 +209,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* `src/browser-workspace.js:72-76,172`; popup probe; standalone tab strip `public/workspace.mjs:88-89,530-598`.  
 
 - [ ] **P1-24 - No Forward control and no history state on Back**
-  *Progress 2026-11-15:* the pane browser toolbar now has a Forward button wired to the existing `forward` action. Still open: `canGoBack`/`canGoForward` in the snapshot to disable buttons, keyboard history chords, and a history menu.
+  *Progress 2026-11-15:* the toolbar has a Forward button; snapshots report `canGoBack`/`canGoForward` from CDP history and the Back/Forward buttons disable at the edges. `tests/panes-api.test.cjs` verifies back history and the forward stack after Back. Still open: Alt+Left/Right chords and a long-press history menu.
   *Expectation:* Back and Forward reflect history; Forward is available after going back; Back is disabled at the start of history.  
   *Current:* The pane toolbar has only Back and Reload, even though the server implements forward (`public/panes.mjs:701-707`). The bottom-bar Back button is enabled for every browser pane regardless of history (`:365-370`), and clicking it on the first page silently does nothing. There is no Forward anywhere and no history menu.  
   *Fix:* Add a Forward button wired to `action('forward')`; return `canGoBack`/`canGoForward` in the snapshot/description and disable the buttons accordingly; add Alt+Left/Right and a long-press history menu.  

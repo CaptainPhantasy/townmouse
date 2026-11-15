@@ -168,6 +168,22 @@ function installBrowserWorkspace(app) {
       opening--;
     }
   }
+  async function historyState(s) {
+    let client = null;
+    try {
+      client = await s.page.createCDPSession();
+      const history = await client.send('Page.getNavigationHistory');
+      return {
+        canGoBack: Number(history.currentIndex) > 0,
+        canGoForward: Number(history.currentIndex) < (history.entries || []).length - 1
+      };
+    } catch (_) {
+      return { canGoBack: false, canGoForward: false };
+    } finally {
+      if (client) await client.detach().catch(() => {});
+    }
+  }
+
   async function snapshotTab(id) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
@@ -175,7 +191,7 @@ function installBrowserWorkspace(app) {
       // CDP screenshot waits for a JS dialog and times out. Keep the last
       // frame, but return the dialog so the human/agent can answer it.
       if (s.pendingDialog) {
-        return { ...describe(s), image: null, width: s.width, height: s.height, dialog: s.dialog };
+        return { ...describe(s), ...(await historyState(s)), image: null, width: s.width, height: s.height, dialog: s.dialog };
       }
       await s.page.bringToFront();
       const client = await s.page.createCDPSession();
@@ -186,7 +202,7 @@ function installBrowserWorkspace(app) {
         await client.detach();
       }
       s.title = await s.page.title();
-      return { ...describe(s), image: capture.data, width: s.width, height: s.height };
+      return { ...describe(s), ...(await historyState(s)), image: capture.data, width: s.width, height: s.height };
     });
   }
   async function navigateTab(id, url) {
@@ -331,7 +347,7 @@ function installBrowserWorkspace(app) {
   app.get('/api/browser/:id/snapshot',route(async(req,res)=>{
     const s=session(req);
     if (s.pendingDialog) {
-      res.json({...describe(s),image:null,width:s.width,height:s.height,dialog:s.dialog});
+      res.json({...describe(s),...(await historyState(s)),image:null,width:s.width,height:s.height,dialog:s.dialog});
       return;
     }
     await s.page.bringToFront();
@@ -340,7 +356,7 @@ function installBrowserWorkspace(app) {
     try { capture=await client.send('Page.captureScreenshot',{format:'jpeg',quality:75,captureBeyondViewport:false},{timeout:10000}); } finally { await client.detach(); }
     session(req); // Recheck grants after asynchronous work.
     s.title=await s.page.title();
-    res.json({...describe(s),image:capture.data,width:s.width,height:s.height});
+    res.json({...describe(s),...(await historyState(s)),image:capture.data,width:s.width,height:s.height});
   }));
   app.post('/api/browser/:id/viewport',route(async(req,res)=>{
     if(!human(req)) deny('Only the owner can resize the viewer.');

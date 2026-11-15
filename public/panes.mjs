@@ -1058,7 +1058,7 @@ function updateHostContext() {
 
 function updateBackButton() {
   const record = records.get(effectiveActivePaneId());
-  const enabled = Boolean(record && record.kind === 'browser');
+  const enabled = Boolean(record && record.kind === 'browser' && record.canGoBack);
   els.backButton.disabled = !enabled;
   els.backButton.setAttribute('aria-label', enabled ? `Back in ${record.titleEl.textContent || 'browser'}` : 'Back');
 }
@@ -1504,11 +1504,15 @@ function createBrowserPane(pane) {
     resizeObserver: null,
     resizeTimer: 0,
     lastViewport: '',
+    canGoBack: false,
+    canGoForward: false,
     disposed: false
   };
   record.titleEl.textContent = pane.title || 'Browser';
   record.closeButton.setAttribute('aria-label', `Close browser pane ${pane.title || 'Browser'}`);
   record.addressInput.value = pane.url && pane.url !== 'about:blank' ? pane.url : '';
+  record.backButton.disabled = true;
+  record.forwardButton.disabled = true;
 
   root.addEventListener('pointerdown', onPanePointerDown);
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
@@ -1665,6 +1669,14 @@ function applySnapshot(record, snapshot) {
     record.lastImage = snapshot.image;
     record.image.src = `data:image/jpeg;base64,${snapshot.image}`;
     record.image.alt = snapshot.title ? `Snapshot of ${snapshot.title}` : 'Browser page snapshot';
+  }
+  if (typeof snapshot.canGoBack === 'boolean') {
+    record.canGoBack = snapshot.canGoBack;
+    record.backButton.disabled = !snapshot.canGoBack;
+  }
+  if (typeof snapshot.canGoForward === 'boolean') {
+    record.canGoForward = snapshot.canGoForward;
+    record.forwardButton.disabled = !snapshot.canGoForward;
   }
   if (snapshot.dialog && snapshot.dialog.id) {
     showPageDialog(record, snapshot.dialog);

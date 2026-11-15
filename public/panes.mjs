@@ -40,7 +40,12 @@ const els = {
   menuAddBrowser: byId('menu-add-browser'),
   menuNewTab: byId('menu-new-tab'),
   menuAttach: byId('menu-attach'),
+  menuReader: byId('menu-reader'),
   attachInput: byId('attach-input'),
+  readerView: byId('reader-view'),
+  readerText: byId('reader-text'),
+  readerRefresh: byId('reader-refresh'),
+  readerClose: byId('reader-close'),
   closeConfirm: byId('close-confirm'),
   closeConfirmTitle: byId('close-confirm-title'),
   closeConfirmCopy: byId('close-confirm-copy'),
@@ -312,6 +317,40 @@ function activeTerminalRecord() {
   return record && record.kind === 'terminal' && !record.disposed ? record : null;
 }
 
+function refreshReaderView() {
+  const record = activeTerminalRecord();
+  if (!els.readerText) return;
+  if (!record || !record.term) {
+    els.readerText.textContent = 'No active terminal.';
+    return;
+  }
+  const buffer = record.term.buffer.active;
+  const lines = [];
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i);
+    lines.push(line ? line.translateToString(true) : '');
+  }
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  els.readerText.textContent = lines.join('\n') || 'No terminal text yet.';
+  els.readerText.scrollTop = 0;
+}
+
+function openReaderView() {
+  if (!els.readerView) return;
+  closeSheets();
+  els.readerView.hidden = false;
+  refreshReaderView();
+  els.readerClose.focus();
+}
+
+function closeReaderView() {
+  if (!els.readerView) return;
+  els.readerView.hidden = true;
+  const record = activeTerminalRecord();
+  if (record && record.term) record.term.focus();
+}
+
 function syncPaneMods() {
   if (!els.keybar) return;
   els.keybar.querySelectorAll('.pane-key.toggle[data-mod]').forEach((button) => {
@@ -394,7 +433,9 @@ function buildPaneKeybar() {
 
 function updateKeybar() {
   if (!els.keybar) return;
-  els.keybar.hidden = !activeTerminalRecord();
+  const record = activeTerminalRecord();
+  els.keybar.hidden = !record;
+  if (els.menuReader) els.menuReader.disabled = !record;
 }
 
 function paneCountLabel(count) {
@@ -1614,6 +1655,12 @@ function bindEvents() {
   els.menuAddTerminal.addEventListener('click', () => { void addPane('terminal'); });
   els.menuAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.menuAttach.addEventListener('click', () => { closeSheets(); els.attachInput.click(); });
+  els.menuReader.addEventListener('click', openReaderView);
+  els.readerRefresh.addEventListener('click', refreshReaderView);
+  els.readerClose.addEventListener('click', closeReaderView);
+  els.readerView.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); closeReaderView(); }
+  });
   els.attachInput.addEventListener('change', () => {
     const files = Array.from(els.attachInput.files || []);
     els.attachInput.value = '';

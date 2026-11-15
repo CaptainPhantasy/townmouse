@@ -6,6 +6,7 @@ const path = require('path');
 const http = require('http');
 const os = require('os');
 const { resolveShell } = require('./shell-resolve');
+const { replayTranscript } = require('./replay-text');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
@@ -332,6 +333,10 @@ function resumeSession(target, ws, dims, placeholder) {
   // old cursor-addressed output at a new width splits words and loses lines.
   const replayCols = target.lastCols || dims.cols;
   const replayRows = target.lastRows || dims.rows;
+  // Same-width resume can replay colors and cursor addressing safely. A width
+  // change cannot: xterm's reflow of old shell redraws splits command lines.
+  // Use a control-code-free transcript of the final screen text instead.
+  const transcript = replayCols !== dims.cols || replayRows !== dims.rows;
 
   // Retire the placeholder connection session (the one created at connect).
   activeSessions.delete(placeholder.id);
@@ -357,17 +362,27 @@ function resumeSession(target, ws, dims, placeholder) {
     command: target.command || resolveShell(),
     cwd: target.shellCwd,
     resumed: true,
+    transcript,
     cols: replayCols,
     rows: replayRows
   });
 
   if (target.outputBuffer) {
-    const buf = target.outputBuffer;
+    const raw = target.outputBuffer;
     target.outputBuffer = '';
+    const buf = transcript
+      ? replayTranscript(raw, replayCols).replace(/\n/g, '\r\n')
+      : raw;
     // Send in chunks to avoid a single oversized WS frame.
     const CHUNK = 16 * 1024;
     for (let i = 0; i < buf.length; i += CHUNK) {
-      sendToSession(target, { type: 'output', data: buf.slice(i, i + CHUNK) });
+      let end = Math.min(i + CHUNK, buf.length);
+      if (end < buf.length) {
+        const last = buf.charCodeAt(end - 1);
+        if (last >= 0xD800 && last <= 0xDBFF) end -= 1;
+      }
+      sendToSession(target, { type: 'output', data: buf.slice(i, end) });
+      i = end - CHUNK;
     }
   }
   sendToSession(target, { type: 'replay-end' });

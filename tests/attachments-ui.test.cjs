@@ -183,6 +183,22 @@ async function dispatchFile(page, selector, name, type, eventName) {
       );
     }
 
+    await wait(1500);
+    await page.evaluate(() => document.querySelector('#menu-button').click());
+    await page.waitForSelector('#menu-reader', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#menu-reader').click());
+    await page.waitForFunction('!document.querySelector("#reader-view").hidden', { timeout: 5000 });
+    const reader = await page.evaluate(() => {
+      const text = document.querySelector('#reader-text');
+      const style = getComputedStyle(text);
+      return { text: text.textContent, whiteSpace: style.whiteSpace, overflowWrap: style.overflowWrap };
+    });
+    assert(reader.whiteSpace === 'pre-wrap', `reader should word-wrap (${reader.whiteSpace})`);
+    assert(reader.overflowWrap === 'break-word', `reader should break long tokens (${reader.overflowWrap})`);
+    assert(reader.text.includes('pasted-pane.png'), `reader transcript should contain the pasted attachment: ${JSON.stringify(reader.text.slice(-400))}`);
+    await page.evaluate(() => document.querySelector('#reader-close').click());
+    await page.waitForFunction('document.querySelector("#reader-view").hidden', { timeout: 5000 });
+
     const keybar = await page.evaluate(() => {
       const bar = document.querySelector('#pane-keybar');
       const keys = Array.from(document.querySelectorAll('#pane-keybar .pane-key'));

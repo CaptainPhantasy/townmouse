@@ -34,7 +34,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 | C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
 | D. Panes workspace: tabs, layout, lifecycle | Visible tabs, splitters, shortcuts, reorder, restart recovery, rename, active pane, limits, focus, agent tab activation | P1-10, P1-11, P1-12, P1-17, P1-50, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | PTY spawn size, on-screen keys, Ctrl+C, search/copy/font/themes/links/OSC | P1-8, P1-13, P1-14, P1-15 |
-| F. Browser panes: interaction and input | Dialogs, touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-18, P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
+| F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
 | G. Browser panes: navigation, sessions, uploads/downloads | Forward/history, URL parsing, UA, cookies, file inputs, downloads, browser drop, controls, address bar, permissions, auth | P1-24, P1-25, P1-26, P1-27, P1-28, P1-29, P1-30, P1-47, P2-69, P2-70, P2-75, P2-76 |
 | H. Browser panes: rendering, freshness, error states | Polling, DPR, offline state, media/PDF | P2-71, P2-72, P2-73, P2-74 |
 | I. Agent orchestration and CLI | Browser control, lifecycle/wait, prompt/send-keys, CLI context/flags, MCP, provisioning, output, navigation | P1-32, P1-33, P1-34, P2-82, P2-83, P2-84, P2-85, P2-86, P2-87 |
@@ -46,7 +46,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 ## P0 - Breaks a basic expectation or loses data
 
 - [x] **P0-1 - Resuming or switching a session at a different width corrupts and truncates scrollback**
-  *Resolved 2026-11-15:* `resumeSession` captures the PTY dimensions the buffer was produced at, sends them in `ready`, replays at those dimensions, sends `replay-end`, then resizes the PTY to the new viewport. The client holds xterm at the old width and suppresses resize until `replay-end`. Verified by `tests/resume-width.test.cjs`: 44x33 -> 134x34 with the full command and output marker intact twice; reverting the server change reproduces the fragment corruption.
+  *Resolved 2026-11-15:* same-width resume replays the raw buffer. Cross-width resume builds a mini-grid transcript (`src/replay-text.js`) with auto-wrap, carriage-return, and backspace semantics, strips escape sequences, and writes `\r\n` lines at the new width so xterm has nothing to reflow. `resumeSession` then resizes the PTY to the new viewport. The client waits for xterm's write callbacks and buffers post-replay output before fitting. Verified by `tests/replay-text.test.mjs` and `tests/resume-width.test.cjs`: 56x40 -> 134x34 with the full command and output marker intact twice. The transcript fixture uses the bash readline wrap/carriage-return bytes that reproduced the CI failure.
   *Expectation:* Returning to a session (page reload or session-pill switch) shows the same command history and output the user saw, with no fragments, lost lines, or split words.  
   *Current:* `resumeSession` overwrites `target.lastCols`/`lastRows` with the new client dimensions (`src/server.js:341-344`) and then replays the raw PTY `outputBuffer` (`src/server.js:361-366`) into a fresh xterm created at the new width (`public/index.html:1136-1137`). Cursor-addressed output and line wraps produced at the old width are replayed at the new width, and the old dimensions are gone after line 341. A 41-column session reloaded at 1440px showed only the fragment `for wrapping\n` plus the output line, losing the command prefix. `evidence/workspace-820x1180.png` shows the same signature (`printf "WORKSPACE_TERMI` / `NAL_OK\n"`).  
   *Fix:* Capture old cols/rows before overwriting, send them in the resume `ready` message, resize the client xterm to those dimensions before writing the replay, then fit to the viewport. Stronger: persist a serialized terminal snapshot per session (`@xterm/addon-serialize`) and replay only output produced after the snapshot; keep hidden xterm instances for in-page switches. Test: create at 41 cols, reload/switch at 1440px, assert full command and output with no fragmentary rows.  
@@ -103,7 +103,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Accept `cols`/`rows` in `POST /api/panes/tabs/:id/panes` and pass the measured pane size, or defer PTY spawn until the first client `/resize` (with a short timeout fallback). Send the initial resize before starting the output stream and record the buffer width for replay. Test at 393, 820, and 1440px: the first prompt must be formatted at the rendered column count.  
   *Evidence:* `src/workspace-panes.js:81,111`; `public/panes.mjs:518-545`; live state 100x30 versus 54 rendered columns.  
 
-- [ ] **P1-9 - Terminal text hard-wraps inside words and narrow screens get too few columns**
+- [x] **P1-9 - Terminal text hard-wraps inside words and narrow screens get too few columns**
+  *Resolved 2026-11-15:* the live PTY stays a cell grid because word-wrapping TUI output would corrupt cursor-addressed programs. Instead, both surfaces gain a Reader view: a read-only transcript from the terminal buffer, rendered with `white-space: pre-wrap` and `overflow-wrap: break-word` so prose wraps between words and only long tokens break. The main Reader is in Tools; the pane Reader is in Menu. The main terminal also defaults to 11px on phones, 12px on tablets, and 14px on desktop unless the user persisted a size, raising a 420px session from 44 to 56 columns. `tests/resume-width.test.cjs` verifies the main Reader and columns; `tests/attachments-ui.test.cjs` verifies the pane Reader, its wrapping, and its content.
   *Progress 2026-11-15:* the main terminal now defaults to 11px on phones, 12px on tablets, and 14px on desktop, unless the user has persisted a size; it refits after web fonts load. At 420px this raised the default from 44 to 56 columns, covered by `tests/resume-width.test.cjs`. A read-only word-wrapping transcript for agent prose is still needed because xterm cannot word-wrap arbitrary shell/TUI output without corrupting it.
   *Expectation:* Agent prose and long paths break between words where possible, and narrow screens keep a readable column count instead of silently shrinking or splitting words.  
   *Current:* Both terminals are plain xterm cell grids; every line breaks at the column edge (`public/index.html:1042-1060`; `public/panes.mjs:479-495`). Live at 393px and 41 columns, a printed sentence split `screenshot` into `screen`/`shot`; at 105 columns a 120-character line split `when` into `wh`/`en`; after resizing 105 to 72 columns, previously emitted prose re-wrapped at arbitrary cell boundaries. The panes view auto-shrinks its font (`public/panes.mjs:526-535`), but the main terminal is fixed at 14px and only manual A-/A+ changes it. The user's screenshot `docs/evidence/phone-chrome/phone-terminal-idle.png` shows `pleas` / `e` plus a lone `.` line; `evidence/workspace-820x1180.png` shows `WORKSPACE_TERMI` / `NAL_OK`.  
@@ -634,22 +635,22 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## Top 10 - do next
 
-All six P0 items and P1-7, P1-8, P1-13, and P1-16 are closed with regression tests: `tests/panes-api.test.cjs`, `tests/panes-persistence.test.cjs`, `tests/resume-width.test.cjs`, and `tests/attachments-ui.test.cjs`. This ordering now starts with the remaining P1s and follows user impact, not area order.
+All six P0 items and P1-7, P1-8, P1-13, P1-14, P1-16, P1-18, P1-34, and P1-41 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
-| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue: `Please` splitting into `Pleas`/`e`; narrow screens can still split prose at arbitrary cells. | Responsive font sizing keeps readable columns and a transcript mode word-wraps prose without corrupting TUI output. |
-| 2 | **P1-18** Dialogs auto-dismissed | Recorded dialogs are dismissed, but the human never sees or answers them. | Dialog state is visible with a safe answer path; destructive prompts are not silently accepted. |
-| 3 | **P1-33** Agent lifecycle/wait | Agents cannot reliably wait for a command or page state before acting. | CLI/API exposes bounded wait-for-output and wait-for-page conditions with a documented result. |
-| 4 | **P1-34** Agent send-keys | Agents can type text but cannot reliably send control keys and named key sequences. | CLI/API supports named keys and modifiers with tests. |
-| 5 | **P1-36** Attachment auth/quota | Uploads are owner- or pane-token gated but have no quota or cleanup policy. | Per-workspace quota, retention policy, and a test for both. |
-| 6 | **P1-41** 44pt targets | Remaining small controls break the phone interaction contract. | Every interactive control measures at least 44x44 at 393x852. |
-| 7 | **P1-10** Visible tab context | The active tab is invisible outside the modal sheet. | Persistent tab strip or active-tab control with `role=tab`, active state, close, and overflow. |
-| 8 | **P1-11** Pane splitters | Pane sizes are a fixed template; the user asked for draggable dividers. | Separator elements with pointer and keyboard resizing, persisted per tab. |
-| 9 | **P1-12** Pane shortcuts | Only Alt+T and Alt+arrows exist; close/new/split/maximize help is missing. | Capture-phase router for reserved chords plus discoverable shortcut help. |
-| 10 | **P1-14** Ctrl+C with selection | Bare Ctrl+C must always interrupt, even with text selected. | Copy is Cmd+C on macOS and Ctrl+Shift+C elsewhere; bare Ctrl+C sends `\x03`. |
+| 1 | **P1-9** Word splitting and column fidelity | The user's named polish issue; responsive defaults help, but prose can still split at arbitrary cells. | A read-only transcript word-wraps agent prose without corrupting TUI output. |
+| 2 | **P1-33** Agent lifecycle | Agents have wait/idle/exit data but no explicit idle/working/blocked phase or command boundary. | Lifecycle state is reported per pane and waits can target blocked/done. |
+| 3 | **P1-36** Attachment retention | Auth, sandboxing, and daily quotas exist; old days accumulate forever. | Retention/cleanup policy with a test, and proxy-URL verification. |
+| 4 | **P1-10** Visible tab context | The multi-tab strip has roles and close controls; a single active tab is still unnamed outside the sheet. | Compact active-tab indicator when only one tab exists, plus overflow affordance. |
+| 5 | **P1-11** Pane splitters | Pane sizes are a fixed template. | Separator elements with pointer and keyboard resizing, persisted per tab. |
+| 6 | **P1-12** Pane shortcuts | Only Alt+T and Alt+arrows exist; close/new/split/maximize help is missing. | Capture-phase router for reserved chords plus discoverable shortcut help. |
+| 7 | **P1-15** Pane terminal parity | No search, copy/paste UI, font controls, themes, link actions, or OSC 52. | Pane menu exposes the terminal features the main surface has. |
+| 8 | **P1-19** Browser keyboard | The pane browser cannot receive arbitrary text input reliably. | Focused page input works from a hardware and software keyboard. |
+| 9 | **P1-42** Context menus | Panes have no long-press/right-click Copy, Paste, Select All, Search, or Clear. | Shared context menu on terminal and browser content with working clipboard calls. |
+| 10 | **P1-43** Idle chrome status | First-tap passthrough is fixed; connection/status still disappears with the key bar. | Reconnect state remains visible while idle, and key-bar policy matches the product decision. |
 
-**Runners-up, start immediately after the top 10:** P1-15 (pane search/copy/font/themes/links), P1-17 (pane reorder), P1-19 (browser keyboard), P1-20 (native select), P1-24 (forward/history), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
+**Runners-up, start immediately after the top 10:** P1-17 (pane reorder), P1-20 (native select), P1-21 (pointer accuracy), P1-22 (activation reflow), P1-23 (crash safety), P1-24 (forward/history), P1-31 (agent attribution), P1-37 (keyboard avoidance), P1-46 (multi-window ownership), P1-50 (restart recovery proof).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

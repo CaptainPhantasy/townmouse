@@ -97,6 +97,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg>
         <span><strong>Attach file</strong><small>Upload into the active terminal.</small></span>
       </button>
+      <button type="button" class="menu-item" id="menu-reader">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5"/></svg>
+        <span><strong>Reader view</strong><small>Word-wrapped transcript of this terminal.</small></span>
+      </button>
     </div>
   </div>
 </dialog>
@@ -115,6 +119,17 @@
 </dialog>
 
 <input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
+
+<section class="reader-view" id="reader-view" role="dialog" aria-modal="true" aria-labelledby="reader-title" hidden>
+  <header class="reader-header">
+    <div><small>Word-wrapped transcript</small><h2 id="reader-title">Reader</h2></div>
+    <div class="reader-actions">
+      <button type="button" class="btn btn-quiet" id="reader-refresh">Refresh</button>
+      <button type="button" class="btn" id="reader-close">Close</button>
+    </div>
+  </header>
+  <pre class="reader-text" id="reader-text" tabindex="0"></pre>
+</section>
 
 <aside class="page-dialog" id="page-dialog" role="alertdialog" aria-labelledby="page-dialog-message" hidden>
   <p id="page-dialog-message"></p>

@@ -107,6 +107,19 @@ async function assertPortFree() {
       occurrences >= 2,
       `full marker should survive in both the command and output; found ${occurrences}\n${after.slice(-1200)}`
     );
+
+    await page.evaluate(() => document.querySelector('#workspace-tools').click());
+    await page.waitForSelector('#drawer-reader', { visible: true, timeout: 5000 });
+    await page.evaluate(() => document.querySelector('#drawer-reader').click());
+    await page.waitForFunction('!document.querySelector("#reader-view").hidden', { timeout: 5000 });
+    const reader = await page.evaluate(() => {
+      const text = document.querySelector('#reader-text');
+      return { text: text.textContent, whiteSpace: getComputedStyle(text).whiteSpace };
+    });
+    assert(reader.whiteSpace === 'pre-wrap', `main reader should wrap prose (${reader.whiteSpace})`);
+    assert(reader.text.includes(MARKER), 'main reader should contain the full command output');
+    await page.evaluate(() => document.querySelector('#reader-close').click());
+
     assert(pageErrors.length === 0, `page errors during resume: ${pageErrors.join(' | ')}`);
     console.log(`PASS resume width: ${narrow.cols}x${narrow.rows} -> ${wide.cols}x${wide.rows}, marker intact ${occurrences}x`);
     console.log('RESULT passed=1 total=1 failures=0');

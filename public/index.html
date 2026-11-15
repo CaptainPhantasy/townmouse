@@ -1183,8 +1183,20 @@
      if (msg.resumed) {
       // Replay the buffered output at the dimensions it was produced with,
       // then fit to this viewport after replay-end. Otherwise old wraps and
-      // cursor-addressed lines are reflowed into fragments.
-      if (term && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
+      // cursor-addressed lines are reflowed into fragments. A transcript replay
+      // has no control codes, so fit first and write it at the final width.
+      if (term && msg.transcript) {
+       resumeReplay = { transcript: true };
+       replayEnded = false;
+       replayPending = 0;
+       postReplayOutput = [];
+       try {
+        term.reset();
+        if (fitAddon) fitAddon.fit();
+       } catch (_) {
+        resumeReplay = null;
+       }
+      } else if (term && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
        resumeReplay = { cols: msg.cols, rows: msg.rows };
        replayEnded = false;
        replayPending = 0;

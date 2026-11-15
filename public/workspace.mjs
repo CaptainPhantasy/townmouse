@@ -238,6 +238,17 @@ export async function init(T1) {
     new MutationObserver(syncPressed).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
+  const readerRow = document.createElement('button');
+  readerRow.type = 'button';
+  readerRow.id = 'drawer-reader';
+  readerRow.textContent = 'Reader view';
+  makeRow(readerRow, { icon: 'dot', desc: 'Word-wrapped transcript for long agent output' });
+  readerRow.addEventListener('click', () => {
+    drawer.close();
+    openReaderView();
+  });
+  $('drawer-tools').append(readerRow);
+
   const isNarrow = () => window.matchMedia('(max-width: 699px)').matches;
   const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
   const setMessage = (message) => { const el = $('browser-message-text'); if (el) el.textContent = message; };
@@ -726,6 +737,55 @@ export async function init(T1) {
   $('workspace-browser').onclick = safe(openBrowser);
   $('agent-browser').onclick = safe(openAgent);
   $('workspace-panes').onclick = () => location.assign('/panes.html');
+
+  let readerView = null;
+  let readerText = null;
+
+  function refreshReaderView() {
+    if (!readerText) return;
+    const raw = window.__terminalOne?.text?.() || '';
+    const lines = String(raw).replace(/\s+$/, '').split('\n');
+    while (lines.length && !lines[0].trim()) lines.shift();
+    readerText.textContent = lines.join('\n') || 'No terminal text yet.';
+    readerText.scrollTop = 0;
+  }
+
+  function closeReaderView() {
+    if (!readerView) return;
+    readerView.hidden = true;
+    try { document.querySelector('.xterm-helper-textarea')?.focus(); } catch (_) { /* no terminal */ }
+  }
+
+  function openReaderView() {
+    if (!readerView) {
+      readerView = document.createElement('section');
+      readerView.id = 'reader-view';
+      readerView.className = 'reader-view';
+      readerView.hidden = true;
+      readerView.setAttribute('role', 'dialog');
+      readerView.setAttribute('aria-modal', 'true');
+      readerView.setAttribute('aria-labelledby', 'reader-title');
+      readerView.innerHTML =
+        '<header class="reader-header">' +
+          '<div><small>Word-wrapped transcript</small><h2 id="reader-title">Reader</h2></div>' +
+          '<div class="reader-actions">' +
+            '<button type="button" id="reader-refresh">Refresh</button>' +
+            '<button type="button" id="reader-close" aria-label="Close reader">Close</button>' +
+          '</div>' +
+        '</header>' +
+        '<pre class="reader-text" id="reader-text" tabindex="0"></pre>';
+      readerView.querySelector('#reader-refresh').addEventListener('click', refreshReaderView);
+      readerView.querySelector('#reader-close').addEventListener('click', closeReaderView);
+      readerView.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { event.preventDefault(); closeReaderView(); }
+      });
+      body.append(readerView);
+      readerText = readerView.querySelector('#reader-text');
+    }
+    readerView.hidden = false;
+    refreshReaderView();
+    readerView.querySelector('#reader-close').focus();
+  }
 
   let attachmentCardTimer = 0;
   function copyAttachmentText(value, success) {

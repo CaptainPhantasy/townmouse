@@ -76,7 +76,28 @@ function installBrowserWorkspace(app) {
     void (async () => {
       try {
         await Promise.resolve();
-        const popupUrl = popup.url();
+        let popupUrl = '';
+        try { popupUrl = popup.url(); } catch (_) { popupUrl = ''; }
+        if (!popupUrl || popupUrl === 'about:blank') {
+          // window.open('', name) starts blank and is navigated by script a
+          // moment later. Wait for the real address before deciding.
+          popupUrl = await new Promise((resolve) => {
+            const timer = setTimeout(() => {
+              try { resolve(popup.url()); } catch (_) { resolve(''); }
+            }, 2500);
+            const check = () => {
+              let candidate = '';
+              try { candidate = popup.url(); } catch (_) { /* frame not ready */ }
+              if (candidate && candidate !== 'about:blank') {
+                clearTimeout(timer);
+                resolve(candidate);
+              }
+            };
+            popup.on('framenavigated', check);
+            popup.on('load', check);
+            popup.once('close', () => { clearTimeout(timer); resolve(''); });
+          });
+        }
         await popup.close().catch(() => {});
         if (popupUrl && popupUrl !== 'about:blank' && /^https?:/i.test(popupUrl)) {
           await page.goto(address(popupUrl)).catch(() => {});

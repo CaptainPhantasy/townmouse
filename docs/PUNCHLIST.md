@@ -31,7 +31,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 |---|---|---|
 | A. Attachments and file transfer | Drop, paste, file picker, upload security, storage | P2-91, P2-92 |
 | B. Terminal rendering and typography | Prose/status overflow and remaining typography polish | P2-62, P2-63 |
-| C. Sessions, reconnect, and scrollback | Multi-window ownership, reconnect, input loss, spawn failure, paste safety | P1-46, P2-58, P2-59, P2-60, P2-61 |
+| C. Sessions, reconnect, and scrollback | Reconnect, input loss, spawn failure, paste safety | P2-58, P2-59, P2-60, P2-61 |
 | D. Panes workspace: tabs, layout, lifecycle | Rename, active pane, limits, focus, agent tab activation | P1-17, P2-51, P2-52, P2-53, P2-54, P2-55, P2-56, P2-57, P2-93, P2-94 |
 | E. Panes terminal input and feature parity | Search/copy/font/themes/links/OSC | P1-15 |
 | F. Browser panes: interaction and input | Touch, keyboard, pointer, native select, text access, activation reflow, crash safety | P1-19, P1-20, P1-21, P1-22, P1-23, P1-31, P1-49 |
@@ -203,6 +203,7 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Evidence:* Probe with repo Puppeteer 25.17.0 (select popup not captured; value stayed `a`; `page.select` changed it to `c`); `src/browser-workspace.js:113-120`.  
 
 - [ ] **P1-23 - New windows and tabs are closed and folded into the current page**
+  *Progress 2026-11-15:* blank popups (`window.open('', name)`) are given up to 2.5s to navigate before being followed, and `tests/panes-api.test.cjs` verifies the parent ends on the popup's eventual target. Still open: pane-owned popup tabs and preserving `window.opener` for OAuth/postMessage flows.
   *Expectation:* `target=_blank` and `window.open` create a tab/window the user can see and return from; OAuth popups can `postMessage` their opener.  
   *Current:* `page.on('popup')` closes the popup and then navigates the same page to `popup.url()` (`src/browser-workspace.js:72-76`). `window.open('', name)` yields `about:blank`, which `address()` rejects, so the popup is simply closed and nothing happens. There is no browser tab strip; `target=_blank` links replace the current page. Closing the popup also destroys `window.opener`, breaking OAuth/payment popup flows that rely on `postMessage`.  
   *Fix:* Keep popups as real pages owned by the pane (a per-pane tab strip) and show them in the UI; handle `about:blank` by waiting for the popup target URL; preserve opener/window messaging; only fold into the same tab when the user chooses. Test target=_blank and `window.open('', name)`.  
@@ -343,7 +344,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Wire those palette entries to the clipboard/search/theme implementations or click their toolbar buttons, and add a test asserting every palette action has a handler.  
   *Evidence:* `public/features/floating-palette.mjs:76-94`; grep `t1:action` handlers finds no handling for paste, copy, select-all, search, or theme.  
 
-- [ ] **P1-45 - The documented Docker channel cannot build or be reached**
+- [x] **P1-45 - The documented Docker channel cannot build or be reached**
+  *Resolved 2026-11-15:* the image copies `scripts/` before `npm ci`, sets `HOST=0.0.0.0` for container port forwarding, and keeps data under the declared volume. A CI Docker job builds the image, publishes `127.0.0.1:11001`, waits for `/health`, and tears the container down; the job passed on `920d12f`. The documented run command still publishes only to host loopback.
   *Expectation:* `docker build` succeeds and the documented `docker run -p 127.0.0.1:11001:11001` command reaches the UI.  
   *Current:* The Dockerfile runs `npm ci --omit=dev` before `COPY scripts ./scripts` (`Dockerfile:16-19`). The package `postinstall` is `sh scripts/prepare-native.sh` (`package.json:40`), so `npm ci` fails because `scripts/` does not exist yet. Even if it built, `src/server.js:18` hardcodes `HOST='127.0.0.1'`; a Docker published port forwards to the container's bridge IP, not its loopback, so the documented run command cannot connect. Voice settings under `~/.config/terminalone` are also not on the declared `VOLUME` (only `/home/node/.townmouse`).  
   *Fix:* Copy `scripts/prepare-native.sh` before `npm ci`, or run `npm ci --ignore-scripts` and run `prepare-native` after the copies; make `HOST` configurable and set `HOST=0.0.0.0` in the image while publishing to host `127.0.0.1`; persist both data directories; add a Docker build-and-health smoke test.  
@@ -666,7 +668,7 @@ All six P0 items and P1-7 through P1-14 (where listed), P1-16, P1-18, P1-33, P1-
 | 9 | **P1-42** Context menus | Terminal menus exist; browser content menus do not, and iPhone long-press needs a real-device test. | Shared terminal/browser menus with working clipboard actions. |
 | 10 | **P1-43** Idle status | First-tap passthrough is fixed; connection state still hides with chrome. | Reconnect/status remains visible while idle, per the product decision. |
 
-**Runners-up, start immediately after the top 10:** P1-37 (keyboard avoidance), P1-46 (true multi-window fan-out), P1-47 (offline/reopen browser tabs), P2-51 (terminal scroll position on tab switch), P2-58 (resume reconnect proof), P2-88 (Docker build gate).
+**Runners-up, start immediately after the top 10:** P1-23 (popup tabs/opener), P1-35 (scoped tokens), P1-37 (keyboard avoidance), P1-47 (offline/reopen browser tabs), P2-51 (terminal scroll position on tab switch), P2-58 (resume reconnect proof), P2-88 (Docker build gate).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

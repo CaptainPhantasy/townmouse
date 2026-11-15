@@ -135,6 +135,7 @@ const FIXTURE_PAGES = {
   '/': { title: 'Pane Fixture', heading: 'Pane Fixture' },
   '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' },
   '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" },
+  '/blank-popup': { title: 'Blank Popup', heading: 'Blank Popup', script: "const w = window.open('', 'child'); setTimeout(() => { w.location.href = '/second'; }, 150);" },
   '/dialog': { title: 'Dialog Fixture', heading: 'Dialog Fixture', script: "setTimeout(() => window.confirm('Proceed with paging?'), 150);" },
   '/dialog-inline': { title: 'Inline Dialog', heading: 'Inline Dialog', script: "window.confirm('Answer before load?');" },
   '/click': {
@@ -700,6 +701,16 @@ async function main() {
       );
       const health = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
       ensure(health.status === 200, 'server should remain healthy after a popup', health.status);
+      const blank = await request('POST', `/api/panes/panes/${paneId}/url`, {
+        token: context.token,
+        body: { url: `${FIXTURE_BASE}/blank-popup` }
+      });
+      ensure(blank.status === 200, 'blank-popup navigation should respond 200', blank.body);
+      const followed = await snapshotUntil(
+        paneId,
+        (body) => typeof body.url === 'string' && body.url.includes('/second')
+      );
+      ensure(followed && followed.status === 200, 'a blank popup should be followed after it navigates', followed ? followed.body : 'no response');
     });
 
     await check('browser: a page dialog is answerable instead of deadlocking', async () => {

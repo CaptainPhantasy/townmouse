@@ -655,22 +655,22 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 ## Top 10 - do next
 
-All six P0 items and P1-7 through P1-14 (where listed), P1-16, P1-18, P1-33, P1-34, P1-36, P1-41, and P1-50 are closed with regression tests. This ordering starts with the remaining P1s and follows user impact, not area order.
+All six P0 items and P1-7 through P1-14, P1-16, P1-18, P1-22, P1-33, P1-34, P1-36, P1-41, P1-43, P1-44, P1-45, P1-46, P1-48, and P1-50 are closed with regression tests and, for the container, a passing Docker CI job. This ordering starts with the remaining P1s and follows user impact, not area order.
 
 | Rank | Item | Why now | Done when |
 |---|---|---|---|
 | 1 | **P1-15** Pane terminal parity | Copy/paste, font, Reader, and links exist; search, themes, and OSC 52 do not. | Pane menu exposes the remaining terminal features the main surface has. |
-| 2 | **P1-19** Touch gestures | Browser panes lack pinch, momentum, and horizontal scroll. | One-finger momentum and two-finger zoom behave like a browser. |
-| 3 | **P1-20** Page keyboard | Focused typing and Enter/Tab/Esc/arrows exist, but mobile typing and remote focus still need work. | Click a remote field, type/Enter, and see focus and key-bar state. |
+| 2 | **P1-19** Touch gestures | Horizontal scroll exists; pinch and momentum do not. | One-finger momentum and two-finger zoom behave like a browser. |
+| 3 | **P1-20** Page keyboard | Focused typing and keys exist; mobile typing and remote focus still need work. | Click a remote field, type/Enter, and see focus and key-bar state. |
 | 4 | **P1-21** Pointer model | Clicks work; hover, drag, double/right/modifier click, and selection do not. | The pointer model matches a normal browser. |
-| 5 | **P1-22** Native select | `<select>`/date/color controls cannot be opened or chosen. | Tapping a select shows choices and applies the selection. |
-| 6 | **P1-23** Popup tabs | Popups are folded into the current page and lose opener messaging. | Pane-owned popup tabs, or a safe refusal that preserves OAuth. |
-| 7 | **P1-24** Browser history | Forward exists; Back/Forward still are not disabled at history edges and there is no history menu. | Snapshot reports `canGoBack`/`canGoForward`, and the toolbar reflects it. |
-| 8 | **P1-31** Page content access | Browser content is pixels only: no selection, copy, find, or screen-reader access for the human. | Readable/selectable content or an accessible text surface alongside the image. |
-| 9 | **P1-42** Context menus | Terminal menus exist; browser content menus do not, and iPhone long-press needs a real-device test. | Shared terminal/browser menus with working clipboard actions. |
-| 10 | **P1-43** Idle status | First-tap passthrough is fixed; connection state still hides with chrome. | Reconnect/status remains visible while idle, per the product decision. |
+| 5 | **P1-23** Popup tabs | Blank popups are followed; opener messaging and pane-owned tabs are still missing. | Pane-owned popup tabs, or a safe refusal that preserves OAuth. |
+| 6 | **P1-24** Browser history | History edges are exposed; no keyboard chord or history menu exists. | Alt+Left/Right and a long-press history menu. |
+| 7 | **P1-31** Page content access | Reader exposes page text; in-page selection/copy/find and screen-reader semantics do not. | Readable/selectable content or an accessible text surface alongside the image. |
+| 8 | **P1-42** Context menus | Terminal and browser menus exist; native-device long-press and in-page link/image actions still need work. | Shared menus verified on a real phone with link/image actions. |
+| 9 | **P1-35** Scoped tokens | Every pane still receives the workspace-wide token. | Per-pane capabilities, explicit grants, rotation, and an audit trail. |
+| 10 | **P1-47** Offline browser tabs | Pane reopen exists; the human sidebar still lacks per-tab offline/reopen state. | Sidebar marks a dead context offline and offers reopen without a reload. |
 
-**Runners-up, start immediately after the top 10:** P1-23 (popup tabs/opener), P1-35 (scoped tokens), P1-37 (keyboard avoidance), P1-47 (offline/reopen browser tabs), P2-51 (terminal scroll position on tab switch), P2-58 (resume reconnect proof), P2-88 (Docker build gate).
+**Runners-up, start immediately after the top 10:** P1-37 (real-device keyboard avoidance), P1-38 (auto-zoom), P1-39 (notch/safe areas), P1-40 (phone landscape rail), P1-49 (activation/tap accuracy), P2-51 (terminal scroll position on tab switch), P2-58 (resume reconnect proof), P2-88 (Docker build gate in CI).
 
 ## Cross-cutting acceptance tests to add with the fixes
 

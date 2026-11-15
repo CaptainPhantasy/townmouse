@@ -2,6 +2,7 @@ import { Terminal } from '/node_modules/@xterm/xterm/lib/xterm.mjs';
 import { FitAddon } from '/node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
 import { WebLinksAddon } from '/node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs';
 import { chunkInput } from '/input-chunks.mjs';
+import { decodeClipboardText } from '/clipboard-text.mjs';
 
 const API_ROOT = '/api/panes';
 const STATE_POLL_MS = 1200;
@@ -990,6 +991,7 @@ function rebuild(tab) {
   if (nextTabId !== currentTabId) {
     // A tab switch is the one time terminals are discarded outright; their
     // cursors and local scrollback survive in the maps below.
+    els.grid.classList.remove('is-maximized');
     teardownPanes();
     els.grid.replaceChildren();
     currentTabId = nextTabId;
@@ -997,6 +999,9 @@ function rebuild(tab) {
     for (const [id, record] of [...records]) {
       const pane = panes.find((candidate) => candidate.id === id);
       if (!pane || pane.kind !== record.kind) {
+        if (record.root.classList.contains('is-maximized')) {
+          els.grid.classList.remove('is-maximized');
+        }
         disposeRecord(record);
         records.delete(id);
         record.root.remove();
@@ -1258,7 +1263,7 @@ function mountTerminal(record) {
       const payload = String(data).split(';')[1] || '';
       if (payload && payload !== '?') {
         try {
-          const text = atob(payload);
+          const text = decodeClipboardText(payload);
           if (text) navigator.clipboard?.writeText(text).catch(() => {});
         } catch (_) { /* malformed clipboard payload */ }
       }

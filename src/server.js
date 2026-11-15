@@ -174,7 +174,7 @@ function cleanupSession(session) {
   const { id, ptyProcess } = session;
   info(id, 'Cleaning up session');
 
-  session.voice = null;
+  for (const socket of session.sockets || []) socket.voice = null;
   clearGraceTimer(session);
 
   const pt = pingTimers.get(id);
@@ -443,8 +443,8 @@ function resumeSession(target, ws, dims, placeholder) {
 
 // ─── Speech-to-text helpers ─────────────────────────────────────────────────
 
-function voiceError(session, code, message) {
-  sendToSession(session, { type: 'voice-error', code, message });
+function voiceError(ws, code, message) {
+  sendToSocket(ws, { type: 'voice-error', code, message });
 }
 
 function extForMime(mimeType) {
@@ -583,11 +583,11 @@ function readTranscriptText(tmpDir, base, cb) {
   });
 }
 
-function transcribeAudioFile(session, audioPath, tmpDir) {
+function transcribeAudioFile(session, ws, audioPath, tmpDir) {
   const checked = validateVoiceConfig(readVoiceConfig());
   if (!checked.ok) {
     warn(session.id, 'Voice settings are invalid', { error: checked.error });
-    voiceError(session, 'STT_FAILED', `Voice settings are invalid: ${checked.error}`);
+    voiceError(ws, 'STT_FAILED', `Voice settings are invalid: ${checked.error}`);
     cleanupTempDir(tmpDir);
     return;
   }
@@ -611,7 +611,7 @@ function transcribeAudioFile(session, audioPath, tmpDir) {
   const timer = setTimeout(() => {
     settled = true;
     child.kill('SIGTERM');
-    voiceError(session, 'STT_TIMEOUT', 'Speech transcription timed out');
+    voiceError(ws, 'STT_TIMEOUT', 'Speech transcription timed out');
     cleanupTempDir(tmpDir);
   }, STT_TIMEOUT_MS);
 
@@ -623,7 +623,7 @@ function transcribeAudioFile(session, audioPath, tmpDir) {
     settled = true;
     clearTimeout(timer);
     const code = err.code === 'ENOENT' ? 'STT_UNAVAILABLE' : 'STT_ERROR';
-    voiceError(session, code, err.code === 'ENOENT' ? 'Local whisper command not found' : err.message);
+    voiceError(ws, code, err.code === 'ENOENT' ? 'Local whisper command not found' : err.message);
     cleanupTempDir(tmpDir);
   });
   child.on('exit', (code) => {
@@ -632,32 +632,32 @@ function transcribeAudioFile(session, audioPath, tmpDir) {
     clearTimeout(timer);
     if (code !== 0) {
       warn(session.id, 'Local STT failed', { code, stderr });
-      voiceError(session, 'STT_FAILED', 'Speech transcription failed');
+      voiceError(ws, 'STT_FAILED', 'Speech transcription failed');
       cleanupTempDir(tmpDir);
       return;
     }
     readTranscriptText(tmpDir, base, (readErr, text) => {
       cleanupTempDir(tmpDir);
       if (readErr) {
-        voiceError(session, 'STT_NO_TRANSCRIPT', 'Speech transcription produced no text');
+        voiceError(ws, 'STT_NO_TRANSCRIPT', 'Speech transcription produced no text');
         return;
       }
       const transcript = String(text || '').trim();
       if (!transcript) {
-        voiceError(session, 'STT_NO_TRANSCRIPT', 'Speech transcription produced no text');
+        voiceError(ws, 'STT_NO_TRANSCRIPT', 'Speech transcription produced no text');
         return;
       }
-      sendToSession(session, { type: 'voice-transcript', text: transcript });
+      sendToSocket(ws, { type: 'voice-transcript', text: transcript });
       info(session.id, 'Local STT transcript ready', { chars: transcript.length });
     });
   });
 }
 
-function finalizeVoice(session) {
-  const voice = session.voice;
-  session.voice = null;
+function finalizeVoice(session, ws) {
+  const voice = ws.voice;
+  ws.voice = null;
   if (!voice || !voice.chunks.length || voice.bytes <= 0) {
-    voiceError(session, 'VOICE_EMPTY', 'No voice audio was captured');
+    voiceError(ws, 'VOICE_EMPTY', 'No voice audio was captured');
     return;
   }
 
@@ -666,17 +666,17 @@ function finalizeVoice(session) {
     fs.mkdirSync(VOICE_TMP_BASE, { recursive: true, mode: 0o700 });
     tmpDir = fs.mkdtempSync(path.join(VOICE_TMP_BASE, 'stt-'));
   } catch (err) {
-    voiceError(session, 'VOICE_WRITE_FAILED', 'Could not create a voice transcription folder');
+    voiceError(ws, 'VOICE_WRITE_FAILED', 'Could not create a voice transcription folder');
     return;
   }
   const audioPath = path.join(tmpDir, `utterance.${extForMime(voice.mimeType)}`);
   fs.writeFile(audioPath, Buffer.concat(voice.chunks), (err) => {
     if (err) {
-      voiceError(session, 'VOICE_WRITE_FAILED', 'Could not save voice audio for transcription');
+      voiceError(ws, 'VOICE_WRITE_FAILED', 'Could not save voice audio for transcription');
       cleanupTempDir(tmpDir);
       return;
     }
-    transcribeAudioFile(session, audioPath, tmpDir);
+    transcribeAudioFile(session, ws, audioPath, tmpDir);
   });
 }
 
@@ -739,47 +739,48 @@ function handleMessage(session, ws, data) {
       break;
     }
     case 'voice-start': {
-      session.voice = {
+      // Capture and response ownership belong to this window, not the shared PTY.
+      ws.voice = {
         chunks: [],
         bytes: 0,
         mimeType: typeof data.mimeType === 'string' ? data.mimeType.slice(0, 80) : '',
         startedAt: Date.now()
       };
-      sendToSession(session, { type: 'voice-ready' });
+      sendToSocket(ws, { type: 'voice-ready' });
       break;
     }
     case 'voice-chunk': {
-      if (!session.voice) {
-        voiceError(session, 'VOICE_NOT_STARTED', 'Voice input was not started');
+      if (!ws.voice) {
+        voiceError(ws, 'VOICE_NOT_STARTED', 'Voice input was not started');
         break;
       }
       if (typeof data.b64 !== 'string' || data.b64.length === 0) {
-        voiceError(session, 'VOICE_BAD_CHUNK', 'Voice chunk was empty or invalid');
+        voiceError(ws, 'VOICE_BAD_CHUNK', 'Voice chunk was empty or invalid');
         break;
       }
       let chunk;
       try { chunk = Buffer.from(data.b64, 'base64'); }
       catch (_) { chunk = Buffer.alloc(0); }
       if (!chunk.length) {
-        voiceError(session, 'VOICE_BAD_CHUNK', 'Voice chunk could not be decoded');
+        voiceError(ws, 'VOICE_BAD_CHUNK', 'Voice chunk could not be decoded');
         break;
       }
       if (chunk.length > STT_MAX_CHUNK_BYTES) {
-        session.voice = null;
-        voiceError(session, 'VOICE_CHUNK_TOO_LARGE', 'Voice chunk exceeded the size limit');
+        ws.voice = null;
+        voiceError(ws, 'VOICE_CHUNK_TOO_LARGE', 'Voice chunk exceeded the size limit');
         break;
       }
-      if (session.voice.bytes + chunk.length > STT_MAX_UTTERANCE_BYTES) {
-        session.voice = null;
-        voiceError(session, 'VOICE_TOO_LARGE', 'Voice utterance exceeded the size limit');
+      if (ws.voice.bytes + chunk.length > STT_MAX_UTTERANCE_BYTES) {
+        ws.voice = null;
+        voiceError(ws, 'VOICE_TOO_LARGE', 'Voice utterance exceeded the size limit');
         break;
       }
-      session.voice.chunks.push(chunk);
-      session.voice.bytes += chunk.length;
+      ws.voice.chunks.push(chunk);
+      ws.voice.bytes += chunk.length;
       break;
     }
     case 'voice-end': {
-      finalizeVoice(session);
+      finalizeVoice(session, ws);
       break;
     }
     case 'resize': {
@@ -847,6 +848,7 @@ function bindWsToSession(ws, session) {
   });
 
   ws.on('close', (code, reason) => {
+    ws.voice = null;
     const s = ws.__sessionRef;
     if (!s) return;
     info(s.id, 'WebSocket disconnected', { code, reason: reason?.toString?.() || '', userClosed: !!s.userClosed });

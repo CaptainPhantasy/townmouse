@@ -4,13 +4,27 @@
  * (the terminal instance is disposed and recreated on resume).
  */
 const KEY = 'terminalone.fontSize';
-const MIN = 8, MAX = 28, STEP = 1, DEFAULT = 14;
+const MIN = 8, MAX = 28, STEP = 1;
+
+function responsiveDefault() {
+  const width = window.innerWidth;
+  if (width <= 430) return 11;
+  if (width <= 820) return 12;
+  return 14;
+}
 
 export function init(T1) {
   const tb = T1.ui.toolbar();
   if (!tb) return;
 
   T1.ui.addStyle(`
+    .t1font-group {
+      flex: 1 1 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .t1font-group .t1button { flex: 1; }
     .t1font-label {
       flex: 0 0 auto;
       min-width: 32px;
@@ -23,7 +37,10 @@ export function init(T1) {
   `);
 
   const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
-  let size = clamp(parseInt(T1.storage.get(KEY, String(DEFAULT)), 10) || DEFAULT);
+  const stored = T1.storage.get(KEY, null);
+  let size = stored !== null && stored !== undefined && stored !== ''
+    ? clamp(parseInt(stored, 10) || responsiveDefault())
+    : responsiveDefault();
 
   const label = document.createElement('span');
   label.className = 't1font-label';
@@ -44,9 +61,10 @@ export function init(T1) {
   const minus = T1.ui.makeButton('A-', 'Decrease font size', () => bump(-STEP));
   const plus = T1.ui.makeButton('A+', 'Increase font size', () => bump(STEP));
 
-  tb.appendChild(minus);
-  tb.appendChild(label);
-  tb.appendChild(plus);
+  const group = document.createElement('div');
+  group.className = 't1font-group';
+  group.append(minus, label, plus);
+  tb.appendChild(group);
 
   render();
   // The terminal is recreated on every (re)connect — re-apply the stored size.

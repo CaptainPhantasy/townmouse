@@ -51,6 +51,14 @@ export function init(T1) {
   tb.appendChild(copy);
   tb.appendChild(selectAll);
 
+  // Shared action names used by the tablet palette and command surfaces.
+  window.addEventListener('t1:action', (event) => {
+    const action = (event.detail || {}).action;
+    if (action === 'paste') paste.click();
+    if (action === 'copy') copy.click();
+    if (action === 'select-all') selectAll.click();
+  });
+
   // Keyboard shortcut: Ctrl/Cmd+Shift+A
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {

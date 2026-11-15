@@ -1,7 +1,7 @@
 {
-  "name": "TerminalOne",
-  "short_name": "T1",
-  "description": "Your shell, clearly in view.",
+  "name": "Townmouse",
+  "short_name": "Townmouse",
+  "description": "Townmouse is a terminal and agent browser workspace. Its embedded TerminalOne engine supplies the PTY.",
   "icons": [
     {
       "src": "icon-192.png",
@@ -14,16 +14,22 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "theme_color": "#20252b",
-  "background_color": "#14171b",
+  "theme_color": "#eef1f5",
+  "background_color": "#eef1f5",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
   "shortcuts": [
     {
-      "name": "New Tab",
+      "name": "New tab",
       "short_name": "New",
       "description": "Open a new terminal session",
       "url": "/?action=new-tab",
@@ -35,7 +41,7 @@
       ]
     },
     {
-      "name": "Focus Mode",
+      "name": "Focus mode",
       "short_name": "Focus",
       "description": "Open in full-screen focus mode",
       "url": "/?action=focus",

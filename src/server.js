@@ -1,10 +1,12 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const os = require('os');
 const { resolveShell } = require('./shell-resolve');
+const { replayTranscript } = require('./replay-text');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
@@ -15,7 +17,9 @@ const { v4: uuidv4 } = require('uuid');
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 11001;
-const HOST = '127.0.0.1';
+// Loopback by default. Docker sets HOST=0.0.0.0 because a container's
+// loopback is not reachable from the host; publish that port to loopback only.
+const HOST = process.env.HOST || '127.0.0.1';
 const { createRequestBoundary } = require('./request-boundary');
 const isTrustedRequest = createRequestBoundary(PORT, process.env.TERMINALONE_TRUSTED_ORIGINS || '');
 const MAX_CONCURRENT_SESSIONS = 10;
@@ -110,12 +114,26 @@ function wsError(ws, code, message, id) {
   }
 }
 
-/** Send a JSON message to a session's *current* ws if it is open. */
-function sendToSession(session, payload) {
-  const ws = session.ws;
+/** Send one JSON message to one socket if it is open. */
+function sendToSocket(ws, payload) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
   try { ws.send(JSON.stringify(payload)); return true; }
-  catch (e) { error(session.id, 'WS send failed', { err: e.message }); return false; }
+  catch (_) { return false; }
+}
+
+/** Send a JSON message to every window currently attached to a session. */
+function sendToSession(session, payload) {
+  const sockets = session.sockets && session.sockets.size
+    ? session.sockets
+    : (session.ws ? new Set([session.ws]) : new Set());
+  let sent = false;
+  const data = JSON.stringify(payload);
+  for (const ws of sockets) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) continue;
+    try { ws.send(data); sent = true; }
+    catch (e) { error(session.id, 'WS send failed', { err: e.message }); }
+  }
+  return sent;
 }
 
 // ─── Output ring buffer ──────────────────────────────────────────────────────
@@ -167,6 +185,10 @@ function cleanupSession(session) {
   pongTimers.delete(id);
 
   if (ptyProcess) { killPty(ptyProcess, id); session.ptyProcess = undefined; }
+  for (const socket of session.sockets || []) {
+    try { socket.close(1000, 'session ended'); } catch (_) { /* already gone */ }
+  }
+  if (session.sockets) session.sockets.clear();
   activeSessions.delete(id);
   info(id, 'Session cleaned up');
 }
@@ -211,6 +233,11 @@ function wirePtyToSession(ptyProcess, session) {
   const { id } = session;
 
   ptyProcess.onData((data) => {
+    // Remember the width this output was actually produced at. A resize just
+    // before a reload updates lastCols but not this marker.
+    session.lastDataCols = session.lastCols;
+    session.lastDataRows = session.lastRows;
+    session.outputChars += data.length;
     // Always buffer so a subsequent resume can replay this output.
     bufferOutput(session, data);
     if (!session.sessionActive) return;
@@ -294,6 +321,7 @@ function spawnShell(session, cwd) {
   session.ptyProcess = ptyProcess;
   session.processExited = false;
   session.startedAt = Date.now();
+  session.resizeMarkers.push({ at: session.outputChars, cols, rows });
   activeSessions.set(id, session);
   wirePtyToSession(ptyProcess, session);
 
@@ -324,6 +352,15 @@ function spawnShell(session, cwd) {
 function resumeSession(target, ws, dims, placeholder) {
   const { id } = target;
   const bufferedBytes = target.outputBuffer ? target.outputBuffer.length : 0;
+  // The buffer was produced at the old PTY width. Replay it into an xterm set
+  // to those dimensions, then fit the client to the new viewport. Replaying
+  // old cursor-addressed output at a new width splits words and loses lines.
+  const replayCols = target.lastDataCols || target.lastCols || dims.cols;
+  const replayRows = target.lastDataRows || target.lastRows || dims.rows;
+  // Same-width resume can replay colors and cursor addressing safely. A width
+  // change cannot: xterm's reflow of old shell redraws splits command lines.
+  // Use a control-code-free transcript of the final screen text instead.
+  const transcript = target.widthChanged || replayCols !== dims.cols || replayRows !== dims.rows;
 
   // Retire the placeholder connection session (the one created at connect).
   activeSessions.delete(placeholder.id);
@@ -332,12 +369,68 @@ function resumeSession(target, ws, dims, placeholder) {
   // Adopt the new connection onto the target session.
   target.ws = ws;
   target.sessionActive = true;
+  if (!target.sockets) target.sockets = new Set();
+  target.sockets.add(ws);
   ws.__sessionRef = target; // re-point handlers at the resumed session
 
   // Cancel the resume grace countdown — we're live again.
   clearGraceTimer(target);
 
-  // Resize the live PTY to the new client viewport.
+  // Restart heartbeat for the new socket.
+  startHeartbeat(target);
+
+  // Acknowledge resume with the dimensions the buffered output was rendered
+  // at. The client resizes its xterm to these before writing any replay bytes
+  // and waits for `replay-end` before fitting to the viewport.
+  sendToSocket(ws, {
+    type: 'ready',
+    sessionId: id,
+    command: target.command || resolveShell(),
+    cwd: target.shellCwd,
+    resumed: true,
+    transcript,
+    cols: replayCols,
+    rows: replayRows
+  });
+
+  if (target.outputBuffer) {
+    const raw = target.outputBuffer;
+    target.outputBuffer = '';
+    let buf = raw;
+    if (transcript) {
+      const rawStart = Math.max(0, target.outputChars - raw.length);
+      let initial = { cols: replayCols };
+      const segments = [];
+      for (const marker of target.resizeMarkers) {
+        if (marker.at <= rawStart) initial = marker;
+        else if (marker.at < target.outputChars) {
+          segments.push({ at: marker.at - rawStart, cols: marker.cols });
+        }
+      }
+      segments.unshift({ at: 0, cols: initial.cols });
+      buf = replayTranscript(raw, segments).replace(/\n/g, '\r\n');
+    }
+    // Send in chunks to avoid a single oversized WS frame.
+    const CHUNK = 16 * 1024;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      let end = Math.min(i + CHUNK, buf.length);
+      if (end < buf.length) {
+        const last = buf.charCodeAt(end - 1);
+        if (last >= 0xD800 && last <= 0xDBFF) end -= 1;
+      }
+      sendToSocket(ws, { type: 'output', data: buf.slice(i, end) });
+      i = end - CHUNK;
+    }
+  }
+  sendToSocket(ws, { type: 'replay-end' });
+
+  // Only after the replay is on the wire do we resize the live PTY to the new
+  // client viewport. New output is therefore produced at the new width while
+  // the old buffer remains coherent at the old width.
+  if (dims.cols !== target.lastCols || dims.rows !== target.lastRows) {
+    target.widthChanged = true;
+    target.resizeMarkers.push({ at: target.outputChars, cols: dims.cols, rows: dims.rows });
+  }
   target.lastCols = dims.cols;
   target.lastRows = dims.rows;
   if (target.ptyProcess && !target.processExited) {
@@ -345,29 +438,7 @@ function resumeSession(target, ws, dims, placeholder) {
     catch (e) { warn(id, 'resume resize failed', { err: e.message }); }
   }
 
-  // Restart heartbeat for the new socket.
-  startHeartbeat(target);
-
-  // Acknowledge resume, then replay buffered output into the fresh terminal.
-  sendToSession(target, {
-    type: 'ready',
-    sessionId: id,
-    command: target.command || resolveShell(),
-    cwd: target.shellCwd,
-    resumed: true
-  });
-
-  if (target.outputBuffer) {
-    const buf = target.outputBuffer;
-    target.outputBuffer = '';
-    // Send in chunks to avoid a single oversized WS frame.
-    const CHUNK = 16 * 1024;
-    for (let i = 0; i < buf.length; i += CHUNK) {
-      sendToSession(target, { type: 'output', data: buf.slice(i, i + CHUNK) });
-    }
-  }
-
-  info(id, 'Session resumed', { bufferedBytes });
+  info(id, 'Session resumed', { bufferedBytes, replayCols, replayRows, cols: dims.cols, rows: dims.rows });
 }
 
 // ─── Speech-to-text helpers ─────────────────────────────────────────────────
@@ -614,6 +685,9 @@ function finalizeVoice(session) {
 /** @param {Session} session @param {import('ws').WebSocket} ws @param {object} data */
 function handleMessage(session, ws, data) {
   if (!session.sessionActive && data.type !== 'resume' && data.type !== 'shell') return;
+  // A superseded socket must not close, re-shell, or re-adopt the session out
+  // from under the window that currently owns it.
+  if (session.ws && session.ws !== ws && ['close', 'shell', 'resume'].includes(data.type)) return;
 
   switch (data.type) {
     case 'shell': {
@@ -710,6 +784,10 @@ function handleMessage(session, ws, data) {
     }
     case 'resize': {
       const { cols, rows } = clampDims(data.cols, data.rows);
+      if (cols !== session.lastCols || rows !== session.lastRows) {
+        session.widthChanged = true;
+        session.resizeMarkers.push({ at: session.outputChars, cols, rows });
+      }
       session.lastCols = cols;
       session.lastRows = rows;
       if (session.ptyProcess && !session.processExited) {
@@ -773,11 +851,31 @@ function bindWsToSession(ws, session) {
     if (!s) return;
     info(s.id, 'WebSocket disconnected', { code, reason: reason?.toString?.() || '', userClosed: !!s.userClosed });
 
-    // Explicit close already cleaned up the session; ensure the placeholder is gone.
+    // Explicit close already cleaned up the session; close any other windows
+    // attached to it and retire the record.
     if (s.userClosed) {
+      for (const socket of s.sockets || []) {
+        if (socket !== ws) {
+          try { socket.close(1000, 'session closed'); } catch (_) { /* already gone */ }
+        }
+      }
+      if (s.sockets) s.sockets.clear();
       activeSessions.delete(s.id);
       return;
     }
+    if (!s.sockets) s.sockets = new Set(s.ws ? [s.ws] : []);
+    s.sockets.delete(ws);
+    // Other windows still hold this shell: keep it live and hand ownership to
+    // one of them. Closing one window must not detach the rest.
+    if (s.sockets.size > 0) {
+      if (s.ws === ws || !s.ws) {
+        s.ws = [...s.sockets].find((socket) => socket.readyState === WebSocket.OPEN) || null;
+      }
+      return;
+    }
+    // A socket that was superseded by a newer resume must not detach the new
+    // window or start a grace timer underneath it.
+    if (s.ws && s.ws !== ws) return;
     // Unexpected drop: keep the PTY alive and start the resume grace window.
     if (s.ptyProcess && !s.processExited) {
       s.ws = null;
@@ -801,8 +899,9 @@ function bindWsToSession(ws, session) {
     const s = ws.__sessionRef;
     error(s ? s.id : null, 'WebSocket error', { err: err.message || String(err) });
     // An error does not necessarily kill the socket; mark inactive and let the
-    // close handler decide grace vs cleanup.
-    if (s) s.sessionActive = false;
+    // close handler decide grace vs cleanup. Never let a superseded socket
+    // mark the live owner inactive.
+    if (s && (!s.ws || s.ws === ws) && (!s.sockets || s.sockets.size <= 1)) s.sessionActive = false;
   });
 }
 
@@ -815,12 +914,49 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
   next();
 });
-app.use(express.json({ limit: '64kb' }));
-const closeBrowsers = require('./browser-workspace').installBrowserWorkspace(app);
+
+// Owner capability cookie. Terminal agents must never be able to bootstrap the
+// human workspace just because they can reach loopback: an Authorization header
+// is denied at the bootstrap routes, and a header-less local client has no
+// capability at all. The cookie is minted only on a real page navigation and is
+// HttpOnly + SameSite=Strict, so page scripts and cross-site requests cannot
+// read or replay it.
+const OWNER_COOKIE = 'townmouse_owner';
+const OWNER_CAPABILITY = crypto.randomBytes(32).toString('hex');
+app.use((req, res, next) => {
+  const ownerPage = req.method === 'GET' &&
+    (req.path === '/' || req.path === '/index.html' || req.path === '/panes' || req.path === '/panes.html');
+  // Node's fetch (used by the integration tests) cannot send Sec-Fetch-Mode;
+  // a document navigation also identifies itself with Accept: text/html.
+  const navigates = req.get('Sec-Fetch-Mode') === 'navigate' ||
+    String(req.get('Accept') || '').includes('text/html');
+  if (ownerPage && !req.get('Authorization') && navigates) {
+    res.cookie(OWNER_COOKIE, OWNER_CAPABILITY, {
+      httpOnly: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 12 * 60 * 60 * 1000
+    });
+  }
+  const cookies = String(req.headers.cookie || '').split(/;\s*/);
+  req.isOwner = cookies.includes(`${OWNER_COOKIE}=${OWNER_CAPABILITY}`);
+  next();
+});
+
+// Attachments must be mounted before the global JSON parser: JSON files are
+// valid uploads and the raw parser, not express.json, must consume their body.
+require('./attachments').installAttachments(app);
+// Pane input/command bodies can be large pastes. 2 MB keeps a single request
+// below the attachment limit while still bounding local API requests.
+app.use(express.json({ limit: '2mb' }));
+const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
+const closeBrowsers = () => browserWorkspace.closeAll();
+const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs
 // silently reproduces already-fixed echo bugs).
+app.get('/panes', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'panes.html')));
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
@@ -883,6 +1019,14 @@ wss.on('connection', (ws) => {
     ws,
     startedAt: Date.now(),
     outputBuffer: '',
+    lastCols: 120,
+    lastRows: 40,
+    lastDataCols: null,
+    lastDataRows: null,
+    widthChanged: false,
+    outputChars: 0,
+    resizeMarkers: [],
+    sockets: new Set([ws]),
     userClosed: false
   };
   activeSessions.set(sessionId, session);
@@ -894,9 +1038,10 @@ wss.on('connection', (ws) => {
 // ─── Graceful shutdown ─────────────────────────────────────────────────────
 
 /** @param {string} signal */
-async function shutdown(signal) {
+async function shutdown(signal, exitCode = 0) {
   info(null, `Received ${signal}, starting graceful shutdown`, { activeSessions: activeSessions.size });
   server.close();
+  await paneWorkspace.closeAll().catch(err => error(null, 'Pane shutdown failed', {err:err.message}));
   await closeBrowsers().catch(err => error(null, 'Browser shutdown failed', {err:err.message}));
   const promises = Array.from(activeSessions.values()).map((s) => {
     clearGraceTimer(s);
@@ -906,12 +1051,24 @@ async function shutdown(signal) {
   });
   await Promise.race([Promise.all(promises), new Promise((r) => setTimeout(r, 5_000))]);
   info(null, 'Shutdown complete', { activeSessions: activeSessions.size });
-  process.exit(0);
+  process.exit(exitCode);
 }
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.stack || reason.message : String(reason);
+  error(null, 'Unhandled promise rejection', { err: message });
+});
+
+process.on('uncaughtException', (err) => {
+  error(null, 'Uncaught exception — shutting down', { err: err?.stack || String(err) });
+  const force = setTimeout(() => process.exit(1), 6000);
+  force.unref?.();
+  shutdown('uncaughtException', 1).catch(() => process.exit(1));
+});
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 server.listen(PORT, HOST, () => {
-  info(null, `TerminalOne running at http://localhost:${PORT}`, { maxSessions: MAX_CONCURRENT_SESSIONS });
+  info(null, `Townmouse running at http://localhost:${PORT}`, { maxSessions: MAX_CONCURRENT_SESSIONS });
 });

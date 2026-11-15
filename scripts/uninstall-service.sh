@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# TerminalOne — remove the always-on LaunchAgent. Full reversal of install-service.sh.
+# Townmouse — remove the always-on LaunchAgent. Full reversal of install-service.sh.
 # Stops the running service and deletes the plist. Does not touch app code or ports
 # beyond releasing 11001 when the process stops.
 #
@@ -24,21 +24,21 @@ fi
 for d in /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
   f="$d/t1"
   if [ -L "$f" ]; then
-    case "$(readlink "$f")" in *TerminalOne*) rm -f "$f" && echo "Removed $f (symlink)";; esac
-  elif [ -f "$f" ] && grep -q 'TerminalOne launcher' "$f" 2>/dev/null; then
+    case "$(readlink "$f")" in *Townmouse*|*TerminalOne*) rm -f "$f" && echo "Removed $f (symlink)";; esac
+  elif [ -f "$f" ] && grep -Eq 'Townmouse launcher|TerminalOne launcher' "$f" 2>/dev/null; then
     rm -f "$f" && echo "Removed $f (binary)"
   fi
 done
 
 # Remove the no-terminal app launcher from both possible install locations.
-for APP_BUNDLE in "/Applications/TerminalOne.app" "$HOME/Applications/TerminalOne.app"; do
+for APP_BUNDLE in "/Applications/Townmouse.app" "$HOME/Applications/Townmouse.app" "/Applications/TerminalOne.app" "$HOME/Applications/TerminalOne.app"; do
   if [ -d "$APP_BUNDLE" ]; then rm -rf "$APP_BUNDLE" && echo "Removed $APP_BUNDLE"; fi
 done
 
 # Remove the PATH line added to shell rc files by install-service.sh.
 # Use ';' not '&&' for mv: grep -vF exits 1 when the marked line is the last
 # remaining content (no output lines), but we must still write the (empty) result.
-MARK="# added by TerminalOne install-service.sh"
+MARK="# added by Townmouse install-service.sh"
 for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
   if [ -f "$rc" ] && grep -qF "$MARK" "$rc" 2>/dev/null; then
     tmp="$(mktemp)"
@@ -46,4 +46,4 @@ for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
   fi
 done
 
-echo "TerminalOne service uninstalled."
+echo "Townmouse service uninstalled."

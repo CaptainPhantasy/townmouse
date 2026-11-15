@@ -88,7 +88,6 @@ async function run() {
       sessionTabs: !!document.querySelector('.t1session-tabs'),
       statusPanel: !!document.querySelector('.t1status-panel'),
       lockOverlay: !!document.querySelector('.t1-lock-overlay'),
-      fileDrop: !!document.querySelector('.t1-file-drop-target'),
       shortcutOverlay: !!document.querySelector('.t1-shortcut-overlay'),
       voiceButton: !!document.querySelector('.t1voice-button'),
       voiceHook: !!window.__terminalOneVoiceInput,
@@ -98,7 +97,6 @@ async function run() {
     }));
     // desktop-palette must load on desktop (was skipped before the T1.device fix).
     assert(dState.features.includes('desktop-palette'), 'desktop-palette loaded on desktop device');
-    assert(dState.features.includes('file-drop'), 'file-drop loaded on desktop device');
     assert(dState.features.includes('settings-sync'), 'settings-sync loaded on desktop device');
     assert(dState.features.includes('session-lock'), 'session-lock loaded on desktop device');
     assert(dState.toolbarBtns >= 10, `desktop toolbar rendered ${dState.toolbarBtns} buttons (>=10)`);
@@ -108,7 +106,6 @@ async function run() {
     assert(dState.sessionTabs, 'session tabs element created');
     assert(dState.statusPanel, 'status panel element created');
     assert(dState.lockOverlay, 'session-lock overlay created');
-    assert(dState.fileDrop, 'file-drop overlay created');
     assert(dState.shortcutOverlay, 'shortcut-help overlay created');
     assert(dState.features.includes('voice-input'), 'voice-input feature loaded');
     assert(dState.voiceButton, 'voice-input toolbar button rendered');
@@ -165,7 +162,47 @@ async function run() {
     await sleep(200);
     const paletteClosed = await ppage.evaluate(() => !document.querySelector('.t1palette')?.classList.contains('open'));
     assert(paletteClosed === true, 'command palette closes on Escape');
+
+    const shortcuts = await ppage.evaluate(() => {
+      const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform || '');
+      let clears = 0;
+      window.addEventListener('t1:action', (event) => {
+        if ((event.detail || {}).action === 'clear') clears++;
+      });
+      const bare = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(bare);
+      const afterBare = clears;
+      const appChord = isMac
+        ? new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true })
+        : new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+      document.dispatchEvent(appChord);
+      return { isMac, afterBare, afterApp: clears };
+    });
+    assert(shortcuts.afterBare === 0, 'bare Ctrl+K reaches the shell instead of clearing');
+    assert(shortcuts.afterApp === 1, `the platform clear chord fires (mac=${shortcuts.isMac})`);
     await ppage.close();
+
+    // ── Tablet floating palette actions are wired ────────────────────────────
+    console.log('\nFloating palette actions:');
+    const tabletPage = await browser.newPage();
+    await tabletPage.setViewport({ width: 820, height: 1180, isMobile: true, hasTouch: true });
+    await tabletPage.goto(BASE_URL, { waitUntil: 'networkidle2', timeout: 15000 });
+    await tabletPage.waitForFunction('window.__t1Features && window.__t1Features.includes("floating-palette")', { timeout: 10000 });
+    await tabletPage.evaluate(() => window.__terminalOneFloatingPalette.open());
+    await tabletPage.evaluate(() => {
+      const button = Array.from(document.querySelectorAll('.t1-tablet-actions button')).find((candidate) => candidate.textContent === 'Search');
+      button.click();
+    });
+    await tabletPage.waitForFunction('document.querySelector(".t1search-box")?.classList.contains("open")', { timeout: 5000 });
+    assert(true, 'floating palette Search opens the search box');
+    await tabletPage.evaluate(() => window.__terminalOneFloatingPalette.open());
+    await tabletPage.evaluate(() => {
+      const button = Array.from(document.querySelectorAll('.t1-tablet-actions button')).find((candidate) => candidate.textContent === 'Copy');
+      button.click();
+    });
+    await tabletPage.waitForFunction(() => Array.from(document.querySelectorAll('.t1toast')).some((toast) => /No text selected/i.test(toast.textContent)), { timeout: 5000 });
+    assert(true, 'floating palette Copy reports the empty selection');
+    await tabletPage.close();
 
     // ── Voice transcript insertion is final-only and review-before-run ─────
     console.log('\nVoice transcript insertion:');

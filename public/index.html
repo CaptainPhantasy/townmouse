@@ -6,15 +6,15 @@
  <meta name="apple-mobile-web-app-capable" content="yes">
  <meta name="mobile-web-app-capable" content="yes">
  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
- <meta name="apple-mobile-web-app-title" content="TerminalOne">
- <title>TerminalOne</title>
+ <meta name="apple-mobile-web-app-title" content="Townmouse">
+ <meta name="description" content="Townmouse is a terminal and agent browser workspace. Its embedded TerminalOne engine supplies the PTY.">
+ <title>Townmouse</title>
  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
  <link rel="manifest" href="/manifest.json">
  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
- <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
- <meta name="theme-color" content="#14171b">
+ <meta name="theme-color" content="#eef1f5">
  <link rel="preconnect" href="https://fonts.googleapis.com">
  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -414,7 +414,7 @@
 
  <div class="app-shell">
   <header class="terminal-header">
-   <div class="terminal-title">TerminalOne</div>
+   <div class="terminal-title">Townmouse</div>
    <div class="terminal-actions">
     <button id="settingsBtn" type="button" title="Settings">Settings</button>
     <button id="reconnectBtn" type="button">Reconnect</button>
@@ -450,7 +450,7 @@
    <div class="settings-row">
     <label for="styleSelect">Terminal style</label>
     <select id="styleSelect">
-     <option value="default">TerminalOne (default)</option>
+     <option value="default">Townmouse (default)</option>
      <option value="floyd">Floyd TTY Bridge</option>
     </select>
    </div>
@@ -545,12 +545,23 @@
   let fitAddon = null;
   let reconnectAttempts = 0;
   let reconnectTimer = null;
+  // No resize may reach the server before the first ready/shell handshake. A
+  // fit on the fresh page would otherwise overwrite the old PTY dimensions and
+  // hide the fact that resume is crossing widths.
+  let sessionReady = false;
   let userInitiatedClose = false;
   let currentSessionId = null;
   let currentTheme = DEFAULT_THEME;
   let currentStyle = DEFAULT_STYLE;
   let rain = null; // lazily created digital-rain controller
   let fitTimer = null;
+  // Non-null while replaying a resumed session's old-width buffer. The xterm
+  // stays at the PTY's old dimensions so wrapped lines and cursor addressing
+  // survive; fitting waits until the replay-end marker arrives.
+  let resumeReplay = null;
+  let replayEnded = false;
+  let replayPending = 0;
+  let postReplayOutput = [];
   let terminalResourceDisposers = [];
 
   // Module-level input sender. initTerminal() (which owns the dictation guard
@@ -559,6 +570,81 @@
   let sendInputFn = null;
   // Modifier toggle state for the on-screen key bar (Ctrl / Alt as sticky).
   let modState = { ctrl: false, alt: false };
+
+  // File/image drops become a server-side attachment plus a shell-quoted path
+  // in the terminal. Never paste a data: URI or base64 stream into the PTY.
+  let attachmentDropBound = false;
+  function shellQuotePath(value) {
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+  }
+  async function uploadTerminalAttachment(file) {
+    const response = await fetch('/api/attachments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(file.name || 'attachment')
+      },
+      body: file
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch (_) { payload = null; }
+    if (!response.ok) throw new Error((payload && payload.error) || `Upload failed (${response.status}).`);
+    return payload;
+  }
+  function bindAttachmentDrop() {
+    if (attachmentDropBound) return;
+    const host = document.getElementById('terminal');
+    if (!host) return;
+    attachmentDropBound = true;
+    const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+    host.addEventListener('dragover', (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('dragover', (event) => {
+      if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+    }, true);
+    document.addEventListener('drop', (event) => {
+      if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+    }, true);
+    host.addEventListener('drop', async (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      for (const file of Array.from(event.dataTransfer.files)) {
+        try {
+          const attachment = await uploadTerminalAttachment(file);
+          if (sendInputFn) sendInputFn(`${shellQuotePath(attachment.path)} `);
+          showBanner(`Attached ${file.name}`, 'info');
+        } catch (error) {
+          showBanner(error.message || `Could not attach ${file.name}.`, 'error');
+        }
+      }
+    });
+    // xterm's helper-textarea paste handler stops propagation, so capture at
+    // document level, before it sees the event, and handle clipboard files.
+    document.addEventListener('paste', async (event) => {
+      const target = event.target;
+      if (!target || !target.closest || !target.closest('#terminal')) return;
+      const files = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.kind === 'file')
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (!files.length) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      for (const file of files) {
+        try {
+          const attachment = await uploadTerminalAttachment(file);
+          if (sendInputFn) sendInputFn(`${shellQuotePath(attachment.path)} `);
+          showBanner(`Attached ${file.name}`, 'info');
+        } catch (error) {
+          showBanner(error.message || `Could not attach ${file.name}.`, 'error');
+        }
+      }
+    }, true);
+  }
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -603,6 +689,12 @@
    const isIPhone = /iPhone|iPod/.test(ua);
    if (isIPad) return 'ipad';
    if (isIPhone) return 'iphone';
+   // Viewport/input fallback for touch browsers whose UA is not Apple.
+   if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+    const short = Math.min(window.innerWidth, window.innerHeight);
+    if (short < 700) return 'iphone';
+    if (short < 1100) return 'ipad';
+   }
    return 'desktop';
   }
 
@@ -672,15 +764,35 @@
   }
 
   function setFooter(text) { $('#footerMeta').textContent = text; }
-  function setSessionInfo(text) { $('#sessionInfo').textContent = text; }
+  function setSessionInfo(text, sessionId) {
+    const el = $('#sessionInfo');
+    el.textContent = text;
+    if (sessionId) el.dataset.sessionId = sessionId;
+    else if (!text) delete el.dataset.sessionId;
+  }
 
   function scheduleFit(delay = 0) {
    if (fitTimer) clearTimeout(fitTimer);
    fitTimer = window.setTimeout(() => {
     fitTimer = null;
-    if (!fitAddon || !term) return;
+    if (!fitAddon || !term || resumeReplay) return;
     try { fitAddon.fit(); } catch (_) {}
    }, delay);
+  }
+
+  // term.write() parses asynchronously. Fit only after every replay chunk has
+  // actually landed, or xterm reflows bytes that were still queued for the old
+  // width. Output that arrived after replay-end is buffered until the fit.
+  function finishReplayIfReady() {
+   if (!resumeReplay || !replayEnded || replayPending > 0) return;
+   resumeReplay = null;
+   replayEnded = false;
+   if (fitAddon && term) {
+    try { fitAddon.fit(); } catch (_) {}
+   }
+   const queued = postReplayOutput;
+   postReplayOutput = [];
+   for (const chunk of queued) term?.write(chunk);
   }
 
   // ── On-screen key bar ─────────────────────────────────────────────────────
@@ -786,52 +898,83 @@
    // iPhone: compact single row — essentials only.
    iphone.innerHTML = '';
    if (device === 'iphone') {
-    iphone.appendChild(makeGroup([
+    const modifiers = makeGroup([
      makeKey('ESC', { seq: SEQ.esc, title: 'Escape' }),
      makeKey('TAB', { seq: SEQ.tab, title: 'Tab' }),
      makeKey('ENTER', { seq: SEQ.enter, title: 'Enter' }),
      makeKey('Ctrl+b', { seq: SEQ.ctrlB, title: 'Send Ctrl+b to herdr' }),
      makeKey('CTRL', { kind: 'toggle', mod: 'ctrl', title: 'Ctrl (sticky)' })
-    ]));
-    iphone.appendChild(makeGroup([
+    ]);
+    modifiers.dataset.kb = 'mod';
+    const arrows = makeGroup([
      makeKey('←', { seq: SEQ.left }),
      makeKey('↓', { seq: SEQ.down }),
      makeKey('↑', { seq: SEQ.up }),
      makeKey('→', { seq: SEQ.right })
-    ]));
-    iphone.appendChild(makeGroup([
+    ]);
+    arrows.dataset.kb = 'arrows';
+    const symbols = makeGroup([
      makeKey('~', { literal: '~' }),
      makeKey('/', { literal: '/' }),
      makeKey('|', { literal: '|' }),
      makeKey('-', { literal: '-' })
-    ]));
+    ]);
+    symbols.dataset.kb = 'symbols';
+    iphone.append(modifiers, arrows, symbols);
    }
 
-   // iPad: wide — modifiers + navigation + arrow pad + symbols + DEL.
+   // iPad: two deliberate rows — modifiers/navigation, then arrows/symbols.
    ipad.innerHTML = '';
    if (device === 'ipad') {
-    ipad.appendChild(makeGroup([
+    const row1 = document.createElement('div');
+    row1.className = 'kb-grid-row';
+    const modifiers = makeGroup([
      makeKey('ESC', { seq: SEQ.esc, title: 'Escape' }),
      makeKey('TAB', { seq: SEQ.tab, title: 'Tab' }),
      makeKey('ENTER', { seq: SEQ.enter, title: 'Enter' }),
      makeKey('Ctrl+b', { seq: SEQ.ctrlB, title: 'Send Ctrl+b to herdr' }),
      makeKey('CTRL', { kind: 'toggle', mod: 'ctrl', title: 'Ctrl (sticky)' }),
      makeKey('ALT', { kind: 'toggle', mod: 'alt', title: 'Alt / Meta (sticky)' })
-    ]));
-    ipad.appendChild(makeGroup([
+    ]);
+    modifiers.dataset.kb = 'mod';
+    const navigation = makeGroup([
      makeKey('HOME', { seq: SEQ.home }),
      makeKey('END', { seq: SEQ.end }),
      makeKey('PGUP', { seq: SEQ.pgup }),
      makeKey('PGDN', { seq: SEQ.pgdn })
-    ]));
-    ipad.appendChild(makeGroup([ makeArrowPad() ]));
-    ipad.appendChild(makeGroup([
+    ]);
+    navigation.dataset.kb = 'nav';
+    row1.append(modifiers, navigation);
+
+    const row2 = document.createElement('div');
+    row2.className = 'kb-grid-row';
+    const arrows = document.createElement('div');
+    arrows.className = 'kb-arrow-cluster';
+    arrows.dataset.kb = 'arrows';
+    const blank = () => {
+     const spacer = document.createElement('span');
+     spacer.className = 'kb-arrow-empty';
+     spacer.setAttribute('aria-hidden', 'true');
+     return spacer;
+    };
+    arrows.append(
+     blank(),
+     makeKey('↑', { seq: SEQ.up, title: 'Up' }),
+     blank(),
+     makeKey('←', { seq: SEQ.left, title: 'Left' }),
+     makeKey('↓', { seq: SEQ.down, title: 'Down' }),
+     makeKey('→', { seq: SEQ.right, title: 'Right' })
+    );
+    const symbols = makeGroup([
      makeKey('~', { literal: '~' }),
      makeKey('/', { literal: '/' }),
      makeKey('|', { literal: '|' }),
      makeKey('-', { literal: '-' }),
      makeKey('DEL', { kind: 'special', special: 'del', title: 'Delete' })
-    ]));
+    ]);
+    symbols.dataset.kb = 'symbols';
+    row2.append(arrows, symbols);
+    ipad.append(row1, row2);
    }
   }
 
@@ -909,7 +1052,9 @@
     if (!scrolling) return;
     if (e.touches && e.touches.length >= 2) return; // still two fingers down
     scrolling = false;
-    momentumRaf = requestAnimationFrame(momentumStep);
+    if (!window.matchMedia || !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+     momentumRaf = requestAnimationFrame(momentumStep);
+    }
    };
    screen.addEventListener('touchstart', onTouchStart, { passive: true });
    screen.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -925,8 +1070,28 @@
   }
 
   // ── Terminal ────────────────────────────────────────────────────────────────
+  // A phone at 14px gets about 41 columns, which splits ordinary prose inside
+  // words. Use a narrower default on narrow screens unless the user chose a
+  // size with A-/A+, the shortcut, or pinch.
+  function defaultTerminalFontSize() {
+   const stored = lsGet('terminalone.fontSize', null);
+   if (stored) {
+    const parsed = parseInt(stored, 10);
+    if (Number.isFinite(parsed)) return parsed;
+   }
+   const width = window.innerWidth;
+   if (width <= 430) return 11;
+   if (width <= 820) return 12;
+   return 14;
+  }
+
   function initTerminal() {
    cleanupTerminalResources();
+   sessionReady = false;
+   resumeReplay = null;
+   replayEnded = false;
+   replayPending = 0;
+   postReplayOutput = [];
    if (term) {
     try { term.dispose(); } catch (_) {}
    }
@@ -934,7 +1099,7 @@
    term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block',
-    fontSize: 14,
+    fontSize: defaultTerminalFontSize(),
     lineHeight: 1.2,
     fontFamily: STYLES[currentStyle],
     theme: THEMES[currentTheme].xterm,
@@ -949,7 +1114,25 @@
    term.loadAddon(fitAddon);
    term.loadAddon(new WebLinksAddon());
    term.open($('#terminal'));
-   requestAnimationFrame(() => fitAddon.fit());
+   try {
+    term.parser.registerOscHandler(52, (data) => {
+     const payload = String(data).split(';')[1] || '';
+     if (payload && payload !== '?') {
+      try {
+       const text = atob(payload);
+       if (text) navigator.clipboard?.writeText(text).catch(() => {});
+      } catch (_) { /* malformed clipboard payload */ }
+     }
+     return true;
+    });
+   } catch (_) { /* older xterm without OSC handlers */ }
+   // If resume already selected the old replay dimensions, do not fit to the
+   // new viewport here; replay-end owns that transition.
+   requestAnimationFrame(() => { if (!resumeReplay) fitAddon.fit(); });
+   // Web-font metrics can land after the first paint; refit once they settle.
+   if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => scheduleFit()).catch(() => {});
+   }
 
 
    addTerminalResource(initTouchScroll());
@@ -967,6 +1150,7 @@
   const guard = new InputGuard({ send: sendInput, identicalDedupeMs: 500 });
   // Expose the sender to the on-screen key bar (outside this closure).
   sendInputFn = (data) => guard.send(data);
+  bindAttachmentDrop();
 
   addTerminalResource(bindInputGuard(term, guard));
 
@@ -995,6 +1179,11 @@
    }, true);
 
    addTerminalResource(term.onResize(({ cols, rows }) => {
+    // While replaying, xterm is deliberately at the old PTY width. Sending
+    // that as a resize would yank the live PTY back to the old width. Before
+    // the first ready, a resize would also destroy the old dimensions resume
+    // needs to detect a width change.
+    if (!sessionReady || resumeReplay) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
     }
@@ -1008,21 +1197,73 @@
   function handleServerMessage(msg) {
    switch (msg.type) {
     case 'ready': {
+     sessionReady = true;
      currentSessionId = msg.sessionId;
      lsSet(LS_SESSION, msg.sessionId);
      if (msg.resumed) {
-      // Buffer replay lands in the fresh terminal from connect(); don't reset.
+      // Replay the buffered output at the dimensions it was produced with,
+      // then fit to this viewport after replay-end. Otherwise old wraps and
+      // cursor-addressed lines are reflowed into fragments. A transcript replay
+      // has no control codes, so fit first and write it at the final width.
+      if (term && msg.transcript) {
+       resumeReplay = { transcript: true };
+       replayEnded = false;
+       replayPending = 0;
+       postReplayOutput = [];
+       try {
+        term.reset();
+        if (fitAddon) fitAddon.fit();
+       } catch (_) {
+        resumeReplay = null;
+       }
+      } else if (term && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
+       resumeReplay = { cols: msg.cols, rows: msg.rows };
+       replayEnded = false;
+       replayPending = 0;
+       postReplayOutput = [];
+       try {
+        term.resize(msg.cols, msg.rows);
+       } catch (_) {
+        resumeReplay = null;
+       }
+      }
       updateStatus('Resumed', 'connected');
       setFooter(`Resumed · ${msg.cwd}`);
      } else {
+      resumeReplay = null;
+      replayEnded = false;
+      replayPending = 0;
+      postReplayOutput = [];
       updateStatus('Connected', 'connected');
       setFooter(`${msg.command} · ${msg.cwd}`);
      }
-     setSessionInfo(`session ${msg.sessionId.slice(0, 8)}`);
+     setSessionInfo(`session ${msg.sessionId.slice(0, 8)}`, msg.sessionId);
+     window.dispatchEvent(new CustomEvent('t1:session-ready', {
+      detail: { command: msg.command, cwd: msg.cwd, resumed: !!msg.resumed }
+     }));
      break;
     }
     case 'output': {
+     if (resumeReplay) {
+      if (replayEnded) {
+       postReplayOutput.push(msg.data);
+       break;
+      }
+      replayPending += 1;
+      term?.write(msg.data, () => {
+       replayPending = Math.max(0, replayPending - 1);
+       finishReplayIfReady();
+      });
+      break;
+     }
      term?.write(msg.data);
+     break;
+    }
+    case 'replay-end': {
+     // The old-width buffer has been queued. Wait for xterm to parse it before
+     // fitting; the resulting resize event tells the PTY its new dimensions.
+     replayEnded = true;
+     finishReplayIfReady();
      break;
     }
     case 'exit': {
@@ -1040,6 +1281,11 @@
     }
     case 'resume-failed': {
      // Target session gone/expired — fall back to a fresh shell on this open ws.
+     resumeReplay = null;
+     replayEnded = false;
+     replayPending = 0;
+     postReplayOutput = [];
+     scheduleFit();
      infoResumeFail(msg);
      lsDel(LS_SESSION);
      currentSessionId = null;
@@ -1159,6 +1405,21 @@
    updateStatus('Closed', 'neutral');
    setFooter('Connection closed');
    setSessionInfo('');
+  }
+
+  function restartConnection(sessionId) {
+   userInitiatedClose = true;
+   reconnectAttempts = 0;
+   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+   if (ws) {
+    try { ws.onclose = null; ws.close(); } catch (_) {}
+    ws = null;
+   }
+   currentSessionId = null;
+   if (sessionId) lsSet(LS_SESSION, sessionId);
+   else lsDel(LS_SESSION);
+   userInitiatedClose = false;
+   connect();
   }
 
   // ── Settings UI ─────────────────────────────────────────────────────────────
@@ -1382,7 +1643,7 @@
     'recent-commands', 'search', 'command-palette', 'toast-status',
     'osc-bridge', 'links', 'zoom', 'keybar-config', 'voice-input', 'session-manager',
     'status-metrics', 'export', 'clipboard', 'snippets', 'fontsize',
-    'wake-fullscreen', 'desktop-palette', 'file-drop', 'floating-palette',
+    'wake-fullscreen', 'desktop-palette', 'floating-palette',
     'haptic-keys', 'keepalive', 'multi-window-sync', 'phone-landscape-focus',
     'session-lock', 'settings-sync', 'shortcut-help', 'smart-completions',
     'smart-suggest', 'split-view', 'stylus-support', 'swipe-history',
@@ -1437,6 +1698,9 @@
    setTheme: applyTheme,
    setStyle: applyStyle,
    termTheme: () => term && term.options.theme,
+   close: closeConnection,
+   newSession: () => restartConnection(null),
+   switchSession: (id) => restartConnection(id),
    // Test hooks for the key bar + resume.
    detectDevice,
    visibleKeyBar: () => {
@@ -1449,7 +1713,23 @@
     const bar = (document.body.dataset.device === 'iphone' ? $('#keybarIphone') : $('#keybarIpad'));
     return bar ? bar.querySelectorAll('.kb-key').length : 0;
    },
-   savedSession: () => lsGet(LS_SESSION, null)
+   savedSession: () => lsGet(LS_SESSION, null),
+   // Attachment controls insert a shell-quoted path through the same guarded
+   // input path as the keyboard and key bar.
+   sendData: (data) => {
+    if (sendInputFn && typeof data === 'string') sendInputFn(data);
+   },
+   dimensions: () => term ? { cols: term.cols, rows: term.rows } : null,
+   text: () => {
+    if (!term) return '';
+    const buffer = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buffer.length; i++) {
+     const line = buffer.getLine(i);
+     lines.push(line ? line.translateToString(true) : '');
+    }
+    return lines.join('\n');
+   }
   };
  </script>
  <script>
@@ -1457,7 +1737,7 @@
   if ('serviceWorker' in navigator) {
    window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js').catch((e) => {
-     console.warn('TerminalOne SW registration failed:', e);
+     console.warn('Townmouse service worker registration failed:', e);
     });
    });
   }

@@ -15,7 +15,7 @@ resolve_node() {
       return 0
     fi
   done
-  echo "TerminalOne requires Node $EXPECTED_MAJOR.x. Set TERMINALONE_NODE to its absolute path." >&2
+  echo "Townmouse requires Node $EXPECTED_MAJOR.x. Set TERMINALONE_NODE to its absolute path." >&2
   return 1
 }
 
@@ -41,7 +41,7 @@ NODE
 repair_native_modules() {
   local npm_bin
   npm_bin="$(command -v npm 2>/dev/null || true)"
-  [ -n "$npm_bin" ] || { echo "npm is required to rebuild TerminalOne native modules." >&2; return 1; }
+  [ -n "$npm_bin" ] || { echo "npm is required to rebuild Townmouse native modules." >&2; return 1; }
   (cd "$ROOT" && "$npm_bin" rebuild "${NATIVE_MODULES[@]}")
   for helper in "$ROOT"/node_modules/node-pty/prebuilds/*/spawn-helper; do
     [ ! -f "$helper" ] || chmod +x "$helper"
@@ -69,7 +69,7 @@ case "${1:-doctor}" in
   exec)
     shift
     verify_native_modules || {
-      echo "TerminalOne native modules do not match $($NODE_BIN -v). Run: scripts/node-runtime.sh repair" >&2
+      echo "Townmouse native modules do not match $($NODE_BIN -v). Run: scripts/node-runtime.sh repair" >&2
       exit 70
     }
     exec "$NODE_BIN" "$@"
@@ -77,7 +77,7 @@ case "${1:-doctor}" in
   run)
     shift
     verify_native_modules || {
-      echo "TerminalOne native modules do not match $($NODE_BIN -v). Run: scripts/node-runtime.sh repair" >&2
+      echo "Townmouse native modules do not match $($NODE_BIN -v). Run: scripts/node-runtime.sh repair" >&2
       exit 70
     }
     exec "$@"

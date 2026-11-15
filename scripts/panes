@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+'use strict';
+// Native pane control for the Townmouse workspace.
+// Terminal panes are spawned with TOWNMOUSE_API / TOWNMOUSE_TOKEN / TOWNMOUSE_PANE_ID
+// already in the environment, so an agent never copies a connection code.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const api = (process.env.TOWNMOUSE_API || 'http://127.0.0.1:11001/api/panes').replace(/\/$/, '');
+let token = process.env.TOWNMOUSE_TOKEN || '';
+if (!token) {
+  try { token = fs.readFileSync(path.join(os.homedir(), '.townmouse', 'pane-token'), 'utf8').trim(); } catch (_) { /* reported below */ }
+}
+
+async function call(method, suffix, body) {
+  if (!token) throw new Error('No workspace token. Run from a Townmouse terminal pane or set TOWNMOUSE_TOKEN.');
+  const res = await fetch(api + suffix, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Townmouse-Token': token },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function args(list) {
+  const out = { _: [] };
+  for (let i = 0; i < list.length; i++) {
+    const value = list[i];
+    if (value.startsWith('--')) {
+      const key = value.slice(2);
+      const next = list[i + 1];
+      if (next && !next.startsWith('--')) { out[key] = next; i++; }
+      else out[key] = true;
+    } else out._.push(value);
+  }
+  return out;
+}
+
+function print(value) { console.log(JSON.stringify(value, null, 2)); }
+
+const MIME_BY_EXT = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf',
+  '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+  '.zip': 'application/zip'
+};
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+async function main() {
+  const [scope, action, ...rest] = process.argv.slice(2);
+  if (scope === 'pane' && (action === 'run' || action === 'input')) {
+    const paneId = rest[0];
+    if (!paneId) throw new Error(`pane ${action} requires a pane id.`);
+    const payload = rest.slice(1).join(' ');
+    if (action === 'run') {
+      print(await call('POST', `/panes/${paneId}/command`, { command: payload }));
+    } else {
+      print(await call('POST', `/panes/${paneId}/input`, { data: payload }));
+    }
+    return;
+  }
+  if (scope === 'pane' && action === 'send-text') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane send-text requires a pane id.');
+    let textParts = rest.slice(1);
+    let bracketed = true;
+    if (textParts[0] === '--raw') { bracketed = false; textParts = textParts.slice(1); }
+    let text = textParts.join(' ');
+    if (bracketed) text = '\x1b[200~' + text + '\x1b[201~';
+    print(await call('POST', `/panes/${paneId}/input`, { data: text }));
+    return;
+  }
+  if (scope === 'pane' && action === 'keys') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane keys requires a pane id.');
+    const keys = rest.slice(1);
+    if (!keys.length) throw new Error('pane keys requires at least one key name.');
+    print(await call('POST', `/panes/${paneId}/keys`, { keys }));
+    return;
+  }
+  if (scope === 'pane' && action === 'status') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane status requires a pane id.');
+    const options = args(rest.slice(1));
+    const state = options.state || options._[0];
+    if (!state) throw new Error('pane status requires --state working|blocked|idle|done|unknown.');
+    print(await call('POST', `/panes/${paneId}/status`, { state, message: options.message }));
+    return;
+  }
+  if (scope === 'pane' && action === 'dialog') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane dialog requires a pane id.');
+    const options = args(rest.slice(1));
+    const dialogAction = options.accept ? 'accept' : options.dismiss ? 'dismiss' : '';
+    if (!dialogAction) throw new Error('pane dialog requires --accept or --dismiss.');
+    print(await call('POST', `/panes/${paneId}/browser/dialog`, {
+      action: dialogAction,
+      text: options.text
+    }));
+    return;
+  }
+  if (scope === 'pane' && action === 'wait') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane wait requires a pane id.');
+    const options = args(rest.slice(1));
+    const query = new URLSearchParams();
+    if (options.match !== undefined) query.set('match', String(options.match));
+    if (options.regex !== undefined) query.set('regex', String(options.regex));
+    if (options.idle !== undefined) query.set('idleMs', String(options.idle));
+    if (options.state !== undefined) query.set('state', String(options.state));
+    if (options.timeout !== undefined) query.set('timeout', String(options.timeout));
+    if (options.since !== undefined) query.set('since', String(options.since));
+    if (!query.toString()) throw new Error('pane wait requires --match, --regex, --idle, or --state.');
+    print(await call('GET', `/panes/${paneId}/wait?${query.toString()}`));
+    return;
+  }
+  const a = args(rest);
+  if (scope === 'attach') {
+    const attachArgs = args([action, ...rest].filter((value) => value !== undefined));
+    const file = attachArgs._[0];
+    if (!file) throw new Error('attach requires a file path.');
+    if (!token) throw new Error('No workspace token. Run from a Townmouse terminal pane or set TOWNMOUSE_TOKEN.');
+    const stat = fs.statSync(file);
+    if (stat.size > 25 * 1024 * 1024) throw new Error('Attachment exceeds the 25 MB limit.');
+    const root = api.replace(/\/api\/panes\/?$/, '');
+    const type = attachArgs.type || MIME_BY_EXT[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    const response = await fetch(root + '/api/attachments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': type,
+        'X-Filename': encodeURIComponent(path.basename(file)),
+        'X-Townmouse-Token': token
+      },
+      body: fs.readFileSync(file)
+    });
+    const attachment = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(attachment.error || `Upload failed (${response.status}).`);
+    if (attachArgs.pane) {
+      await call('POST', `/panes/${attachArgs.pane}/input`, { data: shellQuote(attachment.path) + ' ' });
+      attachment.insertedPane = attachArgs.pane;
+    }
+    print(attachment);
+    return;
+  }
+  if (!scope || scope === 'help' || scope === '--help') {
+    console.log(`Usage:
+  panes state
+  panes tab list
+  panes tab create [--title TEXT] [--activate]
+  panes tab close <tab-id>
+  panes pane create --tab <tab-id> --kind terminal|browser [--url URL] [--cwd PATH] [--title TEXT]
+  panes pane url <pane-id> <url>
+  panes pane run <pane-id> <command...>
+  panes pane read <pane-id> [--lines N]
+  panes pane text <pane-id>
+  panes pane input <pane-id> <text...>
+  panes pane send-text <pane-id> [--raw] <text...>
+  panes pane keys <pane-id> <key...>        (enter, esc, tab, ctrl+c, alt+x, arrows)
+  panes pane wait <pane-id> [--match TEXT | --regex PATTERN | --idle MS | --state STATE]
+                            [--since OFFSET] [--timeout MS]
+  panes pane status <pane-id> --state working|blocked|idle|done|unknown [--message TEXT]
+  panes pane dialog <pane-id> --accept|--dismiss [--text VALUE]
+  panes pane close <pane-id>
+  panes attach <file> [--pane <pane-id>] [--type MIME]
+  panes active --tab <tab-id> [--pane <pane-id>]
+
+Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID.`);
+    return;
+  }
+  if (scope === 'state') { print(await call('GET', '/state')); return; }
+  if (scope === 'active') {
+    const activeArgs = args([action, ...rest].filter((value) => value !== undefined));
+    print(await call('POST', '/active', { tabId: activeArgs.tab, paneId: activeArgs.pane }));
+    return;
+  }
+  if (scope === 'tab') {
+    if (action === 'list') { const s = await call('GET', '/state'); print(s.tabs); return; }
+    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title, activate: a.activate === true, createdBy: 'agent' })); return; }
+    if (action === 'close') { print(await call('DELETE', `/tabs/${a._[0]}`)); return; }
+  }
+  if (scope === 'pane') {
+    if (action === 'create') {
+      const tab = a.tab || process.env.TOWNMOUSE_TAB_ID;
+      if (!tab) throw new Error('--tab is required (or run inside a Townmouse pane).');
+      print(await call('POST', `/tabs/${tab}/panes`, { kind: a.kind || 'terminal', url: a.url, cwd: a.cwd, title: a.title, createdBy: 'agent' }));
+      return;
+    }
+    if (action === 'url') { print(await call('POST', `/panes/${a._[0]}/url`, { url: a._[1] })); return; }
+    if (action === 'run') { print(await call('POST', `/panes/${a._[0]}/command`, { command: a._.slice(1).join(' ') })); return; }
+    if (action === 'input') { print(await call('POST', `/panes/${a._[0]}/input`, { data: a._.slice(1).join(' ') })); return; }
+    if (action === 'text') { print(await call('GET', `/panes/${a._[0]}/browser/content`)); return; }
+    if (action === 'read') {
+      const data = await call('GET', `/panes/${a._[0]}/read?since=0`);
+      const lines = Number(a.lines || 80);
+      const text = String(data.data || '').split('\n').slice(-lines).join('\n');
+      print({ ...data, data: text });
+      return;
+    }
+    if (action === 'close') { print(await call('DELETE', `/panes/${a._[0]}`)); return; }
+  }
+  console.error('Unknown command. Run: panes help');
+  process.exitCode = 2;
+}
+
+main().catch((error) => { console.error(error.message); process.exitCode = 1; });

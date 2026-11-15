@@ -34,13 +34,21 @@ export function init(T1) {
     if (rttMs != null) {
       parts.push(`latency ${rttMs.toFixed(0)}ms`);
     }
-    const text = parts.join(' · ') || 'Your shell, in focus';
+    const text = parts.join(' · ');
+    if (!text) return;
     if (text !== lastFooterText) {
       lastFooterText = text;
       ignoreNextMutation = true;
       footerMeta.textContent = text;
     }
   }
+
+  window.addEventListener('t1:session-ready', (event) => {
+    currentCommand = event.detail?.command || '';
+    currentCwd = event.detail?.cwd || '';
+    connectedAt = Date.now();
+    updateFooter();
+  });
 
   // Track connection events from the global status text.
   const statusEl = document.getElementById('status');
@@ -66,7 +74,7 @@ export function init(T1) {
     if (shellMatch) {
       currentCommand = shellMatch[1];
       currentCwd = shellMatch[2];
-    } else {
+    } else if (text && text !== 'Your shell, in focus') {
       currentCwd = text;
     }
     updateFooter();

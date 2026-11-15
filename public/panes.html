@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Panes — Townmouse</title>
+<link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css">
+<link rel="stylesheet" href="/panes.css">
+</head>
+<body>
+<div class="panes-app" id="panes-app">
+  <nav class="tabstrip" id="tabstrip" aria-label="Workspace tabs" hidden></nav>
+  <main class="workspace" id="workspace" aria-label="Workspace panes">
+    <div class="pane-grid" id="pane-grid" data-count="0" hidden></div>
+    <section class="empty-state" id="empty-state" aria-labelledby="empty-title">
+      <div class="empty-mark" aria-hidden="true">&gt;_</div>
+      <h1 id="empty-title">No panes open</h1>
+      <p id="empty-copy">Open a terminal or a browser to begin.</p>
+      <div class="empty-actions" id="empty-actions">
+        <button type="button" class="btn btn-primary" id="empty-add-terminal">Add terminal</button>
+        <button type="button" class="btn" id="empty-add-browser">Add browser</button>
+        <button type="button" class="btn btn-quiet" id="empty-new-tab">New tab</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="bottom-stack">
+  <div class="pane-keybar" id="pane-keybar" role="toolbar" aria-label="Terminal keys" hidden></div>
+  <footer class="pane-bar" id="pane-bar" aria-label="Workspace bar">
+    <button type="button" class="bar-button bar-back" id="back-button" aria-label="Back" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="host-pill" id="host-pill">
+      <span class="host-mark" aria-hidden="true">&gt;_</span>
+      <span class="host-name" id="host-name">localhost</span>
+    </div>
+    <div class="bar-spacer" aria-hidden="true"></div>
+    <button type="button" class="bar-button bar-tabs" id="tabs-button" aria-label="Workspace tabs">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h7v13H4zM11 7h9v13h-9"/></svg>
+      <span class="bar-label">Tabs</span>
+      <span class="count-badge" id="tab-count" aria-hidden="true">0</span>
+    </button>
+    <button type="button" class="bar-button" id="keyboard-button" aria-label="Focus the active terminal or browser">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3zM6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7 14h10"/></svg>
+      <span class="bar-label">Keyboard</span>
+    </button>
+    <button type="button" class="bar-button" id="menu-button" aria-label="Menu">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <span class="bar-label">Menu</span>
+    </button>
+  </footer>
+  </div>
+</div>
+
+<dialog class="sheet" id="tabs-dialog" aria-labelledby="tabs-dialog-title">
+  <div class="sheet-inner">
+    <header class="sheet-header">
+      <h2 id="tabs-dialog-title">Workspace tabs</h2>
+      <button type="button" class="icon-button" data-close aria-label="Close tabs dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-primary" id="tabs-new-tab">New tab</button>
+      <button type="button" class="btn" id="tabs-add-terminal">Add terminal</button>
+      <button type="button" class="btn" id="tabs-add-browser">Add browser</button>
+    </div>
+    <ul class="tab-list" id="tabs-list" aria-label="Workspace tabs"></ul>
+    <p class="sheet-empty" id="tabs-empty" hidden>No workspace tabs.</p>
+    <p class="sheet-note" id="tabs-limits"></p>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-menu" id="menu-dialog" aria-labelledby="menu-dialog-title">
+  <div class="sheet-inner">
+    <header class="sheet-header">
+      <h2 id="menu-dialog-title">Menu</h2>
+      <button type="button" class="icon-button" data-close aria-label="Close menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="menu-list">
+      <button type="button" class="menu-item" id="menu-add-terminal">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5l6 7-6 7M13 19h7"/></svg>
+        <span><strong>Add terminal</strong><small>A live shell in this tab.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-add-browser">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v14H3zM3 9h18M6 7h.01"/></svg>
+        <span><strong>Add browser</strong><small>A server-rendered page in this tab.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-new-tab">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span><strong>New tab</strong><small>A fresh workspace tab.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-attach">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.5 8.5a5 5 0 01-7-7l9-9a3.5 3.5 0 015 5l-9 9a2 2 0 01-3-3l8-8"/></svg>
+        <span><strong>Attach file</strong><small>Upload into the active terminal.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-reader">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4zM8 9h8M8 13h8M8 17h5"/></svg>
+        <span><strong>Reader view</strong><small>Word-wrapped transcript of this terminal.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-font-down">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 17L10 7l5 10M7 14h6M16 17h5"/></svg>
+        <span><strong>Smaller text</strong><small>Reduce the terminal font size.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-font-up">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 17L10 7l5 10M7 14h6M16 11h5M18.5 8.5v5"/></svg>
+        <span><strong>Larger text</strong><small>Increase the terminal font size.</small></span>
+      </button>
+      <button type="button" class="menu-item" id="menu-shortcuts">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3zM6 10h.01M9 10h.01M12 10h.01M6 14h8"/></svg>
+        <span><strong>Keyboard shortcuts</strong><small>Alt chords for tabs and panes.</small></span>
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+  <div class="sheet-inner">
+    <header class="sheet-header">
+      <h2 id="shortcuts-title">Keyboard shortcuts</h2>
+      <button type="button" class="icon-button" data-close aria-label="Close shortcuts">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <dl class="shortcut-list">
+      <dt>Alt + T</dt><dd>New workspace tab</dd>
+      <dt>Alt + 1…9</dt><dd>Switch to a tab</dd>
+      <dt>Alt + [ / ]</dt><dd>Previous / next tab</dd>
+      <dt>Alt + Arrow</dt><dd>Focus the previous / next pane</dd>
+      <dt>Alt + M</dt><dd>Maximize or restore the active pane</dd>
+      <dt>Alt + W</dt><dd>Close the active pane (with confirmation)</dd>
+    </dl>
+  </div>
+</dialog>
+
+<dialog class="sheet sheet-confirm" id="close-confirm" aria-labelledby="close-confirm-title">
+  <div class="sheet-inner">
+    <header class="sheet-header">
+      <h2 id="close-confirm-title">Close this pane?</h2>
+    </header>
+    <p class="confirm-copy" id="close-confirm-copy">Closing this pane ends its shell and any running job. This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-quiet" id="close-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="close-approve">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
+
+<div class="context-menu" id="browser-context-menu" role="menu" aria-label="Browser actions" hidden>
+  <button type="button" role="menuitem" data-browser-context="copy-url">Copy URL</button>
+  <button type="button" role="menuitem" data-browser-context="back">Back</button>
+  <button type="button" role="menuitem" data-browser-context="forward">Forward</button>
+  <button type="button" role="menuitem" data-browser-context="reload">Reload</button>
+  <button type="button" role="menuitem" data-browser-context="open">Open in host browser</button>
+</div>
+
+<div class="context-menu" id="pane-context-menu" role="menu" aria-label="Terminal actions" hidden>
+  <button type="button" role="menuitem" data-context="copy">Copy selection</button>
+  <button type="button" role="menuitem" data-context="paste">Paste</button>
+  <button type="button" role="menuitem" data-context="select-all">Select all</button>
+  <button type="button" role="menuitem" data-context="clear">Clear screen</button>
+  <button type="button" role="menuitem" data-context="reader">Reader view</button>
+</div>
+
+<section class="reader-view" id="reader-view" role="dialog" aria-modal="true" aria-labelledby="reader-title" hidden>
+  <header class="reader-header">
+    <div><small>Word-wrapped transcript</small><h2 id="reader-title">Reader</h2></div>
+    <div class="reader-actions">
+      <button type="button" class="btn btn-quiet" id="reader-refresh">Refresh</button>
+      <button type="button" class="btn" id="reader-close">Close</button>
+    </div>
+  </header>
+  <pre class="reader-text" id="reader-text" tabindex="0"></pre>
+</section>
+
+<aside class="page-dialog" id="browser-control" role="dialog" aria-labelledby="browser-control-label" hidden>
+  <p id="browser-control-label">Choose an option</p>
+  <select id="browser-control-select" hidden></select>
+  <input id="browser-control-value" type="text" hidden>
+  <div class="page-dialog-actions">
+    <button type="button" class="btn btn-quiet" id="browser-control-cancel">Cancel</button>
+    <button type="button" class="btn btn-primary" id="browser-control-apply">Apply</button>
+  </div>
+</aside>
+
+<aside class="page-dialog" id="page-dialog" role="alertdialog" aria-labelledby="page-dialog-message" hidden>
+  <p id="page-dialog-message"></p>
+  <label class="page-dialog-field" id="page-dialog-field" hidden>
+    <span>Response</span>
+    <input id="page-dialog-input" autocomplete="off">
+  </label>
+  <div class="page-dialog-actions">
+    <button type="button" class="btn btn-quiet" id="page-dialog-dismiss">Dismiss</button>
+    <button type="button" class="btn btn-primary" id="page-dialog-accept">Accept</button>
+  </div>
+</aside>
+
+<div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
+<p class="sr-only" id="sr-status" role="status" aria-live="polite"></p>
+
+<script type="module" src="/panes.mjs"></script>
+</body>
+</html>

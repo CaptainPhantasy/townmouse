@@ -76,7 +76,7 @@ export function init(T1) {
       const pb = host.querySelector('[data-split-pane="b"]');
       if (pa && pb) {
         pa.style.flexBasis = `${clamped * 100}%`;
-        pb.style.flexBasis = `${(1 - clampged) * 100}%`;
+        pb.style.flexBasis = `${(1 - clamped) * 100}%`;
       }
     }
     function end() { dragging = false; }

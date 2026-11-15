@@ -817,13 +817,8 @@ body.split-dragging { user-select: none; }
   body.chrome-idle #browser-permissions,
   body.chrome-idle #browser-address,
   body.chrome-idle #browser-type { display: none !important; }
+  /* No overlay: the wake tap must land on the terminal/browser itself. */
   body.chrome-idle .app-shell { position: relative; }
-  body.chrome-idle .app-shell::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 40;
-  }
   body.chrome-idle .terminal-container { flex: 1 1 auto; }
   body.chrome-idle .browser-canvas { flex: 1 1 auto; }
   body.chrome-idle .browser-surface { height: 100%; }

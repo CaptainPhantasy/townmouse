@@ -116,6 +116,18 @@
 
 <input type="file" id="attach-input" multiple accept="image/*,.pdf,.txt,.json,.md,.zip" hidden>
 
+<aside class="page-dialog" id="page-dialog" role="alertdialog" aria-labelledby="page-dialog-message" hidden>
+  <p id="page-dialog-message"></p>
+  <label class="page-dialog-field" id="page-dialog-field" hidden>
+    <span>Response</span>
+    <input id="page-dialog-input" autocomplete="off">
+  </label>
+  <div class="page-dialog-actions">
+    <button type="button" class="btn btn-quiet" id="page-dialog-dismiss">Dismiss</button>
+    <button type="button" class="btn btn-primary" id="page-dialog-accept">Accept</button>
+  </div>
+</aside>
+
 <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
 <p class="sr-only" id="sr-status" role="status" aria-live="polite"></p>
 

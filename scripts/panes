@@ -84,6 +84,18 @@ async function main() {
     print(await call('POST', `/panes/${paneId}/keys`, { keys }));
     return;
   }
+  if (scope === 'pane' && action === 'dialog') {
+    const paneId = rest[0];
+    if (!paneId) throw new Error('pane dialog requires a pane id.');
+    const options = args(rest.slice(1));
+    const dialogAction = options.accept ? 'accept' : options.dismiss ? 'dismiss' : '';
+    if (!dialogAction) throw new Error('pane dialog requires --accept or --dismiss.');
+    print(await call('POST', `/panes/${paneId}/browser/dialog`, {
+      action: dialogAction,
+      text: options.text
+    }));
+    return;
+  }
   if (scope === 'pane' && action === 'wait') {
     const paneId = rest[0];
     if (!paneId) throw new Error('pane wait requires a pane id.');
@@ -142,6 +154,7 @@ async function main() {
   panes pane keys <pane-id> <key...>        (enter, esc, tab, ctrl+c, alt+x, arrows)
   panes pane wait <pane-id> [--match TEXT | --regex PATTERN | --idle MS]
                             [--since OFFSET] [--timeout MS]
+  panes pane dialog <pane-id> --accept|--dismiss [--text VALUE]
   panes pane close <pane-id>
   panes attach <file> [--pane <pane-id>] [--type MIME]
   panes active --tab <tab-id> [--pane <pane-id>]

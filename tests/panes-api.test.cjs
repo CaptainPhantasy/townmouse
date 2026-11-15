@@ -134,7 +134,8 @@ async function waitForHealth(timeoutMs = 30000) {
 const FIXTURE_PAGES = {
   '/': { title: 'Pane Fixture', heading: 'Pane Fixture' },
   '/second': { title: 'Pane Fixture Two', heading: 'Second Fixture' },
-  '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" }
+  '/popup': { title: 'Popup Opener', heading: 'Popup Opener', script: "window.open('/second', '_blank');" },
+  '/dialog': { title: 'Dialog Fixture', heading: 'Dialog Fixture', script: "setTimeout(() => window.confirm('Proceed with paging?'), 150);" }
 };
 
 function startFixtureServer() {
@@ -603,6 +604,36 @@ async function main() {
       );
       const health = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
       ensure(health.status === 200, 'server should remain healthy after a popup', health.status);
+    });
+
+    await check('browser: a page dialog is answerable instead of deadlocking', async () => {
+      required('workspace token', context.token);
+      const paneId = required('browser pane', context.browserA);
+      const navigation = await request('POST', `/api/panes/panes/${paneId}/url`, {
+        token: context.token,
+        body: { url: `${FIXTURE_BASE}/dialog` }
+      });
+      ensure(navigation.status === 200, 'dialog fixture navigation should respond 200', navigation.body);
+      const dialog = await snapshotUntil(paneId, (body) => body.dialog && body.dialog.id);
+      ensure(dialog && dialog.status === 200, 'snapshot should expose the open dialog', dialog ? dialog.body : 'no response');
+      ensure(dialog.body.dialog.type === 'confirm', 'dialog type should be confirm', dialog.body.dialog);
+      ensure(/Proceed with paging/.test(dialog.body.dialog.message), 'dialog message should be exposed', dialog.body.dialog);
+
+      const invalid = await request('POST', `/api/panes/panes/${paneId}/browser/dialog`, {
+        token: context.token,
+        body: { action: 'delete' }
+      });
+      ensure(invalid.status === 400, 'invalid dialog actions should be rejected', invalid.body);
+
+      const answered = await request('POST', `/api/panes/panes/${paneId}/browser/dialog`, {
+        token: context.token,
+        body: { action: 'dismiss' }
+      });
+      ensure(answered.status === 200, 'dismiss should answer the dialog', answered.body);
+      const cleared = await snapshotUntil(paneId, (body) => !body.dialog);
+      ensure(cleared && cleared.status === 200, 'dialog should clear after answering', cleared ? cleared.body : 'no response');
+      const health = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(5000) });
+      ensure(health.status === 200, 'server should remain healthy after answering a dialog', health.status);
     });
 
     await check('active: POST /api/panes/active and GET /api/panes/state agree', async () => {

@@ -938,3 +938,32 @@ button { cursor: pointer; }
   .tabstrip-close { width: 44px; min-height: 44px; }
   .tabstrip-item .tabstrip-tab { min-height: 44px; }
 }
+
+/* Answerable page dialog: confirm()/prompt() must not silently disappear or
+   wedge the pane. */
+.page-dialog {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 66px);
+  z-index: 70;
+  width: min(420px, calc(100vw - 24px));
+  padding: 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #1a2420;
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+}
+
+.page-dialog[hidden] { display: none; }
+.page-dialog p { margin: 0 0 8px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.page-dialog-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
+.page-dialog-field[hidden] { display: none; }
+.page-dialog-field input { min-height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: #080d0a; color: var(--text); font-size: 16px; }
+.page-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.page-dialog-actions .btn { min-height: 40px; min-width: 84px; }
+
+@media (max-width: 699px) {
+  .page-dialog-actions .btn { min-height: 44px; }
+}

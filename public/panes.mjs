@@ -47,6 +47,12 @@ const els = {
   closeCancel: byId('close-cancel'),
   closeApprove: byId('close-approve'),
   keybar: byId('pane-keybar'),
+  pageDialog: byId('page-dialog'),
+  pageDialogMessage: byId('page-dialog-message'),
+  pageDialogField: byId('page-dialog-field'),
+  pageDialogInput: byId('page-dialog-input'),
+  pageDialogDismiss: byId('page-dialog-dismiss'),
+  pageDialogAccept: byId('page-dialog-accept'),
   notice: byId('notice'),
   srStatus: byId('sr-status')
 };
@@ -90,6 +96,9 @@ let noticeAt = 0;
 let tabsDialogSignature = '';
 let booting = false;
 let pendingClose = null;
+let pageDialogRecordId = null;
+let pageDialogId = null;
+let pageDialogType = '';
 
 const cursors = new Map();
 const histories = new Map();
@@ -211,6 +220,42 @@ function showAttachmentNotice(attachment, file) {
   // The URL is part of the message, not a filename that disappears. Tapping
   // the notice copies it; agents can get the same URL from `panes attach`.
   showNotice(`Attached ${file.name} · ${attachment.url}`, 'info', 8000, attachment.url);
+}
+
+function hidePageDialog() {
+  pageDialogRecordId = null;
+  pageDialogId = null;
+  pageDialogType = '';
+  if (els.pageDialog) els.pageDialog.hidden = true;
+}
+
+function showPageDialog(record, dialog) {
+  if (!els.pageDialog || !record || !dialog || !dialog.id) return;
+  if (pageDialogId !== dialog.id) {
+    pageDialogRecordId = record.id;
+    pageDialogId = dialog.id;
+    pageDialogType = dialog.type || 'alert';
+    els.pageDialogMessage.textContent = `Page ${pageDialogType}: ${dialog.message || ''}`;
+    els.pageDialogField.hidden = pageDialogType !== 'prompt';
+    els.pageDialogInput.value = dialog.defaultValue || '';
+    els.pageDialogAccept.textContent = pageDialogType === 'alert' ? 'OK' : 'Accept';
+  }
+  els.pageDialog.hidden = false;
+}
+
+async function answerPageDialog(action) {
+  const record = records.get(pageDialogRecordId);
+  if (!record) { hidePageDialog(); return; }
+  const body = { action };
+  if (action === 'accept' && pageDialogType === 'prompt') body.text = els.pageDialogInput.value;
+  try {
+    await api(`/panes/${record.id}/browser/dialog`, { method: 'POST', body });
+    hidePageDialog();
+    requestSnapshot(record, 120);
+    logStatus(action === 'accept' ? 'Page dialog accepted.' : 'Page dialog dismissed.');
+  } catch (error) {
+    showNotice(error.message || 'Could not answer the page dialog.', 'error');
+  }
 }
 
 async function api(path, { method = 'GET', body } = {}) {
@@ -551,6 +596,7 @@ function updatePaneChrome(tab) {
       record.currentUrl = pane.url || record.currentUrl;
     }
   });
+  if (pageDialogRecordId && !records.has(pageDialogRecordId)) hidePageDialog();
   updateKeybar();
   updateBackButton();
 }
@@ -1144,9 +1190,10 @@ function applySnapshot(record, snapshot) {
     record.image.src = `data:image/jpeg;base64,${snapshot.image}`;
     record.image.alt = snapshot.title ? `Snapshot of ${snapshot.title}` : 'Browser page snapshot';
   }
-  if (snapshot.dialog && snapshot.dialog.at && snapshot.dialog.at !== record.lastDialogAt) {
-    record.lastDialogAt = snapshot.dialog.at;
-    showNotice(`Page ${snapshot.dialog.type}: ${snapshot.dialog.message}`, 'info', 5200);
+  if (snapshot.dialog && snapshot.dialog.id) {
+    showPageDialog(record, snapshot.dialog);
+  } else if (pageDialogRecordId === record.id) {
+    hidePageDialog();
   }
   record.root.classList.remove('is-offline');
 }
@@ -1527,6 +1574,11 @@ function bindEvents() {
   els.emptyAddBrowser.addEventListener('click', () => { void addPane('browser'); });
   els.emptyNewTab.addEventListener('click', () => { void newTab(); });
 
+  els.pageDialogDismiss.addEventListener('click', () => { void answerPageDialog('dismiss'); });
+  els.pageDialogAccept.addEventListener('click', () => { void answerPageDialog('accept'); });
+  els.pageDialogInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); void answerPageDialog('accept'); }
+  });
   els.closeCancel.addEventListener('click', () => {
     pendingClose = null;
     els.closeConfirm.close();

@@ -82,6 +82,51 @@ function installBrowserWorkspace(app) {
     })();
   }
 
+  // A JS dialog blocks the page until answered. Keep it open long enough for
+  // the human or agent to answer through the UI/API, then dismiss so a forgotten
+  // tab cannot stay wedged forever. Never dismiss silently at t=0.
+  function attachDialog(s) {
+    s.page.on('dialog', (dialog) => {
+      clearTimeout(s.dialogTimer);
+      s.dialog = {
+        id: crypto.randomUUID(),
+        type: dialog.type(),
+        message: dialog.message(),
+        defaultValue: typeof dialog.defaultValue === 'function' ? dialog.defaultValue() : '',
+        at: new Date().toISOString()
+      };
+      s.pendingDialog = dialog;
+      s.dialogTimer = setTimeout(async () => {
+        if (s.pendingDialog !== dialog) return;
+        s.pendingDialog = null;
+        s.lastDialog = { ...s.dialog, timedOut: true };
+        s.dialog = null;
+        try { await dialog.dismiss(); } catch (_) { /* page or dialog already gone */ }
+      }, 30000);
+      s.dialogTimer.unref?.();
+    });
+  }
+
+  async function respondDialog(id, action, text) {
+    const s = sessions.get(id);
+    if (!s) deny('Browser pane no longer exists.', 404);
+    if (!['accept', 'dismiss'].includes(action)) deny('Dialog action must be accept or dismiss.', 400);
+    const dialog = s.pendingDialog;
+    if (!dialog) deny('No page dialog is waiting for an answer.', 409);
+    clearTimeout(s.dialogTimer);
+    s.dialogTimer = null;
+    s.lastDialog = { ...s.dialog, answered: action, answeredAt: new Date().toISOString() };
+    s.pendingDialog = null;
+    s.dialog = null;
+    try {
+      if (action === 'accept') await dialog.accept(typeof text === 'string' ? text : undefined);
+      else await dialog.dismiss();
+    } catch (error) {
+      deny(`The page dialog could not be answered: ${error.message}`, 409);
+    }
+    return describe(s);
+  }
+
   // Internal control surface for the pane workspace. These bypass the human
   // header key because the caller already holds the pane workspace token.
   async function createTab(kind = 'agent', url) {
@@ -94,12 +139,7 @@ function installBrowserWorkspace(app) {
       const page = await context.newPage();
       await page.setViewport({ width: 1280, height: 800 });
       s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private', internal: true };
-      // Never let alert/confirm/prompt block the shared page. Record it for the
-      // pane UI/agent and dismiss so the page can continue.
-      page.on('dialog', async (dialog) => {
-        s.dialog = { type: dialog.type(), message: dialog.message(), at: new Date().toISOString() };
-        try { await dialog.dismiss(); } catch (_) { /* dialog already gone */ }
-      });
+      attachDialog(s);
       page.on('popup', (popup) => followPopup(popup, page));
       if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
       s.title = await page.title();
@@ -117,6 +157,11 @@ function installBrowserWorkspace(app) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
     return enqueue(s, async () => {
+      // CDP screenshot waits for a JS dialog and times out. Keep the last
+      // frame, but return the dialog so the human/agent can answer it.
+      if (s.pendingDialog) {
+        return { ...describe(s), image: null, width: s.width, height: s.height, dialog: s.dialog };
+      }
       await s.page.bringToFront();
       const client = await s.page.createCDPSession();
       let capture;
@@ -161,6 +206,7 @@ function installBrowserWorkspace(app) {
   async function closeTabInternal(id) {
     const s = sessions.get(id);
     if (!s) return false;
+    clearTimeout(s.dialogTimer);
     sessions.delete(id);
     await s.context.close();
     return true;
@@ -198,7 +244,7 @@ function installBrowserWorkspace(app) {
     await page.setViewport({width:1280,height:800});
     const kind=req.body.kind==='agent'?'agent':'human';
     const s={id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex'),page,context,kind,width:1280,height:800,permission:kind==='agent'?'control':'private'};
-    page.on('dialog',async dialog=>{s.dialog={type:dialog.type(),message:dialog.message(),at:new Date().toISOString()};try{await dialog.dismiss();}catch{}});
+    attachDialog(s);
     sessions.set(s.id,s);
     // Popups remain in this permission boundary; follow in the same tab.
     page.on('popup', (popup) => followPopup(popup, page));
@@ -221,6 +267,10 @@ function installBrowserWorkspace(app) {
   }));
   app.get('/api/browser/:id/snapshot',route(async(req,res)=>{
     const s=session(req);
+    if (s.pendingDialog) {
+      res.json({...describe(s),image:null,width:s.width,height:s.height,dialog:s.dialog});
+      return;
+    }
     await s.page.bringToFront();
     const client=await s.page.createCDPSession();
     let capture;
@@ -262,11 +312,16 @@ function installBrowserWorkspace(app) {
     }
     res.json(describe(s));
   }));
+  app.post('/api/browser/:id/dialog',route(async(req,res)=>{
+    if(!human(req)) deny('Only the owner can answer a page dialog.');
+    const s=session(req);
+    res.json(await respondDialog(s.id,req.body.action,req.body.text));
+  }));
   app.delete('/api/browser/:id',route(async(req,res)=>{
     if(!human(req)) deny('Only the owner can close tabs.');
-    const s=session(req);sessions.delete(s.id);await s.context.close();res.json({closed:true});
+    const s=session(req);clearTimeout(s.dialogTimer);sessions.delete(s.id);await s.context.close();res.json({closed:true});
   }));
   const closeAll = async()=>{sessions.clear();if(browserPromise)await(await browserPromise).close();};
-  return { closeAll, create: createTab, snapshot: snapshotTab, navigate: navigateTab, action: actionTab, close: closeTabInternal, get: getTab, setViewport: setViewportTab, describe };
+  return { closeAll, create: createTab, snapshot: snapshotTab, navigate: navigateTab, action: actionTab, close: closeTabInternal, get: getTab, setViewport: setViewportTab, respondDialog, describe };
 }
 module.exports={installBrowserWorkspace};

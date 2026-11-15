@@ -421,6 +421,12 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!['click', 'type', 'key', 'scroll'].includes(req.body.action)) scheduleSave();
     res.json(serializePane(pane));
   }));
+  app.post('/api/panes/panes/:id/browser/dialog', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const browser = await browserWorkspace.respondDialog(pane.browserId, req.body.action, req.body.text);
+    res.json(browser);
+  }));
   app.get('/api/panes/panes/:id/browser/snapshot', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }

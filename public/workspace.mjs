@@ -1031,7 +1031,6 @@ export async function init(T1) {
   const phoneChromeQuery = window.matchMedia('(max-width: 699px)');
   const CHROME_IDLE_MS = 7000;
   let chromeIdleTimer = null;
-  let swallowWakeClick = false;
 
   function chromeIdleBlocked() {
     if (document.hidden) return true;
@@ -1073,24 +1072,10 @@ export async function init(T1) {
     }, CHROME_IDLE_MS);
   }
 
-  document.addEventListener('pointerdown', (event) => {
-    if (body.classList.contains('chrome-idle')) {
-      if (event.target.closest?.('.app-shell')) {
-        swallowWakeClick = true;
-        event.preventDefault();
-        event.stopPropagation();
-        setTimeout(() => { swallowWakeClick = false; }, 500);
-      }
-      wakeChrome();
-      return;
-    }
+  document.addEventListener('pointerdown', () => {
+    // Waking the chrome must not eat the gesture: the same tap still reaches
+    // the terminal or browser underneath. A second tap is not required.
     wakeChrome();
-  }, { capture: true });
-  document.addEventListener('click', (event) => {
-    if (!swallowWakeClick || !event.target.closest?.('.app-shell')) return;
-    swallowWakeClick = false;
-    event.preventDefault();
-    event.stopPropagation();
   }, { capture: true });
   document.addEventListener('keydown', () => wakeChrome(), { capture: true });
   document.addEventListener('input', () => wakeChrome(), { capture: true });

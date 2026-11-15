@@ -102,10 +102,18 @@ export function init(T1) {
     return true;
   }
 
+  // Identifies this recording to the server, so chunks still count after the
+  // terminal socket reconnects mid-utterance but not from another window.
+  let voiceId = '';
+  function newVoiceId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
   async function sendBlob(blob) {
     if (!blob || blob.size === 0) return;
     const b64 = arrayBufferToBase64(await blob.arrayBuffer());
-    sendJson({ type: 'voice-chunk', b64 });
+    sendJson({ type: 'voice-chunk', b64, voiceId });
   }
 
   function cleanupRecording() {
@@ -134,7 +142,8 @@ export function init(T1) {
       });
       const mimeType = pickMimeType();
       recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      if (!sendJson({ type: 'voice-start', mimeType: recorder.mimeType || mimeType })) {
+      voiceId = newVoiceId();
+      if (!sendJson({ type: 'voice-start', mimeType: recorder.mimeType || mimeType, voiceId })) {
         cleanupRecording();
         return;
       }
@@ -148,14 +157,14 @@ export function init(T1) {
       recorder.addEventListener('stop', async () => {
         setState('transcribing');
         await pendingChunks;
-        sendJson({ type: 'voice-end' });
+        sendJson({ type: 'voice-end', voiceId });
         cleanupRecording();
       }, { once: true });
       recorder.start(500);
       setState('recording');
       stopTimer = setTimeout(() => stop(), MAX_RECORDING_MS);
     } catch (err) {
-      if (serverVoiceStarted) sendJson({ type: 'voice-end' });
+      if (serverVoiceStarted) sendJson({ type: 'voice-end', voiceId });
       cleanupRecording();
       setState('idle');
       T1.toast(`Microphone unavailable: ${err.message || err}`, 'error');

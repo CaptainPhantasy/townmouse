@@ -57,6 +57,7 @@ function replayTranscript(raw, segments = 120) {
   let row = 0;
   let col = 0;
   let wrapPending = false;
+  let positionKnown = true;
 
   const ensure = (index) => {
     while (rows.length <= index) rows.push([]);
@@ -104,11 +105,27 @@ function replayTranscript(raw, segments = 120) {
         const final = csi[2];
         const mode = Number(csi[1].split(';')[0]) || 0;
         const privateMode = /[<=>?]/.test(csi[1]);
+        if (!privateMode && (final === 'C' || final === 'D' || final === 'G')) {
+          // Horizontal moves within the current row are modelled exactly.
+          const n = Math.max(1, mode);
+          if (final === 'C') col = Math.min(width - 1, col + n);
+          else if (final === 'D') col = Math.max(0, col - n);
+          else col = Math.min(width - 1, n - 1);
+          wrapPending = false;
+          continue;
+        }
+        if (!privateMode && /[ABEFHfdsu]/.test(final)) {
+          // Vertical or absolute moves cannot be mapped onto the transcript
+          // rows, so the cursor position is unknown until the next newline;
+          // erasing from a guessed position could delete visible text.
+          positionKnown = false;
+          continue;
+        }
         // Apply erases so text the terminal already removed (progress
         // redraws, readline edits) does not resurface in the replay. Screen
         // clears above the cursor (ED 1/2/3) are left alone: a terminal keeps
         // that text in scrollback, and the replay is that scrollback.
-        if (!privateMode && (final === 'K' || (final === 'J' && mode === 0))) {
+        if (positionKnown && !privateMode && (final === 'K' || (final === 'J' && mode === 0))) {
           wrapPending = false;
           ensure(row);
           const line = rows[row];
@@ -129,6 +146,7 @@ function replayTranscript(raw, segments = 120) {
       continue;
     }
     if (ch === '\n') {
+      positionKnown = true;
       row += 1;
       col = 0;
       wrapPending = false;

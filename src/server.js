@@ -455,6 +455,22 @@ function voiceSend(session, ws, payload) {
   return open.length === 1 ? sendToSocket(open[0], payload) : false;
 }
 
+/**
+ * Whether this socket may continue the session's recording: the socket that
+ * started it, or the same recording (matching voiceId) after a reconnect, in
+ * which case replies follow the new socket.
+ */
+function ownsVoice(session, ws, data) {
+  const voice = session.voice;
+  if (!voice) return false;
+  if (voice.ws === ws) return true;
+  if (voice.id && typeof data.voiceId === 'string' && data.voiceId === voice.id) {
+    voice.ws = ws;
+    return true;
+  }
+  return false;
+}
+
 function voiceError(session, ws, code, message) {
   voiceSend(session, ws, { type: 'voice-error', code, message });
 }
@@ -753,6 +769,7 @@ function handleMessage(session, ws, data) {
     case 'voice-start': {
       session.voice = {
         ws,
+        id: typeof data.voiceId === 'string' ? data.voiceId.slice(0, 64) : '',
         chunks: [],
         bytes: 0,
         mimeType: typeof data.mimeType === 'string' ? data.mimeType.slice(0, 80) : '',
@@ -762,7 +779,7 @@ function handleMessage(session, ws, data) {
       break;
     }
     case 'voice-chunk': {
-      if (!session.voice || session.voice.ws !== ws) {
+      if (!ownsVoice(session, ws, data)) {
         voiceError(session, ws, 'VOICE_NOT_STARTED', 'Voice input was not started');
         break;
       }
@@ -792,7 +809,7 @@ function handleMessage(session, ws, data) {
       break;
     }
     case 'voice-end': {
-      if (session.voice && session.voice.ws !== ws) {
+      if (session.voice && !ownsVoice(session, ws, data)) {
         voiceError(session, ws, 'VOICE_NOT_STARTED', 'Voice input was not started');
         break;
       }

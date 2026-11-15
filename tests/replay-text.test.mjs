@@ -53,3 +53,14 @@ test('replayTranscript applies erase-line sequences before stripping them', () =
   assert.equal(replayTranscript('abcdef\x1b[1K\rxy\r\n', 80), 'xy\n');
   assert.equal(replayTranscript('keep\r\nabcdef\r\x1b[Jz\r\n', 80), 'keep\nz\n');
 });
+
+test('replayTranscript tracks horizontal cursor moves before erasing', () => {
+  assert.equal(replayTranscript('abc\r\x1b[3C\x1b[K\r\n', 80), 'abc\n');
+  assert.equal(replayTranscript('abcdef\x1b[3D\x1b[Kxy\r\n', 80), 'abcxy\n');
+  assert.equal(replayTranscript('abcdef\x1b[3G\x1b[K\r\n', 80), 'ab\n');
+});
+
+test('replayTranscript does not erase from an unknown cursor position', () => {
+  assert.equal(replayTranscript('keep this\r\n\x1b[A\x1b[K\r\nnext\r\n', 80), 'keep this\n\nnext\n');
+  assert.equal(replayTranscript('line\x1b[5;1H\x1b[K\r\nafter\x1b[K\r\n', 80), 'line\nafter\n');
+});

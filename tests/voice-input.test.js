@@ -146,6 +146,32 @@ async function run() {
     assertLog(ownerVoice.length === 0, `other window receives no voice messages (${ownerVoice.join(',') || 'none'})`);
     owner.close();
     recorder.close();
+
+    // The recording window reconnects mid-utterance: the same voiceId on the
+    // resumed socket finishes the recording; a window without it cannot.
+    const before = await openWs();
+    before.send(JSON.stringify({ type: 'shell', cols: 80, rows: 24 }));
+    const live = await waitForMsg(before, (m) => m.type === 'ready');
+    before.send(JSON.stringify({ type: 'voice-start', mimeType: 'audio/webm', voiceId: 'rec-1' }));
+    await waitForMsg(before, (m) => m.type === 'voice-ready');
+    before.send(JSON.stringify({ type: 'voice-chunk', b64: Buffer.from('part one').toString('base64'), voiceId: 'rec-1' }));
+    await new Promise((r) => setTimeout(r, 200));
+    before.close();
+    const after = await openWs();
+    after.send(JSON.stringify({ type: 'resume', sessionId: live.sessionId, cols: 80, rows: 24 }));
+    await waitForMsg(after, (m) => m.type === 'ready' && m.resumed);
+    const stranger = await openWs();
+    stranger.send(JSON.stringify({ type: 'resume', sessionId: live.sessionId, cols: 80, rows: 24 }));
+    await waitForMsg(stranger, (m) => m.type === 'ready' && m.resumed);
+    stranger.send(JSON.stringify({ type: 'voice-chunk', b64: Buffer.from('intruder').toString('base64') }));
+    const rejected = await waitForMsg(stranger, (m) => m.type === 'voice-error');
+    assertLog(rejected.code === 'VOICE_NOT_STARTED', `another window cannot join the recording (${rejected.code})`);
+    after.send(JSON.stringify({ type: 'voice-chunk', b64: Buffer.from('part two').toString('base64'), voiceId: 'rec-1' }));
+    after.send(JSON.stringify({ type: 'voice-end', voiceId: 'rec-1' }));
+    const resumedTranscript = await waitForMsg(after, (m) => m.type === 'voice-transcript' || m.type === 'voice-error');
+    assertLog(resumedTranscript.type === 'voice-transcript', `reconnected window finishes its recording (${resumedTranscript.code || resumedTranscript.text})`);
+    after.close();
+    stranger.close();
   } catch (err) {
     console.error('\n✗ ' + (err && err.message ? err.message : err));
     if (log.trim()) console.error('--- server log ---\n' + log.trim());

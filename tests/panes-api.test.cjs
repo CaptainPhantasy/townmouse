@@ -141,6 +141,11 @@ const FIXTURE_PAGES = {
     title: 'Click Fixture',
     heading: 'Click Fixture',
     body: '<button id="hit" style="position:absolute;left:100px;top:100px;width:200px;height:100px" onclick="document.body.textContent=\'CLICKED_TARGET\'">hit</button>'
+  },
+  '/select': {
+    title: 'Select Fixture',
+    heading: 'Select Fixture',
+    body: '<select id="choice" style="position:absolute;left:100px;top:100px;width:200px;height:40px" onchange="document.body.textContent=\'VALUE_\'+this.value"><option value="a">A</option><option value="c">C</option></select>'
   }
 };
 
@@ -835,6 +840,29 @@ async function main() {
       ensure(clicked.status === 200, 'coordinate click should respond 200', clicked.body);
       const content = await request('GET', `/api/panes/panes/${pane.body.id}/browser/content`, { token });
       ensure(/CLICKED_TARGET/.test(content.body.text || ''), 'click should hit the button at 200,150', content.body.text);
+    });
+
+    await check('browser: native select values are readable and settable', async () => {
+      const token = required('workspace token', context.token);
+      const tab = await request('POST', '/api/panes/tabs', { token, body: { title: 'Select', activate: false } });
+      const pane = await createPane(tab.body.id, { kind: 'browser', url: `${FIXTURE_BASE}/select` });
+      ensure(pane.status === 200, 'select fixture pane should create', pane.body);
+      await snapshotUntil(pane.body.id, (body) => body.title === 'Select Fixture');
+      const clicked = await request('POST', `/api/panes/panes/${pane.body.id}/browser/action`, {
+        token,
+        body: { action: 'click', x: 150, y: 110 }
+      });
+      ensure(clicked.status === 200, 'select click should respond 200', clicked.body);
+      ensure(clicked.body.control && clicked.body.control.kind === 'select', 'click should describe the select control', clicked.body);
+      ensure(clicked.body.control.options.some((option) => option.value === 'c'), 'select options should include c', clicked.body.control);
+      const chosen = await request('POST', `/api/panes/panes/${pane.body.id}/browser/action`, {
+        token,
+        body: { action: 'selectAt', x: 150, y: 110, value: 'c' }
+      });
+      ensure(chosen.status === 200, 'selectAt should respond 200', chosen.body);
+      ensure(chosen.body.control && chosen.body.control.value === 'c', 'selectAt should set the value', chosen.body.control);
+      const content = await request('GET', `/api/panes/panes/${pane.body.id}/browser/content`, { token });
+      ensure(/VALUE_c/.test(content.body.text || ''), 'change event should reach the page', content.body.text);
     });
 
     await check('tabs: agent-created tabs stay in the background and carry provenance', async () => {

@@ -1094,3 +1094,17 @@ button { cursor: pointer; }
 
 .pane[data-created-by="agent"] .pane-kind::after { content: ' · agent'; color: #e9d6a1; }
 .tabstrip-tab.agent-tab::after { content: ' agent'; color: #e9d6a1; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+#browser-control-select,
+#browser-control-value {
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #080d0a;
+  color: var(--text);
+}
+#browser-control-select[hidden],
+#browser-control-value[hidden] { display: none; }

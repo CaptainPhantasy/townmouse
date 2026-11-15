@@ -170,6 +170,16 @@
   <pre class="reader-text" id="reader-text" tabindex="0"></pre>
 </section>
 
+<aside class="page-dialog" id="browser-control" role="dialog" aria-labelledby="browser-control-label" hidden>
+  <p id="browser-control-label">Choose an option</p>
+  <select id="browser-control-select" hidden></select>
+  <input id="browser-control-value" type="text" hidden>
+  <div class="page-dialog-actions">
+    <button type="button" class="btn btn-quiet" id="browser-control-cancel">Cancel</button>
+    <button type="button" class="btn btn-primary" id="browser-control-apply">Apply</button>
+  </div>
+</aside>
+
 <aside class="page-dialog" id="page-dialog" role="alertdialog" aria-labelledby="page-dialog-message" hidden>
   <p id="page-dialog-message"></p>
   <label class="page-dialog-field" id="page-dialog-field" hidden>

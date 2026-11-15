@@ -58,6 +58,12 @@ const els = {
   closeApprove: byId('close-approve'),
   keybar: byId('pane-keybar'),
   contextMenu: byId('pane-context-menu'),
+  browserControl: byId('browser-control'),
+  browserControlLabel: byId('browser-control-label'),
+  browserControlSelect: byId('browser-control-select'),
+  browserControlValue: byId('browser-control-value'),
+  browserControlCancel: byId('browser-control-cancel'),
+  browserControlApply: byId('browser-control-apply'),
   pageDialog: byId('page-dialog'),
   pageDialogMessage: byId('page-dialog-message'),
   pageDialogField: byId('page-dialog-field'),
@@ -111,6 +117,9 @@ let pageDialogRecordId = null;
 let pageDialogId = null;
 let pageDialogType = '';
 let contextRecordId = null;
+let browserControlRecordId = null;
+let browserControlPoint = null;
+let browserControlKind = '';
 
 const cursors = new Map();
 const histories = new Map();
@@ -374,6 +383,52 @@ function wirePaneContext(root, record) {
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
     body.addEventListener(type, () => clearTimeout(timer));
   }
+}
+
+function hideBrowserControl() {
+  browserControlRecordId = null;
+  browserControlPoint = null;
+  browserControlKind = '';
+  if (els.browserControl) els.browserControl.hidden = true;
+}
+
+function showBrowserControl(record, control, point) {
+  if (!els.browserControl || !record || !control) return;
+  browserControlRecordId = record.id;
+  browserControlPoint = point;
+  browserControlKind = control.kind;
+  els.browserControl.hidden = false;
+  if (control.kind === 'select') {
+    els.browserControlLabel.textContent = 'Choose an option';
+    els.browserControlSelect.hidden = false;
+    els.browserControlValue.hidden = true;
+    els.browserControlSelect.replaceChildren(...(control.options || []).map((option) => {
+      const el = document.createElement('option');
+      el.value = option.value;
+      el.textContent = option.label;
+      if (option.value === control.value) el.selected = true;
+      return el;
+    }));
+  } else {
+    els.browserControlLabel.textContent = `Choose a ${control.kind} value`;
+    els.browserControlSelect.hidden = true;
+    els.browserControlValue.hidden = false;
+    els.browserControlValue.type = control.kind;
+    els.browserControlValue.value = control.value || '';
+  }
+  els.browserControlSelect.focus();
+}
+
+async function applyBrowserControl() {
+  const record = records.get(browserControlRecordId);
+  if (!record || !browserControlPoint) { hideBrowserControl(); return; }
+  const value = browserControlKind === 'select'
+    ? els.browserControlSelect.value
+    : els.browserControlValue.value;
+  const action = browserControlKind === 'select' ? 'selectAt' : 'setValueAt';
+  const point = browserControlPoint;
+  hideBrowserControl();
+  await browserAction(record, action, { ...point, value });
 }
 
 function hidePageDialog() {
@@ -1479,7 +1534,7 @@ function createBrowserPane(pane) {
   });
   record.image.addEventListener('click', (event) => {
     record.image.focus({ preventScroll: true });
-    onBrowserImageClick(record, event);
+    void onBrowserImageClick(record, event);
   });
   record.image.addEventListener('keydown', (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -1619,7 +1674,7 @@ function applySnapshot(record, snapshot) {
   record.root.classList.remove('is-offline');
 }
 
-function onBrowserImageClick(record, event) {
+async function onBrowserImageClick(record, event) {
   if (event.button !== undefined && event.button !== 0) return;
   const rect = record.image.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
@@ -1637,7 +1692,9 @@ function onBrowserImageClick(record, event) {
   if (localX < 0 || localY < 0 || localX > contentWidth || localY > contentHeight) return;
   const x = Math.max(0, Math.min(width, Math.round(localX / scale)));
   const y = Math.max(0, Math.min(height, Math.round(localY / scale)));
-  void browserAction(record, 'click', { x, y });
+  const updated = await browserAction(record, 'click', { x, y });
+  if (updated && updated.control) showBrowserControl(record, updated.control, { x, y });
+  else if (browserControlRecordId === record.id) hideBrowserControl();
 }
 
 function queueBrowserScroll(record, deltaY, deltaX = 0) {
@@ -1683,6 +1740,7 @@ async function browserAction(record, action, extra = {}) {
       }
     }
     requestSnapshot(record, 220);
+    return updated;
   } catch (error) {
     if (!record.disposed) showNotice(error.message || 'Browser action failed.', 'error');
   }
@@ -2068,6 +2126,11 @@ function bindEvents() {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !els.contextMenu.hidden) { event.preventDefault(); hideContextMenu(); }
   }, true);
+  els.browserControlCancel.addEventListener('click', hideBrowserControl);
+  els.browserControlApply.addEventListener('click', () => { void applyBrowserControl(); });
+  els.browserControlValue.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); void applyBrowserControl(); }
+  });
   els.pageDialogDismiss.addEventListener('click', () => { void answerPageDialog('dismiss'); });
   els.pageDialogAccept.addEventListener('click', () => { void answerPageDialog('accept'); });
   els.pageDialogInput.addEventListener('keydown', (event) => {

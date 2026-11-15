@@ -200,15 +200,57 @@ function installBrowserWorkspace(app) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
     const p = s.page;
+    let control = null;
+    const point = () => {
+      const x = Number(data.x), y = Number(data.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > s.width || y > s.height) deny('Invalid pointer position.', 400);
+      return { x, y };
+    };
+    const readControl = async ({ x, y }) => p.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      if (el.tagName === 'SELECT') {
+        return {
+          kind: 'select',
+          value: el.value,
+          options: Array.from(el.options).map((option) => ({ value: option.value, label: option.textContent || option.value }))
+        };
+      }
+      if (el.tagName === 'INPUT' && ['date', 'color', 'time', 'datetime-local', 'month', 'week'].includes(el.type)) {
+        return { kind: el.type, value: el.value };
+      }
+      return null;
+    }, { x, y });
     switch (action) {
       case 'navigate': await p.goto(address(data.url), { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
       case 'back': await p.goBack({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
       case 'forward': await p.goForward({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
       case 'reload': await p.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
       case 'click': {
-        const x = Number(data.x), y = Number(data.y);
-        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > s.width || y > s.height) deny('Invalid pointer position.', 400);
-        await p.mouse.click(x, y); break;
+        const position = point();
+        await p.mouse.click(position.x, position.y);
+        control = await readControl(position);
+        break;
+      }
+      case 'selectAt':
+      case 'setValueAt': {
+        const position = point();
+        control = await p.evaluate(({ x, y, value }) => {
+          const el = document.elementFromPoint(x, y);
+          if (!el || (el.tagName !== 'SELECT' && el.tagName !== 'INPUT')) return null;
+          el.value = String(value ?? '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          if (el.tagName === 'SELECT') {
+            return {
+              kind: 'select',
+              value: el.value,
+              options: Array.from(el.options).map((option) => ({ value: option.value, label: option.textContent || option.value }))
+            };
+          }
+          return { kind: el.type, value: el.value };
+        }, { ...position, value: data.value });
+        break;
       }
       case 'type': await p.keyboard.type(String(data.text || '').slice(0, 10000)); break;
       case 'key': await p.keyboard.press(String(data.key)); break;
@@ -219,7 +261,9 @@ function installBrowserWorkspace(app) {
       default: deny('Unknown browser action.', 400);
     }
     s.title = await p.title();
-    return describe(s);
+    const result = describe(s);
+    if (control) result.control = control;
+    return result;
   }
   async function closeTabInternal(id) {
     const s = sessions.get(id);

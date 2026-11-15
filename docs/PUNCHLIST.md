@@ -195,7 +195,8 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
   *Fix:* Add move/down/up/drag and double/right-click actions plus client gestures; forward hover via periodic mousemove; support modifier flags; add a small context menu for link/image actions and open-external. Test hover menu, drag, double-click, and right-click.  
   *Evidence:* `public/panes.mjs:773,893-905`; `src/browser-workspace.js:104-125` (actions are click/type/key/scroll only).  
 
-- [ ] **P1-22 - Native select/date/color controls are invisible and unusable**
+- [x] **P1-22 - Native select/date/color controls are invisible and unusable**
+  *Resolved 2026-11-15:* clicking a coordinate whose DOM element is a `<select>` or a date/color/time input returns a `control` descriptor. The pane renders a native-looking option/date/color card and applies the choice through `selectAt`/`setValueAt`, which set the value and dispatch `input`/`change`. `tests/panes-api.test.cjs` clicks a select, verifies its options and current value, chooses `c`, and observes the page's change handler run.
   *Expectation:* Choose an option from a standard `<select>`, pick a date, or open a color picker.  
   *Current:* Clicking a `<select>` opens a browser-level popup that `Page.captureScreenshot` does not capture; the screenshot shows only the closed control with a focus ring. In a headless probe, Space, ArrowDown, and Enter left the value at `a`, while `page.select('#s','c')` changed it, so CDP keyboard does not operate the native popup either. Date and color pickers use the same browser UI, and the pane offers no DOM-driven alternative.  
   *Fix:* Intercept clicks on select/date/color controls, read their options/state with `page.evaluate`, render a native-looking dropdown/date field in the pane UI, and set the value plus dispatch `input`/`change` via DOM. Keep coordinate clicks for custom controls.  

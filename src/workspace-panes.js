@@ -477,8 +477,8 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     const browser = await browserWorkspace.action(pane.browserId, req.body.action, req.body);
     pane.url = browser.url;
     if (!pane.titleLocked) pane.title = browser.title || pane.title;
-    if (!['click', 'type', 'key', 'scroll'].includes(req.body.action)) scheduleSave();
-    res.json(serializePane(pane));
+    if (!['click', 'type', 'key', 'scroll', 'selectAt', 'setValueAt'].includes(req.body.action)) scheduleSave();
+    res.json({ ...serializePane(pane), control: browser.control || null });
   }));
   app.post('/api/panes/panes/:id/browser/dialog', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);

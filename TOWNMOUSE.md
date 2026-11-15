@@ -53,8 +53,11 @@ A future restructure should make the boundary explicit, for example:
 
 ## Status
 
-Version 0.1.0. Three deliberate layouts: desktop sidebar, tablet rail, phone
-bottom navigation. Phone shows one task surface at a time; the key bar collapses
+Version 0.1.0. Two working surfaces: the single terminal/browser workspace and
+the pane workspace (`/panes.html`), where each tab holds up to four live panes —
+terminal or browser — and the orchestrator agent creates and drives them through
+the injected `TOWNMOUSE_API` / `scripts/panes` interface. Three deliberate
+layouts: desktop sidebar, tablet rail, phone bottom navigation. Phone shows one task surface at a time; the key bar collapses
 to one row and expands with the chevron. Tablet and phone put browser tabs and
 sharing controls in the browser surface; on phone the tab strip, address bar,
 and Share sit together at the bottom. Those rows are tightly padded, and after

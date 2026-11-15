@@ -91,6 +91,20 @@ every chrome row except the bottom navigation collapses, and the terminal or
 browser fills the frame. The first touch wakes the chrome; the bottom
 navigation stays awake and operable throughout.
 
+## Pane workspace
+
+`/panes.html` is the agent-first workspace. A workspace tab holds one to four
+panes in a 2x2 grid; each pane is a live PTY terminal or a live headless-browser
+page. Tabs are the units the human or the orchestrator creates and selects, and
+every tab can hold a different mix of terminals and browsers. The browser is the
+substrate: browser panes are real pages rendered by the server, and terminal
+panes are real PTYs. The orchestrator pane is spawned with `TOWNMOUSE_API`,
+`TOWNMOUSE_TOKEN`, `TOWNMOUSE_PANE_ID` and `scripts/panes`, so an agent creates
+tabs, adds panes, opens URLs and runs commands without copying a connection
+code. The bottom bar is the only chrome: back, host/session pill, tab count,
+keyboard, and menu. This follows the Chrome split-view model — live tabs sharing
+one surface with a draggable divider — extended to four panes per tab.
+
 ## Navigation and browser model
 
 - The session pill is a button. It opens a Sessions sheet listing every named

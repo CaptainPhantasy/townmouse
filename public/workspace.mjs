@@ -71,11 +71,13 @@ export async function init(T1) {
     '<button id="new-browser" type="button">' + icon('plus') + '<span>New tab</span></button>' +
     '<div class="workspace-label">Agent</div>' +
     '<button id="agent-browser" type="button">' + icon('agent') + '<span>Agent</span></button>' +
+    '<button id="workspace-panes" type="button">' + icon('split') + '<span>Panes</span></button>' +
     '<div class="nav-bottom"><button id="workspace-tools" type="button">' + icon('tools') + '<span>Tools</span></button><a class="workspace-credit" href="https://floydslabs.com" target="_blank" rel="noreferrer"><img src="/brand/floydslabs-credit.webp" alt=""><span>Built at Floyd’s Labs</span></a><p class="nav-status" id="workspace-server">Local server</p></div>';
   body.append(sidebar);
   sidebar.querySelectorAll('button').forEach((button) => button.setAttribute('aria-label', button.textContent.trim()));
   sidebar.querySelector('#agent-browser')?.setAttribute('aria-label', 'Agent browser');
   sidebar.querySelector('#workspace-browser')?.setAttribute('aria-label', 'Browser workspace');
+  sidebar.querySelector('#workspace-panes')?.setAttribute('aria-label', 'Pane workspace');
   sidebar.querySelector('#workspace-tools')?.setAttribute('aria-label', 'Tools and settings');
 
   const browser = document.createElement('section');
@@ -713,6 +715,7 @@ export async function init(T1) {
   $('new-browser-inline').onclick = safe(createBrowser);
   $('workspace-browser').onclick = safe(openBrowser);
   $('agent-browser').onclick = safe(openAgent);
+  $('workspace-panes').onclick = () => location.assign('/panes.html');
   $('workspace-terminal').onclick = hide;
   $('hide-browser').onclick = hide;
   $('hide-browser-compact').onclick = hide;

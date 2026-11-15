@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+'use strict';
+// Native pane control for the Townmouse workspace.
+// Terminal panes are spawned with TOWNMOUSE_API / TOWNMOUSE_TOKEN / TOWNMOUSE_PANE_ID
+// already in the environment, so an agent never copies a connection code.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const api = (process.env.TOWNMOUSE_API || 'http://127.0.0.1:11001/api/panes').replace(/\/$/, '');
+let token = process.env.TOWNMOUSE_TOKEN || '';
+if (!token) {
+  try { token = fs.readFileSync(path.join(os.homedir(), '.townmouse', 'pane-token'), 'utf8').trim(); } catch (_) { /* reported below */ }
+}
+
+async function call(method, suffix, body) {
+  if (!token) throw new Error('No workspace token. Run from a Townmouse terminal pane or set TOWNMOUSE_TOKEN.');
+  const res = await fetch(api + suffix, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Townmouse-Token': token },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function args(list) {
+  const out = { _: [] };
+  for (let i = 0; i < list.length; i++) {
+    const value = list[i];
+    if (value.startsWith('--')) {
+      const key = value.slice(2);
+      const next = list[i + 1];
+      if (next && !next.startsWith('--')) { out[key] = next; i++; }
+      else out[key] = true;
+    } else out._.push(value);
+  }
+  return out;
+}
+
+function print(value) { console.log(JSON.stringify(value, null, 2)); }
+
+async function main() {
+  const [scope, action, ...rest] = process.argv.slice(2);
+  const a = args(rest);
+  if (!scope || scope === 'help' || scope === '--help') {
+    console.log(`Usage:
+  panes state
+  panes tab list
+  panes tab create [--title TEXT]
+  panes tab close <tab-id>
+  panes pane create --tab <tab-id> --kind terminal|browser [--url URL] [--cwd PATH] [--title TEXT]
+  panes pane url <pane-id> <url>
+  panes pane run <pane-id> <command...>
+  panes pane read <pane-id> [--lines N]
+  panes pane input <pane-id> <text...>
+  panes pane close <pane-id>
+  panes active --tab <tab-id> [--pane <pane-id>]
+
+Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID.`);
+    return;
+  }
+  if (scope === 'state') { print(await call('GET', '/state')); return; }
+  if (scope === 'active') { print(await call('POST', '/active', { tabId: a.tab, paneId: a.pane })); return; }
+  if (scope === 'tab') {
+    if (action === 'list') { const s = await call('GET', '/state'); print(s.tabs); return; }
+    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title })); return; }
+    if (action === 'close') { print(await call('DELETE', `/tabs/${a._[0]}`)); return; }
+  }
+  if (scope === 'pane') {
+    if (action === 'create') {
+      const tab = a.tab || process.env.TOWNMOUSE_TAB_ID;
+      if (!tab) throw new Error('--tab is required (or run inside a Townmouse pane).');
+      print(await call('POST', `/tabs/${tab}/panes`, { kind: a.kind || 'terminal', url: a.url, cwd: a.cwd, title: a.title }));
+      return;
+    }
+    if (action === 'url') { print(await call('POST', `/panes/${a._[0]}/url`, { url: a._[1] })); return; }
+    if (action === 'run') { print(await call('POST', `/panes/${a._[0]}/command`, { command: a._.slice(1).join(' ') })); return; }
+    if (action === 'input') { print(await call('POST', `/panes/${a._[0]}/input`, { data: a._.slice(1).join(' ') })); return; }
+    if (action === 'read') {
+      const data = await call('GET', `/panes/${a._[0]}/read?since=0`);
+      const lines = Number(a.lines || 80);
+      const text = String(data.data || '').split('\n').slice(-lines).join('\n');
+      print({ ...data, data: text });
+      return;
+    }
+    if (action === 'close') { print(await call('DELETE', `/panes/${a._[0]}`)); return; }
+  }
+  console.error('Unknown command. Run: panes help');
+  process.exitCode = 2;
+}
+
+main().catch((error) => { console.error(error.message); process.exitCode = 1; });

@@ -4,6 +4,7 @@ const puppeteer = require('puppeteer');
 
 function installBrowserWorkspace(app) {
   const humanKey = crypto.randomBytes(32).toString('hex');
+  const MAX_BROWSER_TABS = 32;
   const sessions = new Map();
   let browserPromise;
   let opening=0;
@@ -40,6 +41,89 @@ function installBrowserWorkspace(app) {
     if (!['http:','https:'].includes(u.protocol) || u.username || u.password) deny('Use an HTTP or HTTPS address without embedded credentials.',400);
     return u.href;
   }
+
+  // Internal control surface for the pane workspace. These bypass the human
+  // header key because the caller already holds the pane workspace token.
+  async function createTab(kind = 'agent', url) {
+    if (sessions.size >= MAX_BROWSER_TABS) deny('Close a browser pane before opening another.', 409);
+    const context = await (await engine()).createBrowserContext();
+    try {
+      const page = await context.newPage();
+      await page.setViewport({ width: 1280, height: 800 });
+      const s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private' };
+      sessions.set(s.id, s);
+      page.on('popup', async (popup) => {
+        const popupUrl = popup.url();
+        await popup.close();
+        try { await page.goto(address(popupUrl)); } catch (_) { /* popup target was not addressable */ }
+      });
+      if (url) await page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
+      s.title = await page.title();
+      return describe(s);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+  }
+  async function snapshotTab(id) {
+    const s = sessions.get(id);
+    if (!s) deny('Browser pane no longer exists.', 404);
+    await s.page.bringToFront();
+    const client = await s.page.createCDPSession();
+    let capture;
+    try {
+      capture = await client.send('Page.captureScreenshot', { format: 'jpeg', quality: 75, captureBeyondViewport: false }, { timeout: 10000 });
+    } finally {
+      await client.detach();
+    }
+    s.title = await s.page.title();
+    return { ...describe(s), image: capture.data, width: s.width, height: s.height };
+  }
+  async function navigateTab(id, url) {
+    const s = sessions.get(id);
+    if (!s) deny('Browser pane no longer exists.', 404);
+    await s.page.goto(address(url), { waitUntil: 'domcontentloaded', timeout: 20000 });
+    s.title = await s.page.title();
+    return describe(s);
+  }
+  async function actionTab(id, action, data = {}) {
+    const s = sessions.get(id);
+    if (!s) deny('Browser pane no longer exists.', 404);
+    const p = s.page;
+    switch (action) {
+      case 'navigate': await p.goto(address(data.url), { waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+      case 'back': await p.goBack({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+      case 'forward': await p.goForward({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+      case 'reload': await p.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }); break;
+      case 'click': {
+        const x = Number(data.x), y = Number(data.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > s.width || y > s.height) deny('Invalid pointer position.', 400);
+        await p.mouse.click(x, y); break;
+      }
+      case 'type': await p.keyboard.type(String(data.text || '').slice(0, 10000)); break;
+      case 'key': await p.keyboard.press(String(data.key)); break;
+      case 'scroll': await p.mouse.wheel({ deltaY: Math.max(-1500, Math.min(1500, Number(data.deltaY) || 0)) }); break;
+      default: deny('Unknown browser action.', 400);
+    }
+    s.title = await p.title();
+    return describe(s);
+  }
+  async function closeTabInternal(id) {
+    const s = sessions.get(id);
+    if (!s) return false;
+    sessions.delete(id);
+    await s.context.close();
+    return true;
+  }
+  function getTab(id) { return sessions.get(id) || null; }
+  async function setViewportTab(id, width, height) {
+    const s = sessions.get(id);
+    if (!s) deny('Browser pane no longer exists.', 404);
+    s.width = Math.max(320, Math.min(1920, Math.round(Number(width) || 1280)));
+    s.height = Math.max(240, Math.min(1200, Math.round(Number(height) || 800)));
+    await s.page.setViewport({ width: s.width, height: s.height });
+    return { width: s.width, height: s.height };
+  }
   app.get('/api/browser/bootstrap',route(async(req,res)=>{
     if(req.get('Authorization')) deny('Agent tokens cannot manage workspace permissions.');
     res.json({key:humanKey});
@@ -50,7 +134,7 @@ function installBrowserWorkspace(app) {
   }));
   app.post('/api/browser',route(async(req,res)=>{
     if(!human(req)) deny('Only the owner can create browser tabs.');
-    if(sessions.size+opening>=8) deny('Close a tab before opening another (limit eight).',409);
+    if(sessions.size+opening>=MAX_BROWSER_TABS) deny('Close a tab before opening another.',409);
     opening++;
     let context;
     try {
@@ -126,6 +210,7 @@ function installBrowserWorkspace(app) {
     if(!human(req)) deny('Only the owner can close tabs.');
     const s=session(req);sessions.delete(s.id);await s.context.close();res.json({closed:true});
   }));
-  return async()=>{sessions.clear();if(browserPromise)await(await browserPromise).close();};
+  const closeAll = async()=>{sessions.clear();if(browserPromise)await(await browserPromise).close();};
+  return { closeAll, create: createTab, snapshot: snapshotTab, navigate: navigateTab, action: actionTab, close: closeTabInternal, get: getTab, setViewport: setViewportTab, describe };
 }
 module.exports={installBrowserWorkspace};

@@ -4,6 +4,17 @@ Open **Browser** or the **+** in the tab strip to create an isolated Chromium pa
 
 Each tab has its own cookie context. These are workspace browser tabs, not an attachment to an existing Safari or Chrome profile. Browser audio, file upload/download dialogs, extensions and password-manager integration are not provided by the image-based viewer.
 
+## Pane workspace
+
+Open `/panes.html` (or **Panes** in the sidebar) for the split workspace. Each
+workspace tab holds up to four panes in a 2x2 grid; a pane is either a real PTY
+terminal or a real browser page. The browser panes are rendered by the same
+headless-browser backend as the single browser tab, and the terminal panes are
+independent PTY sessions. An agent running in a terminal pane receives
+`TOWNMOUSE_API`, `TOWNMOUSE_TOKEN`, `TOWNMOUSE_PANE_ID` and `scripts/panes`, so
+it can create tabs, add panes, open URLs and run commands natively — no
+connection code is copied between the browser and the terminal.
+
 ## Layouts
 
 - **Desktop:** persistent sidebar, browser tabs in the sidebar, terminal and browser split horizontally when a browser is open. The separator is draggable left and right; the terminal keeps at least 320px and the browser at least 420px.

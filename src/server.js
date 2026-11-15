@@ -816,11 +816,14 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '64kb' }));
-const closeBrowsers = require('./browser-workspace').installBrowserWorkspace(app);
+const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
+const closeBrowsers = () => browserWorkspace.closeAll();
+const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs
 // silently reproduces already-fixed echo bugs).
+app.get('/panes', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'panes.html')));
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
@@ -897,6 +900,7 @@ wss.on('connection', (ws) => {
 async function shutdown(signal) {
   info(null, `Received ${signal}, starting graceful shutdown`, { activeSessions: activeSessions.size });
   server.close();
+  await paneWorkspace.closeAll().catch(err => error(null, 'Pane shutdown failed', {err:err.message}));
   await closeBrowsers().catch(err => error(null, 'Browser shutdown failed', {err:err.message}));
   const promises = Array.from(activeSessions.values()).map((s) => {
     clearGraceTimer(s);

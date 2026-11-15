@@ -818,7 +818,9 @@ app.use((req, res, next) => {
 // Attachments must be mounted before the global JSON parser: JSON files are
 // valid uploads and the raw parser, not express.json, must consume their body.
 require('./attachments').installAttachments(app);
-app.use(express.json({ limit: '64kb' }));
+// Pane input/command bodies can be large pastes. 2 MB keeps a single request
+// below the attachment limit while still bounding local API requests.
+app.use(express.json({ limit: '2mb' }));
 const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
 const closeBrowsers = () => browserWorkspace.closeAll();
 const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });

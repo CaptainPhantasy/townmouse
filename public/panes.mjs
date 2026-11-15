@@ -580,7 +580,10 @@ async function flushTerminalInput(record) {
   record.pendingInput = '';
   record.inputBusy = true;
   try {
-    await api(`/panes/${record.id}/input`, { method: 'POST', body: { data: payload } });
+    // Keep each request below the global JSON body limit so large pastes work.
+    for (let offset = 0; offset < payload.length && !record.disposed; offset += 24000) {
+      await api(`/panes/${record.id}/input`, { method: 'POST', body: { data: payload.slice(offset, offset + 24000) } });
+    }
   } catch (error) {
     if (!record.disposed) logStatus('Terminal input could not be sent.');
   } finally {
@@ -740,6 +743,7 @@ function createBrowserPane(pane) {
     snapshotTimer: 0,
     wheelDelta: 0,
     wheelTimer: 0,
+    lastDialogAt: '',
     resizeObserver: null,
     resizeTimer: 0,
     lastViewport: '',
@@ -772,6 +776,22 @@ function createBrowserPane(pane) {
   });
   record.image.addEventListener('click', (event) => onBrowserImageClick(record, event));
   record.view.addEventListener('wheel', (event) => onBrowserWheel(record, event), { passive: false });
+  let touchY = 0;
+  let touchActive = false;
+  record.view.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1) return;
+    touchActive = true;
+    touchY = event.touches[0].clientY;
+  }, { passive: true });
+  record.view.addEventListener('touchmove', (event) => {
+    if (!touchActive || event.touches.length !== 1) return;
+    event.preventDefault();
+    const nextY = event.touches[0].clientY;
+    const deltaY = touchY - nextY;
+    touchY = nextY;
+    if (deltaY) queueBrowserScroll(record, deltaY);
+  }, { passive: false });
+  record.view.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
 
   records.set(pane.id, record);
   wireDrop(root, pane.id);
@@ -866,6 +886,10 @@ function applySnapshot(record, snapshot) {
     record.image.src = `data:image/jpeg;base64,${snapshot.image}`;
     record.image.alt = snapshot.title ? `Snapshot of ${snapshot.title}` : 'Browser page snapshot';
   }
+  if (snapshot.dialog && snapshot.dialog.at && snapshot.dialog.at !== record.lastDialogAt) {
+    record.lastDialogAt = snapshot.dialog.at;
+    showNotice(`Page ${snapshot.dialog.type}: ${snapshot.dialog.message}`, 'info', 5200);
+  }
   record.root.classList.remove('is-offline');
 }
 
@@ -890,11 +914,10 @@ function onBrowserImageClick(record, event) {
   void browserAction(record, 'click', { x, y });
 }
 
-function onBrowserWheel(record, event) {
-  event.preventDefault();
-  const deltaY = Math.max(-1500, Math.min(1500, Number(event.deltaY) || 0));
-  if (!deltaY) return;
-  record.wheelDelta += deltaY;
+function queueBrowserScroll(record, deltaY) {
+  const delta = Math.max(-1500, Math.min(1500, Number(deltaY) || 0));
+  if (!delta) return;
+  record.wheelDelta += delta;
   if (record.wheelTimer) return;
   record.wheelTimer = window.setTimeout(() => {
     record.wheelTimer = 0;
@@ -902,6 +925,11 @@ function onBrowserWheel(record, event) {
     record.wheelDelta = 0;
     if (total && !record.disposed) void browserAction(record, 'scroll', { deltaY: total });
   }, 70);
+}
+
+function onBrowserWheel(record, event) {
+  event.preventDefault();
+  queueBrowserScroll(record, event.deltaY);
 }
 
 async function browserAction(record, action, extra = {}) {

@@ -186,8 +186,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   app.get('/api/panes/state', auth, route(async (req, res) => res.json(state())));
   app.post('/api/panes/tabs', auth, route(async (req, res) => {
     const tab = createTab(typeof req.body.title === 'string' ? req.body.title.slice(0, 80) : '');
-    activeTabId = tab.id;
-    activePaneId = tab.panes[0]?.id || null;
+    if (req.body.activate !== false) {
+      activeTabId = tab.id;
+      activePaneId = tab.panes[0]?.id || null;
+    }
     res.json(serializeTab(tab));
   }));
   app.delete('/api/panes/tabs/:id', auth, route(async (req, res) => {

@@ -22,7 +22,7 @@ function installBrowserWorkspace(app) {
     return browserPromise;
   };
   const human = req => req.get('X-Workspace-Key') === humanKey;
-  const describe = s => ({ id:s.id, kind:s.kind, permission:s.permission, url:s.page.url(), title:s.title || 'New tab' });
+  const describe = s => ({ id:s.id, kind:s.kind, permission:s.permission, url:s.page.url(), title:s.title || 'New tab', dialog:s.dialog || null });
   const route = fn => async (req,res) => {
     res.set('Cache-Control','no-store');
     try {
@@ -63,6 +63,12 @@ function installBrowserWorkspace(app) {
       const page = await context.newPage();
       await page.setViewport({ width: 1280, height: 800 });
       s = { id: crypto.randomUUID(), token: crypto.randomBytes(32).toString('hex'), page, context, kind, width: 1280, height: 800, permission: kind === 'agent' ? 'control' : 'private', internal: true };
+      // Never let alert/confirm/prompt block the shared page. Record it for the
+      // pane UI/agent and dismiss so the page can continue.
+      page.on('dialog', async (dialog) => {
+        s.dialog = { type: dialog.type(), message: dialog.message(), at: new Date().toISOString() };
+        try { await dialog.dismiss(); } catch (_) { /* dialog already gone */ }
+      });
       page.on('popup', async (popup) => {
         const popupUrl = popup.url();
         await popup.close();
@@ -160,6 +166,7 @@ function installBrowserWorkspace(app) {
     await page.setViewport({width:1280,height:800});
     const kind=req.body.kind==='agent'?'agent':'human';
     const s={id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex'),page,context,kind,width:1280,height:800,permission:kind==='agent'?'control':'private'};
+    page.on('dialog',async dialog=>{s.dialog={type:dialog.type(),message:dialog.message(),at:new Date().toISOString()};try{await dialog.dismiss();}catch{}});
     sessions.set(s.id,s);
     // Popups remain in this permission boundary; follow in the same tab.
     page.on('popup',async popup=>{const url=popup.url();await popup.close();try{await page.goto(address(url));}catch{}});

@@ -64,3 +64,15 @@ instead of one HTTP round-trip per keystroke.
 
 The archival tests are `codex-fixes-test.cjs`, `input-batch-test.cjs`, and
 `panes-attach-test.cjs`.
+
+## Mobile/dialog/large-input pass — 2026-11-15
+
+- A fixture page calling `alert("HELLO_DIALOG")` no longer deadlocks the
+  browser pane. The snapshot reports `{type:"alert", message:"HELLO_DIALOG"}`
+  and the page stays usable; the dialog is recorded and dismissed.
+- A 70,000-byte terminal input request now returns 200; the JSON body limit is
+  2 MB and the UI still chunks large pastes at 24,000 characters.
+- Browser panes have touch-drag scrolling in addition to wheel/click.
+- The `panes` CLI creates agent tabs in the background by default; `--activate`
+  is opt-in. Human tabs from the UI still activate.
+- The archival test is `pane-large-dialog-test.cjs`.

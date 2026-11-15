@@ -59,7 +59,7 @@ async function main() {
     console.log(`Usage:
   panes state
   panes tab list
-  panes tab create [--title TEXT]
+  panes tab create [--title TEXT] [--activate]
   panes tab close <tab-id>
   panes pane create --tab <tab-id> --kind terminal|browser [--url URL] [--cwd PATH] [--title TEXT]
   panes pane url <pane-id> <url>
@@ -76,7 +76,7 @@ Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID
   if (scope === 'active') { print(await call('POST', '/active', { tabId: a.tab, paneId: a.pane })); return; }
   if (scope === 'tab') {
     if (action === 'list') { const s = await call('GET', '/state'); print(s.tabs); return; }
-    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title })); return; }
+    if (action === 'create') { print(await call('POST', '/tabs', { title: a.title, activate: a.activate === true })); return; }
     if (action === 'close') { print(await call('DELETE', `/tabs/${a._[0]}`)); return; }
   }
   if (scope === 'pane') {

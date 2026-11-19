@@ -94,8 +94,13 @@ async function dispatchFile(page, selector, name, type, eventName) {
     await page.waitForFunction('window.__terminalOne && window.__terminalOne.dimensions()', { timeout: 15000 });
     await wait(1200);
 
+    // Phone navigation holds four surfaces. Attach is an action, so it lives
+    // in the Tools dock (DESIGN.md: Panes and Attach belong in Tools).
+    await page.click('#workspace-tools');
+    await page.waitForFunction('document.querySelector("#workspace-drawer")?.open', { timeout: 5000 });
     const attach = await page.evaluate(() => {
-      const button = document.querySelector('#workspace-attach');
+      const button = [...document.querySelectorAll('#workspace-drawer .drawer-row')]
+        .find((row) => (row.getAttribute('aria-label') || '').startsWith('Attach a file'));
       const rect = button && button.getBoundingClientRect();
       return {
         exists: Boolean(button),
@@ -104,16 +109,19 @@ async function dispatchFile(page, selector, name, type, eventName) {
         viewport: window.innerHeight
       };
     });
-    assert(attach.exists, 'Attach control is missing');
-    assert(attach.visible, 'Attach control is not visible at 393x852');
+    assert(attach.exists, 'Attach control is missing from the Tools dock');
+    assert(attach.visible, 'Attach control is not visible in the Tools dock at 393x852');
     assert(attach.bottom <= attach.viewport, `Attach control is below the viewport (${attach.bottom})`);
 
-    const fileInputs = await page.$$('input[type=file]');
-    const fileInput = fileInputs[fileInputs.length - 1];
-    assert(fileInput, 'hidden file input is missing');
-    await fileInput.uploadFile(pickerFile);
+    // Exercise the phone row's delegation to the hidden file input instead of
+    // uploading through the input directly; the row is the visible control.
+    const [fileChooser] = await Promise.all([
+      page.waitForFileChooser({ timeout: 5000 }),
+      page.click('#drawer-workspace .drawer-row:nth-child(2)')
+    ]);
+    await fileChooser.accept([pickerFile]);
     await waitForTerminalText(page, 'picker-attachment.txt');
-    assert.strictEqual(uploads, 1, `file picker should upload exactly once, saw ${uploads}`);
+    assert.strictEqual(uploads, 1, `phone Attach row should upload exactly once, saw ${uploads}`);
 
     const card = await page.evaluate(() => {
       const el = document.querySelector('#attachment-card');

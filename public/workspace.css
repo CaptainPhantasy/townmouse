@@ -8,6 +8,13 @@
   --ws-ease: cubic-bezier(.2, .8, .2, 1);
   --ws-shadow: 0 14px 48px #20283212;
   --ws-danger: #9c342c;
+  /* Control boundaries must be visible: 3.60:1 on white, 3.18:1 on paper.
+     The pale --ws-line stays for decorative hairlines only. */
+  --ws-control: #7c8898;
+  --ws-motion-fast: 180ms;
+  --ws-motion: 260ms;
+  --ws-dock-w: 300px;
+  --ws-dock-h: 46dvh;
 }
 
 /* Workspace chrome uses the light platform palette, not the terminal theme. */
@@ -15,7 +22,7 @@
   --ui-bg: #ffffff;
   --ui-fg: var(--ws-ink);
   --ui-elevated: #f7f9fb;
-  --ui-border: var(--ws-line);
+  --ui-border: var(--ws-control);
   --ui-accent: var(--ws-blue);
   --ui-muted: var(--ws-muted);
 }
@@ -80,7 +87,7 @@ body.workspace {
   gap: 6px;
   max-width: 18ch;
   padding: 4px 10px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 9px;
   background: var(--ws-glass);
   color: var(--ws-muted);
@@ -129,7 +136,7 @@ body.workspace {
 .workspace .t1session-tab.active {
   color: var(--ws-blue);
   background: var(--ws-glass);
-  border-color: var(--ws-line);
+  border-color: var(--ws-control);
 }
 .workspace .t1session-tab.t1session-new {
   width: 44px;
@@ -139,7 +146,7 @@ body.workspace {
   font-size: 18px;
   color: var(--ws-blue);
   background: var(--ws-glass);
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 10px;
 }
 
@@ -245,6 +252,81 @@ body.workspace {
 }
 .workspace-credit:hover { color: var(--ws-ink); }
 
+/* Desktop rail toggle: the labeled menu collapses to 72px on request. */
+.workspace-nav > button.workspace-nav-toggle {
+  display: none;
+}
+.workspace-nav-toggle {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-control);
+  border-radius: 11px;
+  background: var(--ws-glass);
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.workspace-nav-toggle:hover { color: var(--ws-ink); }
+.workspace-nav-toggle svg { width: 18px; height: 18px; }
+
+@media (min-width: 1100px) and (max-height: 820px) {
+  /* Wide but short (iPad landscape): the labeled sidebar must still fit the
+     viewport with the nav toggle. Keep the identity, drop secondary rows. */
+  .workspace-nav { overflow-y: auto; scrollbar-width: thin; }
+  .workspace-nav .brand-art { width: 96px; }
+  .workspace-brand { margin-bottom: 8px; padding-bottom: 10px; }
+  .workspace-credit { display: none; }
+  .nav-status { margin-top: 10px; }
+}
+
+@media (min-width: 1100px) {
+  .workspace-nav > button.workspace-nav-toggle { display: flex; }
+  body.workspace.nav-collapsed { padding-left: 92px; }
+  body.workspace.nav-collapsed .workspace-nav {
+    width: 72px;
+    inset: 16px auto 16px 12px;
+  }
+  body.workspace.nav-collapsed .workspace-nav > button,
+  body.workspace.nav-collapsed .workspace-nav .nav-bottom > button {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 4px;
+    min-height: 60px;
+    font-size: 10px;
+    text-align: center;
+  }
+  body.workspace.nav-collapsed .workspace-nav > button span,
+  body.workspace.nav-collapsed .workspace-nav .nav-bottom > button span {
+    max-width: 64px;
+    white-space: normal;
+    line-height: 1.15;
+  }
+  body.workspace.nav-collapsed .workspace-brand {
+    margin: 0 0 12px;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  body.workspace.nav-collapsed .workspace-brand .brand-art { width: 48px; }
+  body.workspace.nav-collapsed .workspace-brand .brand-art::before { display: none; }
+  body.workspace.nav-collapsed .workspace-brand span,
+  body.workspace.nav-collapsed .workspace-label,
+  body.workspace.nav-collapsed .nav-status,
+  body.workspace.nav-collapsed .workspace-credit,
+  body.workspace.nav-collapsed #browser-tabs { display: none; }
+  /* Tabs stay reachable in the browser surface when the sidebar tab list is
+     gone; the strip is the same tab model, not a new one. With a single tab it
+     would cost height for no switcher, so it appears only for 2+ tabs. The
+     rail keeps its own New tab control in every case: the strip is inside the
+     browser surface and is not visible while the terminal is active. */
+  body.workspace.nav-collapsed.multi-tab .browser-tabstrip { display: flex; }
+  body.workspace.nav-collapsed .workspace-nav-toggle { min-height: 44px; padding: 8px 4px; }
+  body.workspace.nav-collapsed .workspace-nav-toggle svg { transform: rotate(-90deg); }
+}
+
 /* Native controls preserve keyboard and assistive-technology semantics. */
 .workspace button, .workspace input, .workspace select { font-family: inherit; }
 .workspace button {
@@ -255,7 +337,7 @@ body.workspace {
 .workspace button:active { transform: scale(.98); }
 .workspace input, .workspace select {
   min-height: 44px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 9px;
   padding: 8px 12px;
   font-size: 14px;
@@ -268,19 +350,24 @@ body.workspace {
 .workspace .t1button.active { color: #fff; }
 .workspace input, .workspace select, .workspace textarea { color-scheme: light; accent-color: var(--ws-blue); }
 
-/* Tools sheet */
+/* Docked control panel.
+   A panel never paints over the terminal or browser. It reserves its own
+   column (desktop) or row (tablet, phone), and the live surfaces reflow. */
 .workspace-drawer {
+  position: fixed;
+  inset: 16px 16px 16px auto;
+  margin: 0;
+  width: var(--ws-dock-w);
+  height: auto;
+  max-height: none;
+  z-index: 90;
   color: var(--ws-ink);
-  background: rgba(255, 255, 255, .96);
-  backdrop-filter: blur(32px);
-  border: 1px solid var(--ws-line);
-  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid var(--ws-control);
+  border-radius: 18px;
   padding: 24px;
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  box-shadow: 0 24px 80px #20283233;
-  animation: drawer-in 260ms var(--ws-ease);
+  box-shadow: 0 18px 48px #2028321f;
+  animation: dock-in var(--ws-motion) var(--ws-ease);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -288,7 +375,11 @@ body.workspace {
 .workspace-drawer:not([open]) { display: none; pointer-events: none; }
 .workspace-drawer > header, .workspace-drawer > #tool-filter,
 .workspace-drawer > .drawer-empty, .workspace-drawer > .drawer-credit { flex: 0 0 auto; }
-.workspace-drawer::backdrop { background: #20283240; backdrop-filter: blur(3px); }
+.workspace-drawer::backdrop { background: transparent; }
+
+/* The reserved dock space is part of layout, not a scrim. */
+body.workspace:has(.workspace-drawer[open]),
+body.workspace:has(#settingsModal.open) { padding-right: calc(16px + var(--ws-dock-w) + 16px); }
 .workspace-drawer header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
 .workspace-drawer h2 { font-size: 22px; letter-spacing: -.6px; margin: 5px 0; }
 .workspace-drawer small, .workspace-drawer h3 { color: var(--ws-muted); font-size: 11px; }
@@ -319,6 +410,12 @@ body.workspace {
 .drawer-font-row::after { content: none; }
 .drawer-row-chevron { margin-left: auto; color: var(--ws-line); }
 .drawer-row-danger .drawer-row-name, .drawer-row-danger svg { color: var(--ws-danger); }
+.drawer-phone-only { display: none; }
+.drawer-group-workspace { display: none; }
+@media (max-width: 699px) {
+  .drawer-group-workspace { display: block; }
+  .drawer-phone-only { display: flex; }
+}
 .workspace .drawer-row.active { background: #175cbb !important; color: #fff; }
 .workspace .drawer-row.active .drawer-row-name,
 .workspace .drawer-row.active .drawer-row-copy::after,
@@ -369,7 +466,15 @@ body.workspace {
 }
 .workspace-drawer textarea { width: 100%; min-height: 120px; resize: vertical; }
 .workspace-drawer { scrollbar-width: auto; scrollbar-color: var(--ws-muted) var(--ws-paper); }
-.browser-reading { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin-top: 20px; }
+.browser-reading {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin-top: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .workspace [hidden], .workspace-drawer [hidden] { display: none !important; }
 
 /* Browser surface */
@@ -421,13 +526,13 @@ body.workspace {
 .browser-tab.selected {
   color: var(--ws-ink);
   background: var(--ws-glass);
-  border-color: var(--ws-line);
+  border-color: var(--ws-control);
 }
 .browser-tab-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .browser-tab-badge {
   font-size: 9px;
   padding: 1px 5px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 6px;
   color: var(--ws-muted);
   background: white;
@@ -460,7 +565,7 @@ body.workspace {
   gap: 6px;
   border-radius: 10px;
   background: var(--ws-glass);
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   color: var(--ws-ink);
   font-size: 12px;
 }
@@ -483,7 +588,7 @@ body.workspace {
   white-space: nowrap;
 }
 .browser-eyebrow { font-size: 11px; color: var(--ws-muted); }
-.browser-surface button { color: var(--ws-ink); background: var(--ws-glass); border: 1px solid var(--ws-line); border-radius: 9px; }
+.browser-surface button { color: var(--ws-ink); background: var(--ws-glass); border: 1px solid var(--ws-control); border-radius: 9px; }
 #browser-address { display: flex; align-items: center; gap: 6px; margin: 0 16px 10px; flex: 0 0 auto; }
 #browser-address button { min-width: 44px; padding: 0 10px; }
 #browser-share-bottom { display: none; }
@@ -513,7 +618,7 @@ body.workspace {
 .browser-badge {
   font-size: 10px;
   padding: 2px 6px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 6px;
   background: var(--ws-glass);
   color: var(--ws-muted);
@@ -579,7 +684,7 @@ body.workspace {
 .workspace.browser-open .split-handle::after {
   content: '';
   position: absolute;
-  background: var(--ws-line);
+  background: var(--ws-control);
   transition: background 160ms var(--ws-ease);
 }
 .workspace.browser-open .split-handle[data-orientation="horizontal"]::after {
@@ -597,7 +702,7 @@ body.workspace {
   position: relative;
   z-index: 1;
   border-radius: 999px;
-  background: var(--ws-line);
+  background: var(--ws-control);
   transition: background 160ms var(--ws-ease);
 }
 .workspace.browser-open .split-handle[data-orientation="horizontal"]::before {
@@ -617,8 +722,8 @@ body.workspace {
 .workspace.browser-open .split-handle:focus-visible { outline: 2px solid var(--ws-blue); outline-offset: 2px; }
 body.split-dragging { user-select: none; }
 
-/* Tablet key grid */
-.workspace .keybar.ipad {
+/* Tablet key grid — only on the tablet device, never an empty strip on desktop. */
+.workspace[data-device="ipad"] .keybar.ipad {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -637,26 +742,55 @@ body.split-dragging { user-select: none; }
 .workspace .keybar.ipad .kb-arrow-empty { visibility: hidden; pointer-events: none; }
 
 @keyframes drawer-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes dock-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 @keyframes surface-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 @media (min-width: 1100px) {
   .workspace.browser-open .app-shell {
     display: grid;
-    grid-template-columns: minmax(320px, var(--terminal-split, 47%)) 12px minmax(420px, 1fr);
-    grid-template-rows: 60px 1fr 30px;
+    /* Let both live columns shrink when a 300px dock is reserved; fixed
+       minimums overflowed (and clipped the browser) at 1100-1331px. */
+    grid-template-columns: minmax(0, var(--terminal-split, 47%)) 12px minmax(0, 1fr);
+    /* Header, then one auto row per in-flow notification (banner, toast host,
+       attachment card), then the terminal and footer. Empty auto rows are 0. */
+    grid-template-rows: 60px auto auto auto minmax(0, 1fr) 30px;
   }
   .workspace.browser-open .terminal-header { grid-column: 1; grid-row: 1; }
-  .workspace.browser-open .terminal-container { grid-column: 1; grid-row: 2; }
-  .workspace.browser-open .terminal-footer { grid-column: 1; grid-row: 3; }
-  .workspace.browser-open .split-handle { grid-column: 2; grid-row: 1 / 4; }
-  .workspace.browser-open .browser-surface { grid-column: 3; grid-row: 1 / 4; }
+  .workspace.browser-open .banner { grid-column: 1; grid-row: 2; }
+  .workspace.browser-open .t1toast-host { grid-column: 1; grid-row: 3; }
+  .workspace.browser-open .attachment-card { grid-column: 1; grid-row: 4; }
+  .workspace.browser-open .terminal-container { grid-column: 1; grid-row: 5; }
+  .workspace.browser-open .terminal-footer { grid-column: 1; grid-row: 6; }
+  .workspace.browser-open .split-handle { grid-column: 2; grid-row: 1 / 7; }
+  .workspace.browser-open .browser-surface { grid-column: 3; grid-row: 1 / 7; }
   .workspace.browser-open .keybar, .workspace.browser-open .t1session-tabs { display: none !important; }
   #browser-title-compact { display: inline-block; }
   .browser-tabstrip { display: none; }
+
+  /* Desktop browser chrome, compressed. The old stack reserved 208px above
+     the page (heading + address + permissions + message). Now the address is
+     the header, permissions sit on one line, and the state row stays one row. */
+  .browser-heading { display: none; }
+  #browser-address { order: 0; margin: 0; padding: 6px 14px; border-bottom: 1px solid var(--ws-line); }
+  .browser-permissions { order: 1; padding: 4px 14px 6px; flex-wrap: nowrap; overflow-x: auto; }
+  #browser-message { order: 2; padding: 0 14px 6px; min-height: 30px; }
+  .browser-canvas { order: 3; }
+  #browser-type { order: 4; }
 }
 
 @media (min-width: 700px) and (max-width: 1099px) {
-  body.workspace { padding: max(12px, env(safe-area-inset-top)) 12px 12px 92px; }
+  body.workspace { --ws-dock-h: 32dvh; padding: max(12px, env(safe-area-inset-top)) 12px 12px 92px; }
+  body.workspace:has(.workspace-drawer[open]),
+  body.workspace:has(#settingsModal.open) {
+    padding-right: 12px;
+    padding-bottom: calc(12px + var(--ws-dock-h));
+  }
+  .workspace-drawer,
+  body.workspace #settingsModal {
+    inset: auto 12px 12px 92px;
+    width: auto;
+    height: var(--ws-dock-h);
+  }
   .workspace-nav { width: 72px; left: 12px; inset: 16px auto 16px 12px; }
   .workspace-nav > button, .workspace-nav .nav-bottom > button {
     flex-direction: column;
@@ -708,7 +842,23 @@ body.split-dragging { user-select: none; }
 }
 
 @media (max-width: 699px) {
-  body.workspace { padding: max(8px, env(safe-area-inset-top)) 8px calc(76px + env(safe-area-inset-bottom)) 8px; }
+  body.workspace { --ws-dock-h: 44dvh; padding: max(8px, env(safe-area-inset-top)) 8px calc(76px + env(safe-area-inset-bottom)) 8px; }
+  body.workspace:has(.workspace-drawer[open]),
+  body.workspace:has(#settingsModal.open) {
+    padding-right: 8px;
+    padding-bottom: calc(76px + var(--ws-dock-h) + env(safe-area-inset-bottom));
+  }
+  .workspace-drawer,
+  body.workspace #settingsModal {
+    inset: auto 8px calc(76px + env(safe-area-inset-bottom)) 8px;
+    width: auto;
+    height: var(--ws-dock-h);
+  }
+  /* Phone navigation is four surfaces. Panes and Attach are actions and live
+     in Tools, where they can be read instead of guessed from a tiny icon. */
+  .workspace-nav #workspace-panes,
+  .workspace-nav #workspace-attach { display: none !important; }
+  .workspace-drawer .drawer-phone-only { display: flex; }
   .workspace .app-shell { border-radius: 16px; }
   .workspace-nav {
     inset: auto 8px env(safe-area-inset-bottom) 8px;
@@ -796,10 +946,7 @@ body.split-dragging { user-select: none; }
   #browser-type input { min-height: 44px; font-size: 12px; }
   #browser-type button { min-width: 44px; padding: 0 6px; font-size: 11px; }
   .workspace-drawer {
-    margin: auto 8px calc(8px + env(safe-area-inset-bottom));
-    width: calc(100% - 16px);
-    max-height: 86dvh;
-    border-radius: 22px 22px 14px 14px;
+    border-radius: 18px;
     padding: 18px;
   }
   .workspace-drawer header { margin-bottom: 14px; }
@@ -812,7 +959,8 @@ body.split-dragging { user-select: none; }
   body.chrome-idle .keybar,
   body.chrome-idle .t1session-tabs,
   body.chrome-idle .t1-smart-suggest,
-  body.chrome-idle #browser-message,
+  /* The browser state row survives the collapse: it is the only answer to
+     what the agent can see and control. */
   body.chrome-idle .browser-tabstrip,
   body.chrome-idle #browser-permissions,
   body.chrome-idle #browser-address,
@@ -877,7 +1025,7 @@ body.split-dragging { user-select: none; }
 .workspace #settingsModal .settings-row input {
   width: 100%;
   min-height: 44px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 9px;
   padding: 8px 12px;
   background: white;
@@ -905,10 +1053,35 @@ body.split-dragging { user-select: none; }
   justify-content: flex-end;
   gap: 8px;
 }
+/* The dock scrolls; keep the way out visible at the top on touch screens. */
+.workspace #settingsModal .settings-panel { padding-top: 0; }
+.workspace #settingsModal .settings-dock-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 18px 0 14px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--ws-line);
+}
+.workspace #settingsModal .settings-dock-bar h2 { margin: 0; }
+.workspace #settingsModal .settings-dock-bar button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--ws-control);
+  border-radius: 9px;
+  background: var(--ws-glass);
+  color: var(--ws-ink);
+}
 .workspace #settingsModal .settings-actions button {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 9px;
   background: var(--ws-glass);
   color: var(--ws-ink);
@@ -916,9 +1089,34 @@ body.split-dragging { user-select: none; }
 .workspace #settingsModal .settings-advanced summary { text-transform: none; letter-spacing: 0; }
 .workspace #settingsModal input[type="checkbox"] { accent-color: var(--ws-blue); }
 
+/* Settings shares the reserved dock. The panel is a peer of the shell, not a
+   scrim over it. No inert background, no focus trap, no dimmed terminal. */
+.workspace #settingsModal {
+  inset: 16px 16px 16px auto;
+  width: var(--ws-dock-w);
+  height: auto;
+  display: none;
+  align-items: stretch;
+  justify-content: stretch;
+  background: transparent;
+  backdrop-filter: none;
+  z-index: 90;
+}
+.workspace #settingsModal.open { display: flex; }
+.workspace #settingsModal .settings-panel {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  overflow-y: auto;
+  border-radius: 18px;
+  border: 1px solid var(--ws-control);
+  background: #ffffff;
+  box-shadow: 0 18px 48px #2028321f;
+}
+
 /* In-design destructive confirmation and session menu. */
 .workspace-confirm {
-  width: min(380px, calc(100vw - 32px));
   padding: 22px;
 }
 .workspace-confirm p { color: var(--ws-muted); font-size: 13px; line-height: 1.6; }
@@ -926,7 +1124,7 @@ body.split-dragging { user-select: none; }
 .confirm-actions button {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 9px;
   background: white;
   color: var(--ws-ink);
@@ -936,8 +1134,8 @@ body.split-dragging { user-select: none; }
   border-color: var(--ws-danger);
   color: white;
 }
-.session-menu { width: min(400px, calc(100vw - 32px)); }
-.session-menu .drawer-list { margin-bottom: 12px; }
+.session-menu .drawer-list { margin-bottom: 12px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.session-menu #session-menu-new { flex: 0 0 auto; }
 
 /* Short landscape screens (iPhone at 852x393): the tablet rail must compact
    instead of pushing Tools below the viewport. */
@@ -1038,7 +1236,7 @@ body.split-dragging { user-select: none; }
 .attachment-card-actions button {
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 7px;
   background: #f7f9fb;
   color: var(--ws-ink);
@@ -1079,7 +1277,7 @@ body.split-dragging { user-select: none; }
 .reader-actions button {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid var(--ws-line);
+  border: 1px solid var(--ws-control);
   border-radius: 8px;
   background: #fff;
   color: var(--ws-ink);
@@ -1123,4 +1321,86 @@ body.split-dragging { user-select: none; }
   #settingsModal textarea {
     font-size: 16px;
   }
+}
+
+/* ── Nothing floats over a live surface ────────────────────────────────────
+   Banner, toasts, and the attachment handoff card are siblings in the shell's
+   flow. They reserve height and push the terminal down; they never cover it. */
+.workspace .banner {
+  position: static;
+  display: none;
+  padding: 8px 16px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.workspace .banner.error { display: block; background: #f6d9d5; color: #5a1b15; }
+.workspace .banner.warn { display: block; background: #f4e6c2; color: #45360f; }
+.workspace .banner.info { display: block; background: #e7eef9; color: #1c3352; }
+
+.workspace .t1toast-host {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  gap: 0;
+  pointer-events: auto;
+}
+.workspace .t1toast-host:empty { display: none; }
+.workspace .t1toast {
+  border: 0;
+  border-top: 1px solid var(--ws-line);
+  border-bottom: 1px solid var(--ws-line);
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px 16px;
+  background: #fff8e6;
+  color: var(--ws-ink);
+  font-size: 12px;
+}
+.workspace .t1toast-warn { background: #fdf3dd; }
+.workspace .t1toast-error { background: #f9e6e2; }
+
+.workspace .attachment-card {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  margin: 8px 16px 0;
+  box-shadow: none;
+}
+
+/* 320px-equivalent width: let the header take a second row instead of clipping
+   the session pill or the connection state. */
+@media (max-width: 360px) {
+  .workspace .terminal-header {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .workspace .statuswrap { margin-left: auto; }
+  .workspace .workspace-session-pill { max-width: 14ch; }
+}
+/* Short landscape (phone held sideways): a 32dvh bottom dock would be a
+   sliver, so the panel takes a right column instead. */
+@media (min-width: 700px) and (max-width: 1099px) and (max-height: 500px) {
+  body.workspace:has(.workspace-drawer[open]),
+  body.workspace:has(#settingsModal.open) {
+    padding-right: 364px;
+    padding-bottom: 12px;
+  }
+  .workspace-drawer,
+  body.workspace #settingsModal {
+    inset: 8px 8px 8px auto;
+    width: 340px;
+    height: auto;
+  }
+  /* The narrower live column would wrap the key bar into two rows. While a
+     panel is open, give the rows back to the terminal. */
+  body.workspace:has(.workspace-drawer[open]) .keybar,
+  body.workspace:has(#settingsModal.open) .keybar { display: none !important; }
 }

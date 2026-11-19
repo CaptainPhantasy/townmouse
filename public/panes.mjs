@@ -13,6 +13,7 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const byId = (id) => document.getElementById(id);
 const els = {
+  app: byId('panes-app'),
   grid: byId('pane-grid'),
   tabStrip: byId('tabstrip'),
   workspace: byId('workspace'),
@@ -77,27 +78,27 @@ const els = {
 };
 
 const TERMINAL_THEME = {
-  background: '#080b0a',
-  foreground: '#d7e6df',
-  cursor: '#7fe3c0',
-  cursorAccent: '#080b0a',
-  selectionBackground: 'rgba(127, 227, 192, 0.24)',
-  black: '#141b18',
+  background: '#0a0d12',
+  foreground: '#e8eef6',
+  cursor: '#8ab4ff',
+  cursorAccent: '#0a0d12',
+  selectionBackground: 'rgba(138, 180, 255, 0.24)',
+  black: '#11161d',
   red: '#ff8f8f',
   green: '#7fe3c0',
   yellow: '#e9d6a1',
-  blue: '#8fb8dd',
+  blue: '#8ab4ff',
   magenta: '#d9b1cf',
   cyan: '#8fe6d4',
-  white: '#dfeae5',
-  brightBlack: '#61776d',
+  white: '#e8eef6',
+  brightBlack: '#5f6f88',
   brightRed: '#ffb3b3',
   brightGreen: '#a5f2d8',
   brightYellow: '#f3e5bd',
-  brightBlue: '#b2cee8',
+  brightBlue: '#a9c8ff',
   brightMagenta: '#e8cae1',
   brightCyan: '#b6f4e6',
-  brightWhite: '#f2faf6'
+  brightWhite: '#f4f8ff'
 };
 
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -344,22 +345,37 @@ function showAttachmentNotice(attachment, file) {
   showNotice(`Attached ${file.name} · ${attachment.url}`, 'info', 8000, attachment.url);
 }
 
+function syncMenuState() {
+  const anyOpen = [els.contextMenu, els.browserContextMenu]
+    .some((menu) => menu && !menu.hidden);
+  els.app?.classList.toggle('menu-open', anyOpen);
+}
+
+function syncDialogState() {
+  const anyOpen = [els.browserControl, els.pageDialog]
+    .some((dialog) => dialog && !dialog.hidden);
+  els.app?.classList.toggle('dialog-open', anyOpen);
+}
+
 function hideContextMenu() {
   contextRecordId = null;
   browserContextRecordId = null;
   if (els.contextMenu) els.contextMenu.hidden = true;
   if (els.browserContextMenu) els.browserContextMenu.hidden = true;
+  syncMenuState();
 }
 
-function showBrowserContextMenu(record, clientX, clientY) {
+function showBrowserContextMenu(record, _clientX, _clientY) {
   if (!els.browserContextMenu || !record || record.kind !== 'browser') return;
+  // A blocking page prompt owns the bottom strip; the rail would be hidden
+  // behind it and the action would look broken.
+  if (els.app?.classList.contains('dialog-open')) return;
   hideContextMenu();
+  closeSheets();
   browserContextRecordId = record.id;
   record.suppressClickUntil = Date.now() + 700;
   els.browserContextMenu.hidden = false;
-  const rect = els.browserContextMenu.getBoundingClientRect();
-  els.browserContextMenu.style.left = `${Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX))}px`;
-  els.browserContextMenu.style.top = `${Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY))}px`;
+  syncMenuState();
   els.browserContextMenu.querySelector('[role="menuitem"]')?.focus();
 }
 
@@ -387,15 +403,14 @@ function wireBrowserContext(record) {
   }
 }
 
-function showContextMenu(record, clientX, clientY) {
+function showContextMenu(record, _clientX, _clientY) {
   if (!els.contextMenu || !record || record.kind !== 'terminal') return;
+  if (els.app?.classList.contains('dialog-open')) return;
+  hideContextMenu();
+  closeSheets();
   contextRecordId = record.id;
   els.contextMenu.hidden = false;
-  const rect = els.contextMenu.getBoundingClientRect();
-  const left = Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX));
-  const top = Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY));
-  els.contextMenu.style.left = `${left}px`;
-  els.contextMenu.style.top = `${top}px`;
+  syncMenuState();
   els.contextMenu.querySelector('[role="menuitem"]')?.focus();
 }
 
@@ -431,14 +446,22 @@ function hideBrowserControl() {
   browserControlPoint = null;
   browserControlKind = '';
   if (els.browserControl) els.browserControl.hidden = true;
+  syncDialogState();
 }
 
 function showBrowserControl(record, control, point) {
   if (!els.browserControl || !record || !control) return;
+  // Only dismiss soft docks when the control is first revealed; later updates
+  // of an already-visible control must not close a sheet the user opened.
+  if (els.browserControl.hidden) {
+    closeSheets();
+    hideContextMenu();
+  }
   browserControlRecordId = record.id;
   browserControlPoint = point;
   browserControlKind = control.kind;
   els.browserControl.hidden = false;
+  syncDialogState();
   if (control.kind === 'select') {
     els.browserControlLabel.textContent = 'Choose an option';
     els.browserControlSelect.hidden = false;
@@ -457,7 +480,7 @@ function showBrowserControl(record, control, point) {
     els.browserControlValue.type = control.kind;
     els.browserControlValue.value = control.value || '';
   }
-  els.browserControlSelect.focus();
+  (control.kind === 'select' ? els.browserControlSelect : els.browserControlValue).focus();
 }
 
 async function applyBrowserControl() {
@@ -477,11 +500,19 @@ function hidePageDialog() {
   pageDialogId = null;
   pageDialogType = '';
   if (els.pageDialog) els.pageDialog.hidden = true;
+  syncDialogState();
 }
 
 function showPageDialog(record, dialog) {
   if (!els.pageDialog || !record || !dialog || !dialog.id) return;
   if (pageDialogId !== dialog.id) {
+    // A blocking page dialog outranks the soft docks. Close them on arrival;
+    // the next snapshot reuses this id, so a sheet the user reopens later is
+    // not closed again. The browser control shares the bottom strip, so it
+    // must not be left underneath the prompt.
+    closeSheets();
+    hideContextMenu();
+    hideBrowserControl();
     pageDialogRecordId = record.id;
     pageDialogId = dialog.id;
     pageDialogType = dialog.type || 'alert';
@@ -491,6 +522,7 @@ function showPageDialog(record, dialog) {
     els.pageDialogAccept.textContent = pageDialogType === 'alert' ? 'OK' : 'Accept';
   }
   els.pageDialog.hidden = false;
+  syncDialogState();
 }
 
 async function answerPageDialog(action) {
@@ -778,6 +810,8 @@ function applyState(next, { force = false } = {}) {
   } else {
     updatePaneChrome(tab);
   }
+  // rebuild() returns before updatePaneChrome() when the active tab is empty.
+  discardStaleOverlays();
   prunePaneMemory();
   if (els.tabsDialog.open) renderTabsDialog();
   if (tab) document.title = `${tab.title} — Panes`;
@@ -1070,9 +1104,19 @@ function updatePaneChrome(tab) {
       record.currentUrl = pane.url || record.currentUrl;
     }
   });
-  if (pageDialogRecordId && !records.has(pageDialogRecordId)) hidePageDialog();
+  discardStaleOverlays();
   updateKeybar();
   updateBackButton();
+}
+
+// Overlay ids can outlive their pane when a tab is switched or a pane closes.
+// Reconcile them with the rebuilt records so a stale menu/control/dialog does
+// not keep the reserved strip (and its .dialog-open/.menu-open class) latched.
+function discardStaleOverlays() {
+  if (browserControlRecordId && !records.has(browserControlRecordId)) hideBrowserControl();
+  if (contextRecordId && !records.has(contextRecordId)) hideContextMenu();
+  if (browserContextRecordId && !records.has(browserContextRecordId)) hideContextMenu();
+  if (pageDialogRecordId && !records.has(pageDialogRecordId)) hidePageDialog();
 }
 
 function updateActiveClasses() {
@@ -1920,7 +1964,11 @@ function requestClose(kind, id, title) {
     els.closeConfirmCopy.textContent = 'Closing this pane ends its shell and any running job. This cannot be undone.';
   }
   els.closeApprove.textContent = kind === 'tab' ? 'Close tab' : 'Close pane';
-  els.closeConfirm.showModal();
+  closeSheets();
+  hideContextMenu();
+  els.closeConfirm.show();
+  syncPanelState();
+  els.closeCancel.focus();
 }
 
 async function closeTab(tabId, title) {
@@ -2039,14 +2087,26 @@ function updateAddLimits() {
   els.emptyNewTab.disabled = atTabLimit;
 }
 
+function syncPanelState() {
+  const anyOpen = [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]
+    .some((dialog) => dialog && dialog.open);
+  els.app?.classList.toggle('panel-open', anyOpen);
+}
+
 function openSheets(dialog) {
-  if (!dialog.open) dialog.showModal();
+  if (dialog.open) return;
+  closeSheets();
+  hideContextMenu();
+  dialog.show();
+  syncPanelState();
+  dialog.querySelector('button, input, select')?.focus();
 }
 
 function closeSheets() {
-  if (els.tabsDialog.open) els.tabsDialog.close();
-  if (els.menuDialog.open) els.menuDialog.close();
-  if (els.shortcutsDialog?.open) els.shortcutsDialog.close();
+  for (const dialog of [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]) {
+    if (dialog?.open) dialog.close();
+  }
+  syncPanelState();
 }
 
 function openTabsDialog() {
@@ -2284,8 +2344,7 @@ function bindEvents() {
   els.menuFontUp.addEventListener('click', () => adjustPaneFont(1));
   els.menuFontDown.addEventListener('click', () => adjustPaneFont(-1));
   els.menuShortcuts.addEventListener('click', () => {
-    closeSheets();
-    if (!els.shortcutsDialog.open) els.shortcutsDialog.showModal();
+    openSheets(els.shortcutsDialog);
   });
   els.readerRefresh.addEventListener('click', refreshReaderView);
   els.readerClose.addEventListener('click', closeReaderView);
@@ -2304,6 +2363,33 @@ function bindEvents() {
       if (dialog) dialog.close();
     });
   });
+
+  for (const dialog of [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]) {
+    dialog?.addEventListener('close', syncPanelState);
+  }
+  // closeSheets() can dismiss the confirmation programmatically (for example
+  // when a page dialog arrives); clear the pending target on every close.
+  // The close event is queued, so requestClose may have already reopened the
+  // dialog with a new target by the time it fires.
+  els.closeConfirm?.addEventListener('close', () => {
+    if (!els.closeConfirm.open) pendingClose = null;
+  });
+  // Capture-phase: the docks are non-modal, so focus can sit in an xterm that
+  // consumes Escape before a bubble listener would ever see it.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    // Check the sheet list directly: this runs on every Escape in a TUI, and a
+    // document-wide dialog query would also match non-sheet overlays.
+    const anySheet = [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]
+      .some((dialog) => dialog && dialog.open);
+    if (!anySheet) return;
+    // A pane owns its keys. Escape goes to vim/less/the page; the dock has a
+    // visible close control because it is not modal.
+    if (event.target instanceof Element && event.target.closest('.pane')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeSheets();
+  }, true);
 
   for (const dialog of [els.tabsDialog, els.menuDialog]) {
     dialog.addEventListener('click', (event) => {

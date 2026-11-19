@@ -67,6 +67,21 @@ The orchestrator pane is spawned with `TOWNMOUSE_API`, `TOWNMOUSE_TOKEN`, `TOWNM
 
 This follows the Chrome split-view model — live tabs sharing one surface with a draggable divider — extended to four panes per tab.
 
+The pane workspace is the same product, not a second identity. It uses the graphite family (`#0a0d12` / `#11161d`) and the one Townmouse blue as `--accent` (#8ab4ff, the dark-surface step of `#175cbb`). The old mint-on-green palette is retired.
+
+## Surface protection (Or: A Menu May Never Cover a Live Face)
+
+Recorded 2026-11-18. This is a hard invariant, not a preference: **no menu, sheet, dialog, toast, or panel may paint over a live terminal or browser surface.** Chrome either docks and reflows the surface, or replaces it as a first-class mode with an explicit way back. Scope of this pass: the workspace chrome and pane surfaces listed below. The inherited command palette, shortcut help, search, recent-commands popover, and session-lock overlays are not yet ported and remain known exceptions.
+
+- **Tools, Sessions, the close confirmation, Settings, and the browser page-text dialogs are docked peers.** On desktop (≥1100px) they reserve a 300px right column; on tablet (700–1099px) a 32dvh bottom row; on phone (≤699px) a 44dvh bottom row above the four-item navigation. The live surface shrinks; it is never covered. No scrim, no backdrop blur, no inert background, no focus trap.
+- **Desktop menu is collapsible, not fixed overhead.** `#workspace-nav-toggle` trades the 208px labeled sidebar for a 72px icon rail and remembers the choice. The rail keeps a New tab control; when there are 2+ browser tabs the tab strip also appears in the browser surface so tabs stay reachable, and a single tab costs no extra height.
+- **Reader view** is a mode, not an overlay: it replaces the transcript surface and always shows Close.
+- **Notifications live in the flow.** Banner, toasts, and the attachment handoff card are siblings in the shell and push the terminal down. The pane workspace puts its notice in the bottom stack.
+- **Pane workspace menus dock.** Tabs, menu, shortcuts, and confirmations reserve a 360px right column at ≥900px and a 48dvh bottom row below that. Context actions are a docked action rail above the workspace bar, not a floating menu on a pane.
+- **Phone navigation is four surfaces** — Terminal, Browser, Agent, Tools. Panes and Attach are labeled rows in the Tools dock, because they are actions, not surfaces.
+- **Visible control boundaries.** `--ws-control: #7c8898` (3.60:1 on white, 3.18:1 on paper) replaces the 1.3–1.5:1 hairline on inputs, key caps, tab chips, and both resize grips. The pale `--ws-line` remains decorative only. Dark pane controls use `#5f6f88` on `#11161d` (3.4:1).
+- **Enforced by software.** `npm run test:ui` (`tests/ui-surfaces.test.cjs`) fails if any docked panel intersects `#terminal` or `.browser-canvas` at 1440×900, 1150×800, 820×1180, 393×852, or 932×430, or if a rendered live surface extends outside `.app-shell`; it also asserts the contrast floors, no horizontal overflow, the four-item phone navigation, and the Panes/Attach rows in Tools.
+
 ## Navigation and browser model (Or: Who Can See What, and Who Can Touch It)
 
 - The session pill is a button. It opens a Sessions sheet listing every named session, marking the current one, switching between them, and offering New session. The footer keeps the shell command, working directory, and uptime.
@@ -115,6 +130,7 @@ That is the review. It was not a vibe check.
 ## Evidence (Or: Math. Not Vibes.)
 
 - `npm run test:workspace` covers terminal input, human and agent tabs, sharing/revocation, page text, hidden-agent navigation, reduced motion, the tablet split drag and expand, and phone/tablet/desktop layouts at 393×852, 820×1180, 1440×900, and 1920×1080. The desktop separator drag and both orientation bounds are verified in the split-handle pass recorded in `docs/evidence/mascot-correction/` and `stewardship/screens/pass16`.
+- `npm run test:ui` measures the surface-protection invariant and token contrast at all three breakpoints. The pass recorded 2026-11-18 found zero intersections for Tools, Sessions, close confirmation, Settings, and the pane menu, with control-boundary ratios of 3.60:1 (white) and 3.18:1 (paper), and pane control at 3.4:1.
 - `npm test` covers the engine suite and responsive layout tests.
 - Accepted screenshots are recorded in the stewardship evidence directory.
 - The adversarial secondary-model grade is recorded in the stewardship `EVIDENCE.md`.

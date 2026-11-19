@@ -1,18 +1,22 @@
 :root {
-  --bg: #070a09;
-  --surface: #0d1210;
-  --raised: #121a16;
-  --hover: #17211c;
-  --line: #1d2a24;
-  --line-strong: #2b3d35;
-  --text: #dfeae5;
-  --muted: #8ba198;
-  --faint: #738b80;
-  --mint: #7fe3c0;
-  --mint-ink: #06110d;
-  --danger: #ff9a9a;
+  /* One Townmouse system: graphite terminal neutrals, one blue accent. */
+  --bg: #0a0d12;
+  --surface: #11161d;
+  --raised: #171d26;
+  --hover: #1d2531;
+  --line: #232c39;
+  --line-strong: #5f6f88; /* 3.4:1 on --surface: visible control boundaries */
+  --text: #e8eef6;
+  --muted: #9aa8b8;
+  --faint: #7f8fa3;
+  --accent: #8ab4ff;
+  --mint: var(--accent);
+  --mint-ink: #07101d;
+  --danger: #ffb3ac;
   --bar-height: 52px;
   --radius: 8px;
+  --panel-w: 360px;
+  --panel-h: 48dvh;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   color-scheme: dark;
@@ -51,7 +55,7 @@ button { cursor: pointer; }
   border: 0;
 }
 
-:where(button, input, [tabindex]):focus-visible {
+:where(button, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--mint);
   outline-offset: 2px;
 }
@@ -66,6 +70,12 @@ button { cursor: pointer; }
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: var(--bg);
 }
+
+/* Explicit row placement: a hidden tab strip must not shift the workspace into
+   the auto row and collapse the live panes. */
+.tabstrip { grid-row: 1; }
+.workspace { grid-row: 2; }
+.bottom-stack { grid-row: 3; }
 
 .workspace {
   position: relative;
@@ -119,7 +129,7 @@ button { cursor: pointer; }
   border-radius: var(--radius);
 }
 
-.pane.is-active { border-color: rgba(127, 227, 192, 0.55); }
+.pane.is-active { border-color: rgba(138, 180, 255, 0.65); }
 
 .pane-header {
   display: flex;
@@ -184,7 +194,7 @@ button { cursor: pointer; }
 
 /* ─── Terminal pane ─────────────────────────────────────────────────────── */
 
-.pane-terminal .pane-body { background: #080b0a; }
+.pane-terminal .pane-body { background: #0a0d12; }
 
 .terminal-host {
   position: absolute;
@@ -224,9 +234,9 @@ button { cursor: pointer; }
   height: 30px;
   min-width: 30px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #0a0f0c;
+  background: #0d1219;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
@@ -249,9 +259,9 @@ button { cursor: pointer; }
   min-width: 0;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #080d0a;
+  background: #0c1118;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -259,7 +269,7 @@ button { cursor: pointer; }
 
 .address-input::placeholder { color: var(--faint); }
 
-.address-input:focus { border-color: rgba(127, 227, 192, 0.5); }
+.address-input:focus { border-color: rgba(138, 180, 255, 0.6); }
 
 .address-go { color: var(--mint); }
 
@@ -298,16 +308,16 @@ button { cursor: pointer; }
   min-width: 0;
   height: 30px;
   padding: 0 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #080d0a;
+  background: #0c1118;
   color: var(--text);
   font-size: 12px;
 }
 
 .browser-type-input::placeholder { color: var(--faint); }
 
-.browser-type-input:focus { border-color: rgba(127, 227, 192, 0.5); }
+.browser-type-input:focus { border-color: rgba(138, 180, 255, 0.6); }
 
 /* ─── Empty state ───────────────────────────────────────────────────────── */
 
@@ -379,7 +389,7 @@ button { cursor: pointer; }
   color: var(--mint-ink);
 }
 
-.btn-primary:hover { background: #93edd0; border-color: #93edd0; }
+.btn-primary:hover { background: #a9c8ff; border-color: #a9c8ff; }
 
 .btn-quiet { background: transparent; color: var(--muted); }
 
@@ -526,9 +536,9 @@ button { cursor: pointer; }
   max-width: 230px;
   height: 32px;
   padding: 0 11px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: #0a0f0c;
+  background: #0d1219;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -541,26 +551,58 @@ button { cursor: pointer; }
 
 /* ─── Sheets ────────────────────────────────────────────────────────────── */
 
+/* Sheets are docked peers, not modals over the panes. The workspace gives up
+   the strip the panel occupies, so no live pane is ever covered. */
 .sheet {
-  width: min(440px, calc(100vw - 24px));
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  left: auto;
+  margin: 0;
+  width: var(--panel-w);
+  height: auto;
   max-width: none;
-  max-height: min(78dvh, 640px);
+  max-height: none;
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.62);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+  /* Above the reader mode (80), page dialog (76), and context rail (75): a
+     user-opened dock must stay readable while a blocking prompt or reader
+     waits behind it. */
+  z-index: 90;
 }
 
-.sheet::backdrop { background: rgba(2, 5, 4, 0.68); }
+.sheet::backdrop { background: transparent; }
+
+.panes-app.panel-open { right: calc(var(--panel-w) + 24px); }
+
+@media (max-width: 899px) {
+  .sheet {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    height: var(--panel-h);
+  }
+  .panes-app.panel-open {
+    right: 0;
+    bottom: calc(var(--panel-h) + 16px);
+  }
+}
 
 .sheet-inner {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: min(78dvh, 640px);
+  height: 100%;
+  min-height: 0;
+  max-height: none;
   padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -617,14 +659,14 @@ button { cursor: pointer; }
   display: flex;
   align-items: stretch;
   gap: 2px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: #0a0f0c;
+  background: #0d1219;
 }
 
 .tab-row.is-active {
-  border-color: rgba(127, 227, 192, 0.48);
-  background: rgba(127, 227, 192, 0.055);
+  border-color: rgba(138, 180, 255, 0.55);
+  background: rgba(138, 180, 255, 0.08);
 }
 
 .tab-select {
@@ -739,20 +781,20 @@ button { cursor: pointer; }
 
 /* ─── Notices ───────────────────────────────────────────────────────────── */
 
+/* The notice sits in the bottom stack and pushes the panes; it never floats
+   over them. */
 .notice {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 10px);
-  z-index: 60;
-  max-width: calc(100vw - 24px);
+  position: static;
+  z-index: auto;
+  max-width: none;
+  margin: 4px 6px 0;
   padding: 8px 12px;
-  transform: translateX(-50%);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: #1a2420;
+  background: #151d27;
   color: var(--text);
   font-size: 12px;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
 }
 
 .notice[data-kind="error"] { border-color: rgba(255, 154, 154, 0.4); }
@@ -776,10 +818,7 @@ button { cursor: pointer; }
   .host-pill { max-width: 132px; height: 30px; padding: 0 9px; font-size: 11px; }
   .tab-meta { display: none; }
   .sheet {
-    width: 100%;
-    margin: auto 0 0;
-    border-radius: 14px 14px 0 0;
-    border-bottom: 0;
+    border-radius: 12px;
   }
 }
 
@@ -824,7 +863,7 @@ button { cursor: pointer; }
 /* Drop target feedback for native file attachment. */
 .pane.drop-target {
   border-color: var(--mint);
-  box-shadow: inset 0 0 0 1px rgba(127, 227, 192, 0.5), 0 0 0 1px rgba(127, 227, 192, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(138, 180, 255, 0.6), 0 0 0 1px rgba(138, 180, 255, 0.28);
 }
 
 
@@ -863,7 +902,7 @@ button { cursor: pointer; }
   flex: 0 0 auto;
   min-height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
@@ -871,8 +910,8 @@ button { cursor: pointer; }
   cursor: pointer;
 }
 .tabstrip-tab.is-active {
-  border-color: rgba(127, 227, 192, 0.5);
-  background: rgba(127, 227, 192, 0.08);
+  border-color: rgba(138, 180, 255, 0.6);
+  background: rgba(138, 180, 255, 0.1);
   color: var(--text);
 }
 .tabstrip-tab:hover,
@@ -908,13 +947,13 @@ button { cursor: pointer; }
   display: flex;
   align-items: stretch;
   flex: 0 0 auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   background: transparent;
 }
 .tabstrip-item.is-active {
-  border-color: rgba(127, 227, 192, 0.5);
-  background: rgba(127, 227, 192, 0.08);
+  border-color: rgba(138, 180, 255, 0.6);
+  background: rgba(138, 180, 255, 0.1);
 }
 .tabstrip-item .tabstrip-tab {
   border: 0;
@@ -946,24 +985,32 @@ button { cursor: pointer; }
    wedge the pane. */
 .page-dialog {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 66px);
-  z-index: 70;
-  width: min(420px, calc(100vw - 24px));
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 8px);
+  /* A blocking page prompt stays above the soft docks: it must remain
+     answerable even if the user opens a sheet while it is pending. */
+  z-index: 95;
+  width: auto;
+  max-width: 520px;
+  max-height: 200px;
+  margin: 0 auto;
   padding: 12px;
-  transform: translateX(-50%);
+  overflow: auto;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  background: #1a2420;
+  background: #151d27;
   color: var(--text);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
 }
+
+.panes-app.dialog-open { bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px); }
 
 .page-dialog[hidden] { display: none; }
 .page-dialog p { margin: 0 0 8px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .page-dialog-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; color: var(--muted); font-size: 11px; }
 .page-dialog-field[hidden] { display: none; }
-.page-dialog-field input { min-height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: #080d0a; color: var(--text); font-size: 16px; }
+.page-dialog-field input { min-height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: #0c1118; color: var(--text); font-size: 16px; }
 .page-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .page-dialog-actions .btn { min-height: 40px; min-width: 84px; }
 
@@ -1059,32 +1106,43 @@ button { cursor: pointer; }
 .pane.reordering { opacity: 0.5; }
 .pane.drop-target { box-shadow: inset 0 0 0 2px var(--mint); }
 
+/* Context actions are a docked action rail above the workspace bar, not a
+   floating menu on top of a live pane. */
 .context-menu {
   position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 8px);
   z-index: 75;
-  min-width: 190px;
-  padding: 4px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 6px;
+  overflow-x: auto;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
   background: var(--surface);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.62);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45);
 }
+
+.panes-app.menu-open { bottom: calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 68px); }
 .context-menu[hidden] { display: none; }
 .context-menu button {
   display: flex;
   align-items: center;
-  width: 100%;
-  min-height: 40px;
-  padding: 0 10px;
-  border: 0;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: transparent;
+  background: var(--raised);
   color: var(--text);
   text-align: left;
+  white-space: nowrap;
   font-size: 13px;
 }
 .context-menu button:hover,
-.context-menu button:focus-visible { background: var(--hover); }
+.context-menu button:focus-visible { background: var(--hover); border-color: var(--line-strong); }
 @media (pointer: coarse), (max-width: 699px) {
   .context-menu button { min-height: 44px; }
 }
@@ -1106,7 +1164,7 @@ button { cursor: pointer; }
   padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #080d0a;
+  background: #0c1118;
   color: var(--text);
 }
 #browser-control-select[hidden],
@@ -1128,3 +1186,44 @@ button { cursor: pointer; }
   font-size: 13px;
 }
 .pane-reopen[hidden] { display: none; }
+
+/* Overlays can overlap in time: a page dialog may arrive while a sheet is
+   open, and the soft keyboard shrinks the viewport. Reserve the union of the
+   active overlays so a later, smaller one never steals the space the live
+   panes need. */
+@media (max-width: 899px) {
+  .panes-app.panel-open.menu-open {
+    bottom: max(calc(var(--panel-h) + 16px), calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 68px));
+  }
+  .panes-app.menu-open.dialog-open {
+    bottom: max(calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 68px), calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px));
+  }
+  .panes-app.panel-open.dialog-open {
+    bottom: max(calc(var(--panel-h) + 16px), calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px));
+  }
+}
+@media (max-width: 699px) {
+  body.keyboard-open .panes-app.menu-open {
+    bottom: max(var(--keyboard-inset, 0px), calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 68px));
+  }
+  /* The browser-control input keeps the keyboard open, so lift the aside and
+     reserve the space above it instead of leaving it behind the keyboard. */
+  body.keyboard-open .page-dialog {
+    bottom: calc(var(--keyboard-inset, 0px) + var(--bar-height) + env(safe-area-inset-bottom, 0px) + 8px);
+  }
+  body.keyboard-open .panes-app.dialog-open {
+    bottom: calc(var(--keyboard-inset, 0px) + var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px);
+  }
+  body.keyboard-open .panes-app.panel-open {
+    bottom: max(var(--keyboard-inset, 0px), calc(var(--panel-h) + 16px));
+  }
+  body.keyboard-open .panes-app.panel-open.menu-open {
+    bottom: max(var(--keyboard-inset, 0px), calc(var(--panel-h) + 16px), calc(var(--bar-height) + env(safe-area-inset-bottom, 0px) + 68px));
+  }
+  body.keyboard-open .panes-app.menu-open.dialog-open {
+    bottom: calc(var(--keyboard-inset, 0px) + var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px);
+  }
+  body.keyboard-open .panes-app.panel-open.dialog-open {
+    bottom: max(calc(var(--panel-h) + 16px), calc(var(--keyboard-inset, 0px) + var(--bar-height) + env(safe-area-inset-bottom, 0px) + 216px));
+  }
+}

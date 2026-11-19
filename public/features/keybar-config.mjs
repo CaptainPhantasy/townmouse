@@ -32,7 +32,11 @@ export function init(T1) {
       <label><input type="checkbox" data-key="symbols" ${cfg.symbols ? 'checked' : ''}> Symbols</label>
     </div>
   `;
-  panel.insertBefore(row, panel.querySelector('.settings-actions'));
+  // The first .settings-actions in the panel belongs to the voice section and
+  // is not a direct child. Target the panel's own Done row instead.
+  const actions = panel.querySelector(':scope > .settings-actions');
+  if (actions) panel.insertBefore(row, actions);
+  else panel.append(row);
 
   function save() {
     T1.storage.set(LS_KEYBAR, JSON.stringify(cfg));

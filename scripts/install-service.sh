@@ -59,6 +59,7 @@ cat > "$PLIST" <<PLISTEOF
   <key>EnvironmentVariables</key>
   <dict>
     <key>PORT</key><string>$PORT</string>
+    <key>TERMINALONE_TRUSTED_ORIGINS</key><string>${TERMINALONE_TRUSTED_ORIGINS:-}</string>
     <key>PATH</key><string>$(dirname "$NODE"):/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>

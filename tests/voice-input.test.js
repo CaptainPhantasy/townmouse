@@ -15,11 +15,10 @@ const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
 const PORT = process.env.VOICE_PORT || 11005;
-const BASE_URL = `http://localhost:${PORT}`;
 
-function get(p) {
+function get(p, port = PORT) {
   return new Promise((resolve, reject) => {
-    const req = http.get(`${BASE_URL}${p}`, (res) => {
+    const req = http.get(`http://localhost:${port}${p}`, (res) => {
       let body = '';
       res.on('data', (d) => { body += d; });
       res.on('end', () => resolve({ statusCode: res.statusCode, body }));
@@ -29,11 +28,11 @@ function get(p) {
   });
 }
 
-async function waitForHealth(timeoutMs = 20000) {
+async function waitForHealth(timeoutMs = 20000, port = PORT) {
   const start = Date.now();
   for (;;) {
     try {
-      const r = await get('/health');
+      const r = await get('/health', port);
       if (r.statusCode === 200 && JSON.parse(r.body).status === 'ok') return;
     } catch (_) {}
     if (Date.now() - start > timeoutMs) throw new Error('server did not become healthy');
@@ -41,8 +40,8 @@ async function waitForHealth(timeoutMs = 20000) {
   }
 }
 
-function openWs() {
-  const ws = new WebSocket(`ws://localhost:${PORT}`);
+function openWs(port = PORT) {
+  const ws = new WebSocket(`ws://localhost:${port}`);
   return new Promise((resolve, reject) => {
     ws.on('open', () => resolve(ws));
     ws.on('error', reject);
@@ -87,6 +86,36 @@ printf 'git status.\\n' > "$outdir/$base.txt"
 function assertLog(ok, msg) {
   assert.ok(ok, msg);
   console.log('  ✓ ' + msg);
+}
+
+// A transcriber that cannot start must still answer the recording window,
+// with two windows attached so the single-window fallback cannot mask it.
+async function missingTranscriberCheck() {
+  const port = Number(PORT) + 1;
+  const missing = spawn('node', [path.join(__dirname, '..', 'src', 'server.js')], {
+    env: { ...process.env, PORT: String(port), TERMINALONE_STT_BIN: path.join(os.tmpdir(), 'townmouse-no-such-whisper') },
+    stdio: ['ignore', 'ignore', 'ignore']
+  });
+  try {
+    await waitForHealth(20000, port);
+    const a = await openWs(port);
+    a.send(JSON.stringify({ type: 'shell', cols: 80, rows: 24 }));
+    const shell = await waitForMsg(a, (m) => m.type === 'ready');
+    const b = await openWs(port);
+    b.send(JSON.stringify({ type: 'resume', sessionId: shell.sessionId, cols: 80, rows: 24 }));
+    await waitForMsg(b, (m) => m.type === 'ready' && m.resumed);
+    b.send(JSON.stringify({ type: 'voice-start', mimeType: 'audio/webm', voiceId: 'rec-2' }));
+    await waitForMsg(b, (m) => m.type === 'voice-ready');
+    b.send(JSON.stringify({ type: 'voice-chunk', b64: Buffer.from('audio').toString('base64'), voiceId: 'rec-2' }));
+    b.send(JSON.stringify({ type: 'voice-end', voiceId: 'rec-2' }));
+    const failed = await waitForMsg(b, (m) => m.type === 'voice-error');
+    assertLog(failed.code === 'STT_UNAVAILABLE' && /not found/.test(failed.message || ''),
+      `missing transcriber reports to the recording window (${failed.code}: ${failed.message})`);
+    a.close();
+    b.close();
+  } finally {
+    missing.kill('SIGTERM');
+  }
 }
 
 async function run() {
@@ -172,6 +201,7 @@ async function run() {
     assertLog(resumedTranscript.type === 'voice-transcript', `reconnected window finishes its recording (${resumedTranscript.code || resumedTranscript.text})`);
     after.close();
     stranger.close();
+    await missingTranscriberCheck();
   } catch (err) {
     console.error('\n✗ ' + (err && err.message ? err.message : err));
     if (log.trim()) console.error('--- server log ---\n' + log.trim());

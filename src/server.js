@@ -651,7 +651,7 @@ function transcribeAudioFile(session, ws, audioPath, tmpDir) {
     settled = true;
     clearTimeout(timer);
     const code = err.code === 'ENOENT' ? 'STT_UNAVAILABLE' : 'STT_ERROR';
-    voiceError(session, code, err.code === 'ENOENT' ? 'Local whisper command not found' : err.message);
+    voiceError(session, ws, code, err.code === 'ENOENT' ? 'Local whisper command not found' : err.message);
     cleanupTempDir(tmpDir);
   });
   child.on('exit', (code) => {

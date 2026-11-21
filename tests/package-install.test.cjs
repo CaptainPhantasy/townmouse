@@ -4,10 +4,10 @@
  * Package install gate.
  *
  * Packs the release artifact, installs it the way a user does, and checks the
- * installed application — not this checkout. It deliberately installs with
- * --ignore-scripts so the hardest case is the tested one: npm 12 skips
- * dependency install scripts by default (allow-scripts = [""]), so the package
- * must work without its postinstall.
+ * installed application — not this checkout. On macOS it installs with
+ * --ignore-scripts (npm 12 skips dependency install scripts by default), which
+ * is the hardest case. On Linux it must allow scripts: node-pty has no Linux
+ * prebuild, so the native module is compiled by its install script.
  *
  * Run with:
  *   scripts/node-runtime.sh exec tests/package-install.test.cjs
@@ -88,17 +88,20 @@ async function waitForHealth(timeoutMs = 30000) {
     });
     if (!tarball) throw new Error('no tarball to install');
 
-    await run('install: a clean project installs the package with scripts ignored', () => {
+    // node-pty has no prebuilt Linux addon; Linux consumer installs must compile it.
+    const needsNativeBuild = process.platform === 'linux';
+    const installMode = needsNativeBuild ? 'with the native build' : 'with scripts ignored';
+    await run(`install: a clean project installs the package ${installMode}`, () => {
       fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ name: 'tm-consumer', version: '1.0.0', private: true }, null, 2));
-      execFileSync('npm', ['install', '--ignore-scripts', tarball], { cwd: appDir, encoding: 'utf8', stdio: 'pipe' });
+      const installFlags = needsNativeBuild ? [] : ['--ignore-scripts'];
+      execFileSync('npm', ['install', ...installFlags, tarball], { cwd: appDir, encoding: 'utf8', stdio: 'pipe' });
       const pkg = path.join(appDir, 'node_modules', 'townmouse');
       ensure(fs.existsSync(pkg), 'the package is installed', pkg);
       const launch = path.join(appDir, 'node_modules', '.bin', 'townmouse');
       ensure(fs.existsSync(launch), 'the CLI is linked', launch);
     });
 
-    // The test HOME has no Puppeteer cache (scripts are ignored on purpose), so
-    // point the installed app at whatever browser this machine already has.
+    // The test HOME has no Puppeteer cache; pass the checkout's resolved browser.
     const systemBrowser = resolveChrome();
     await run('start: the installed application answers and serves its engine assets', async () => {
       const bin = path.join(appDir, 'node_modules', '.bin', 'townmouse');

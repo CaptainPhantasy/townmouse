@@ -224,7 +224,8 @@ async function dispatchFile(page, selector, name, type, eventName) {
     });
     assert(reader.whiteSpace === 'pre-wrap', `reader should word-wrap (${reader.whiteSpace})`);
     assert(reader.overflowWrap === 'break-word', `reader should break long tokens (${reader.overflowWrap})`);
-    assert(reader.text.includes('pasted-pane.png'), `reader transcript should contain the pasted attachment: ${JSON.stringify(reader.text.slice(-400))}`);
+    const unwrappedTranscript = reader.text.replace(/\r?\n/g, '');
+    assert(unwrappedTranscript.includes('pasted-pane.png'), `reader transcript should contain the pasted attachment: ${JSON.stringify(reader.text.slice(-400))}`);
     await page.evaluate(() => document.querySelector('#reader-close').click());
     await page.waitForFunction('document.querySelector("#reader-view").hidden', { timeout: 5000 });
 

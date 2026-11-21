@@ -5,7 +5,8 @@
 **CI (final head `d9adb07`):** run `44901950768` — success
 **Tag:** `v0.2.1` (annotated, points to `056ed39`)
 **GitHub release:** https://github.com/CaptainPhantasy/townmouse/releases/tag/v0.2.1 (Latest)
-**npm:** pending the owner's second factor; `npm publish` returns `EOTP`. Tarball `townmouse-0.2.1.tgz`, sha256 `804a0752aada0307991dadfeba22dc6990f5ea9ee57c02de79c30c5d84f6b44b`.
+**Release asset:** https://github.com/CaptainPhantasy/townmouse/releases/download/v0.2.1/townmouse-0.2.1.tgz — 6,475,409 bytes, sha256 `804a0752aada0307991dadfeba22dc6990f5ea9ee57c02de79c30c5d84f6b44b`, with `SHA256SUMS` beside it. This is an installable channel now: the asset was downloaded, checksum-verified, installed into a clean project with `--ignore-scripts`, and its server answered `/health` and served the terminal engine.
+**npm:** pending the owner's second factor; `npm publish` returns `EOTP`. The release does not depend on it: the tagged tarball is attached to the release.
 **Container:** `townmouse:0.2.1` (image `0f2b26e73a1a`), built from `056ed39` with provenance labels.
 
 ## Contents
@@ -26,6 +27,7 @@
 | Review | PR #6, two rounds | 4 findings addressed; 0 unresolved; 0 new |
 | Container health | `docker inspect` + `/health` | `healthy`; browser engine `/usr/bin/chromium` |
 | Tag and release | `git ls-remote --tags`, `gh release view` | present; v0.2.1 marked Latest; v0.2.0 notes point here |
+| Release asset | `gh release download v0.2.1`, `shasum -c`, clean `npm install`, start | checksum OK; `townmouse --version` → `0.2.1`; `/health` 200; engine asset 200 |
 
 ## Known limits (stated, not hidden)
 

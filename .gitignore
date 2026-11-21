@@ -1,8 +1,17 @@
 .env
+.env.*
+!.env.example
 node_modules/
 .DS_Store
+.idea/
+.vscode/
 .work/
+/.runtime/
+/dist/
+/build/
 /evidence/
+*.log
+*.tgz
 
 # Harness control-plane — never ship (infra topology, governance state)
 # `**/.supercache` catches symlinks too (root `.supercache/` only matches dirs)

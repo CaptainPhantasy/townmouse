@@ -774,6 +774,25 @@ function byRole(elements, role, name) {
       ensure(elapsed < 2500, 'the wait returned promptly', elapsed);
     });
 
+    await run('wait: a normal regex still matches through the worker', async () => {
+      await json(`/panes/${terminalPaneId2}/command`, 'POST', { command: 'printf "READY42\\n"', waitMs: 300 });
+      const waited = await json(`/panes/${terminalPaneId2}/wait?regex=READY%5B0-9%5D%2B&timeout=4000&since=0`);
+      ensure(waited.matched === true && waited.reason === 'match', 'the regex matched', waited);
+    });
+
+    await run('wait: a catastrophic regex is refused promptly, not executed', async () => {
+      // Give the pattern a run it can actually backtrack over.
+      await json(`/panes/${terminalPaneId2}/command`, 'POST', {
+        command: `printf '%s\\n' '${'a'.repeat(40)}!'`,
+        waitMs: 300
+      });
+      const started = Date.now();
+      const refused = await api(`/panes/${terminalPaneId2}/wait?regex=${encodeURIComponent('(a|aa)+Z')}&timeout=5000&since=0`);
+      ensure(refused.status === 400, 'the hostile pattern was refused', { status: refused.status, body: refused.data });
+      ensure(/too long|literal/i.test(refused.data.error || ''), 'the refusal explains the limit', refused.data.error);
+      ensure(Date.now() - started < 3000, 'the refusal was prompt', Date.now() - started);
+    });
+
     await run('journal: a stale ref is reported as missing, not guessed', async () => {
       const click = await api(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'click', ref: 'e99999' });
       ensure(click.status === 404, 'unknown ref is 404', click.status);

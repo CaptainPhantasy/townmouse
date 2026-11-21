@@ -9,7 +9,7 @@ const pty = require('node-pty');
 const { resolveShell } = require('./shell-resolve');
 const { replayTranscript } = require('./replay-text');
 const { buildGuide } = require('./agent-guide');
-const { compileSafePattern } = require('./safe-regex');
+const { createPatternMatcher } = require('./safe-regex');
 
 const MAX_PANES_PER_TAB = 4;
 const MAX_TABS = 24;
@@ -924,48 +924,64 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       res.status(400).json({ error: 'Provide match, regex, idleMs, or state.' });
       return;
     }
+    // A client-supplied regex is evaluated in a worker thread so a pattern with
+    // catastrophic backtracking can be terminated instead of freezing the
+    // event loop every other request shares.
     let matcher = null;
     if (pattern) {
-      // Tested synchronously on the event loop; reject backtracking bombs.
-      const compiled = compileSafePattern(pattern);
-      if (compiled.error) { res.status(400).json({ error: compiled.error }); return; }
-      matcher = compiled.regex;
+      const created = createPatternMatcher(pattern);
+      if (created.error) { res.status(400).json({ error: created.error }); return; }
+      matcher = created;
     }
     const started = Date.now();
-    const result = await new Promise((resolve) => {
-      let timer = null;
-      let finished = false;
-      const finish = (payload) => {
-        if (finished) return;
-        finished = true;
-        if (timer) clearInterval(timer);
-        resolve(payload);
-      };
-      const snapshot = (matched, reason) => {
-        const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
-        finish({
-          matched, reason,
-          data: data.slice(-100000),
-          offset: pane.totalOffset,
-          idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
-          agentState: pane.agentState,
-          agentMessage: pane.agentMessage,
-          elapsedMs: Date.now() - started
-        });
-      };
-      const check = () => {
-        const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
-        if (state && pane.agentState === (state === 'unknown' ? null : state)) return snapshot(true, 'state');
-        if (match && data.includes(match)) return snapshot(true, 'match');
-        if (matcher && matcher.test(data)) return snapshot(true, 'match');
-        if (idleMs && Date.now() - pane.lastOutputAt >= idleMs) return snapshot(true, 'idle');
-        if (Date.now() - started >= timeout) return snapshot(false, 'timeout');
-      };
-      timer = setInterval(check, 100);
-      timer.unref?.();
-      check();
-      res.on('close', () => finish({ aborted: true }));
-    });
+    let result;
+    try {
+      result = await new Promise((resolve) => {
+        let finished = false;
+        const finish = (payload) => {
+          if (finished) return;
+          finished = true;
+          resolve(payload);
+        };
+        const snapshot = (matched, reason) => {
+          const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
+          finish({
+            matched, reason,
+            data: data.slice(-100000),
+            offset: pane.totalOffset,
+            idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
+            agentState: pane.agentState,
+            agentMessage: pane.agentMessage,
+            elapsedMs: Date.now() - started
+          });
+        };
+        res.on('close', () => finish({ aborted: true }));
+        const run = async () => {
+          while (!finished) {
+            const data = pane.buffer.slice(Math.max(0, since - pane.bufferStart));
+            if (state && pane.agentState === (state === 'unknown' ? null : state)) return snapshot(true, 'state');
+            if (match && data.includes(match)) return snapshot(true, 'match');
+            if (matcher) {
+              try {
+                if (await matcher.test(data)) return snapshot(true, 'match');
+              } catch (error) {
+                return finish({ error: error.message, status: error.status || 400 });
+              }
+            }
+            if (idleMs && Date.now() - pane.lastOutputAt >= idleMs) return snapshot(true, 'idle');
+            if (Date.now() - started >= timeout) return snapshot(false, 'timeout');
+            await new Promise((next) => setTimeout(next, 100));
+          }
+        };
+        void run();
+      });
+    } finally {
+      if (matcher) matcher.close();
+    }
+    if (result && result.error) {
+      if (!res.writableEnded) res.status(result.status || 400).json({ error: result.error });
+      return;
+    }
     if (!res.writableEnded) res.json(result);
   }));
   app.post('/api/panes/panes/:id/resize', auth, route(async (req, res) => {

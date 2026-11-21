@@ -10,7 +10,7 @@ Townmouse is version 0.2.1, the second product cut, and is licensed AGPL-3.0-onl
 
 - Element catalogs never serialize a password field's value. A catalog is served to view-only bearer grants, so returning it would cross the sharing boundary that the image and page text already respect.
 - Browser URL waits match literally. A client-supplied regular expression was tested on the event loop, where a catastrophic pattern could stall every terminal, browser, and API request.
-- Terminal wait patterns reject nested and stacked quantifiers and are capped at 200 characters for the same reason.
+- Terminal wait patterns run in a worker thread with a deadline, so a pattern that backtracks pathologically is terminated and refused instead of stalling the server; patterns are capped at 200 characters.
 
 ### Packaging
 

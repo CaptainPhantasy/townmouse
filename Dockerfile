@@ -1,5 +1,17 @@
 FROM node:22-bookworm-slim
 
+# Provenance. A published image must be traceable to a commit; pass these at
+# build time (docs/PACKAGING.md shows the command). Defaults say "unknown"
+# instead of pretending.
+ARG GIT_REVISION=unknown
+ARG TOWNMOUSE_VERSION=dev
+LABEL org.opencontainers.image.title="Townmouse" \
+      org.opencontainers.image.description="Local terminal and agent browser workspace" \
+      org.opencontainers.image.source="https://github.com/CaptainPhantasy/townmouse" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${TOWNMOUSE_VERSION}" \
+      org.opencontainers.image.revision="${GIT_REVISION}"
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_SKIP_DOWNLOAD=1 \
     TERMINALONE_CHROME=/usr/bin/chromium \

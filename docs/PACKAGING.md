@@ -110,7 +110,13 @@ the Chromium sandbox.
 Build and run:
 
 ```sh
-docker build -t townmouse .
+TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
+  GIT_REVISION=$(git rev-parse HEAD) \
+  docker build \
+    --build-arg TOWNMOUSE_VERSION="$TOWNMOUSE_VERSION" \
+    --build-arg GIT_REVISION="$GIT_REVISION" \
+    -t townmouse:"$TOWNMOUSE_VERSION" \
+    -t townmouse:latest .
 docker run --rm -p 127.0.0.1:11001:11001 -v townmouse-home:/home/node/.townmouse -v townmouse-config:/home/node/.config/terminalone townmouse
 ```
 

@@ -101,7 +101,13 @@ townmouse --port 12000 --no-open
 ### With Docker
 
 ```sh
-docker build -t townmouse .
+TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
+  GIT_REVISION=$(git rev-parse HEAD) \
+  docker build \
+    --build-arg TOWNMOUSE_VERSION="$TOWNMOUSE_VERSION" \
+    --build-arg GIT_REVISION="$GIT_REVISION" \
+    -t townmouse:"$TOWNMOUSE_VERSION" \
+    -t townmouse:latest .
 docker run --rm -p 127.0.0.1:11001:11001 \
   -v townmouse-home:/home/node/.townmouse \
   -v townmouse-config:/home/node/.config/terminalone \
@@ -297,9 +303,9 @@ More docs:
 - [docs/PACKAGING.md](docs/PACKAGING.md) — npm, Docker, the macOS wrapper, release gates, and backup.
 - [TOWNMOUSE.md](TOWNMOUSE.md) — product boundary and origin.
 
-## Status (Or: Version 0.1.0, and honest about it)
+## Status (Or: Version 0.2.0, and honest about it)
 
-Version 0.1.0, the first product cut. Two working surfaces: the single
+Version 0.2.0. 0.1.0 was the first product cut. Two working surfaces: the single
 terminal/browser workspace and the pane workspace. The pane workspace is the
 native path for agent work; the single-browser workspace remains for
 compatibility. Known limits are under Security and in

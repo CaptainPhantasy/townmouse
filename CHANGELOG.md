@@ -2,7 +2,19 @@
 
 All notable changes to Townmouse and the TerminalOne engine it embeds.
 
-Townmouse is version 0.2.0, the second product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
+Townmouse is version 0.2.1, the second product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
+
+## [0.2.1] — 2026-11-21
+
+### Security
+
+- Element catalogs never serialize a password field's value. A catalog is served to view-only bearer grants, so returning it would cross the sharing boundary that the image and page text already respect.
+- Browser URL waits match literally. A client-supplied regular expression was tested on the event loop, where a catastrophic pattern could stall every terminal, browser, and API request.
+- Terminal wait patterns reject nested and stacked quantifiers and are capped at 200 characters for the same reason.
+
+### Packaging
+
+- `repository.url` normalized to `git+https://…`, the form npm requires at publish time.
 
 ## [0.2.0] — 2026-11-21
 

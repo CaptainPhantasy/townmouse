@@ -303,9 +303,9 @@ More docs:
 - [docs/PACKAGING.md](docs/PACKAGING.md) — npm, Docker, the macOS wrapper, release gates, and backup.
 - [TOWNMOUSE.md](TOWNMOUSE.md) — product boundary and origin.
 
-## Status (Or: Version 0.2.0, and honest about it)
+## Status (Or: Version 0.2.1, and honest about it)
 
-Version 0.2.0. 0.1.0 was the first product cut. Two working surfaces: the single
+Version 0.2.1. 0.1.0 was the first product cut. Two working surfaces: the single
 terminal/browser workspace and the pane workspace. The pane workspace is the
 native path for agent work; the single-browser workspace remains for
 compatibility. Known limits are under Security and in

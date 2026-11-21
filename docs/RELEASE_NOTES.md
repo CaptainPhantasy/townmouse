@@ -58,6 +58,15 @@ That is the pitch. The rest is details.
 
 ---
 
+## 0.2.1 — Security fixes (2026-11-21)
+
+A patch release for two boundaries found after 0.2.0 was tagged:
+
+- **Passwords never leave a read catalog.** View-only sharing now returns a redacted password field, matching what the screenshot and page text already do.
+- **Wait patterns cannot stall the server.** Browser URL waits are literal; terminal wait regexes reject nested or stacked quantifiers and are length-capped.
+
+`v0.2.0` remains tagged for the record; use 0.2.1.
+
 ## 0.2.0 — What Changed (2026-11-21)
 
 **Agent control.** Browser panes are driven by role and name across cross-origin frames and open shadow roots, not only by coordinates. Every observation carries an id, capture time, viewport, scroll offset, address, and title; an action whose target moved is refused with "look again". Terminal panes report program, agent, and command status separately, and ordinary commands run as tracked jobs with exit codes. `pane read` is clean screen text by default; `--raw` keeps the terminal data.
@@ -72,7 +81,7 @@ That is the pitch. The rest is details.
 
 Townmouse was seeded on 2026-11-14 from TerminalOne commit `dd0cbde6` ("Preserve recovered TerminalOne glass browser workspace"), originally branch `dot/recover-terminalone-20261114`. The engine stays the canonical simple PTY. The browser workspace, agent browser, view/control grants, and workspace interface live here; they do not go upstream into TerminalOne.
 
-Product version: 0.2.0, released 2026-11-21.
+Product version: 0.2.1, released 2026-11-21.
 
 ---
 
@@ -173,7 +182,7 @@ Townmouse is AGPL-3.0-only. If you run this software, or a modified version of i
 │  DOCUMENT METADATA                                        │
 ├──────────────────────────────────────────────────────────┤
 │  Classification:   Pre-Release Notes                      │
-│  Product:          Townmouse 0.2.0 (2026-11-21)           │
+│  Product:          Townmouse 0.2.1 (2026-11-21)           │
 │  Engine:           TerminalOne v1.0.0 (2026-06-22)        │
 │  Cat Supervision:  Bella Approved (keyboard walked on)    │
 │  Bowser Status:    Monitoring routers, sitting on tabs    │

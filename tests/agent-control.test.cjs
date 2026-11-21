@@ -15,7 +15,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
+const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const APP_PORT = 11481;
@@ -125,6 +126,7 @@ const MAIN_PAGE = `<!doctype html>
   <h1 id="heading">Control fixture</h1>
   <button id="expand">Expand layout</button>
   <label>Project name <input id="name" aria-label="Project name" placeholder="Project name" value="old text"></label>
+  <div id="note" contenteditable="true" aria-label="Note field" style="border:1px solid #ccc;min-height:24px">old note</div>
   <button id="save">Save project</button>
   <select id="color" aria-label="Colour"><option value="red">Red</option><option value="blue">Blue</option></select>
   <input id="when" type="date" aria-label="Due date">
@@ -658,6 +660,66 @@ function byRole(elements, role, name) {
       ensure(!serialized.includes(token), 'token is not in the observation payload');
       const content = await json(`/panes/${browserPaneId}/browser/content`);
       ensure(!content.text.includes(token), 'token is not in the page text');
+    });
+
+    await run('cli: the documented browser argument order targets the named pane', async () => {
+      const catalogued = await json(`/panes/${browserPaneId2}/browser/elements`);
+      const save = byRole(catalogued.elements, 'button', 'Save project');
+      ensure(save, 'save button catalogued on the second browser', catalogued.elements.map((element) => element.name));
+      const panes = path.join(ROOT, 'scripts', 'panes');
+      // The environment points at a *terminal*; the named browser pane must win.
+      const output = execFileSync(process.execPath, [panes, 'pane', 'browser', 'click', browserPaneId2, '--ref', save.ref], {
+        env: { ...process.env, TOWNMOUSE_API: `${BASE}/api/panes`, TOWNMOUSE_TOKEN: token, TOWNMOUSE_PANE_ID: terminalPaneId },
+        encoding: 'utf8'
+      });
+      const result = JSON.parse(output);
+      ensure(result.action && result.action.status === 'completed',
+        'pane browser click <pane-id> --ref reaches the named pane', result.action || result);
+    });
+
+    await run('cli: send-text keeps every word when the pane comes from the environment', async () => {
+      const panes = path.join(ROOT, 'scripts', 'panes');
+      execFileSync(process.execPath, [panes, 'pane', 'send-text', terminalPaneId2, '--raw', 'hello', 'world'], {
+        env: { ...process.env, TOWNMOUSE_API: `${BASE}/api/panes`, TOWNMOUSE_TOKEN: token },
+        encoding: 'utf8'
+      });
+      await sleep(400);
+      const text = await json(`/panes/${terminalPaneId2}/text?mode=raw`);
+      ensure(text.text.includes('hello world'), 'both words reached the terminal', text.text.slice(-160));
+    });
+
+    await run('type: --replace clears a contenteditable field', async () => {
+      await json(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'navigate', url: `http://127.0.0.1:${FIXTURE_PORT}/` });
+      await sleep(300);
+      const catalogued = await json(`/panes/${browserPaneId}/browser/elements`);
+      const note = catalogued.elements.find((element) => element.name === 'Note field');
+      ensure(note && note.role === 'textbox', 'contenteditable is catalogued as a textbox', catalogued.elements.map((element) => `${element.role}:${element.name}`));
+      const typed = await api(`/panes/${browserPaneId}/browser/action`, 'POST', {
+        action: 'type', ref: note.ref, text: 'plain replacement', replace: true
+      });
+      ensure(typed.ok && typed.data.action.status === 'completed', 'typing completed', typed.data);
+      const content = await json(`/panes/${browserPaneId}/browser/content`);
+      ensure(content.text.includes('plain replacement'), 'new text is present', content.text.slice(0, 300));
+      ensure(!content.text.includes('old note'), 'the previous contenteditable text is gone', content.text.slice(0, 300));
+    });
+
+    await run('jobs: cancelling a job terminates its descendants', async () => {
+      const marker = path.join(os.tmpdir(), `tm-cancel-${Date.now()}`);
+      const job = await json(`/panes/${terminalPaneId}/jobs`, 'POST', {
+        command: `sh -c 'sleep 30 & echo $! > ${marker}; wait'`,
+        wait: false
+      });
+      for (let attempt = 0; attempt < 40 && !fs.existsSync(marker); attempt++) await sleep(100);
+      ensure(fs.existsSync(marker), 'the job recorded its child pid');
+      const childPid = Number(fs.readFileSync(marker, 'utf8').trim());
+      await json(`/panes/${terminalPaneId}/jobs/${job.id}`, 'DELETE');
+      await sleep(1200);
+      let alive = true;
+      try { process.kill(childPid, 0); } catch (_) { alive = false; }
+      ensure(!alive, 'the descendant process was terminated with the job', childPid);
+      const final = await json(`/panes/${terminalPaneId}/jobs/${job.id}`);
+      ensure(final.status === 'cancelled', 'the job reports cancelled', final);
+      fs.rmSync(marker, { force: true });
     });
 
     await run('journal: a stale ref is reported as missing, not guessed', async () => {

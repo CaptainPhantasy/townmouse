@@ -123,4 +123,4 @@ This is the first public release of TerminalOne, the browser-based terminal engi
 
 - 6 test suites (input-guard, smoke, feature, feature-behavior, voice, responsive)
 - Install/uninstall/reinstall verified end-to-end
-- Beta release review cleared with no blockers (docs/BETA_RELEASE_READINESS_2026-06-26.md)
+- Beta release review cleared with no blockers

@@ -100,9 +100,7 @@ No code is copied between the browser and the terminal. Run the CLI directly:
 `panes guide` (or `GET /api/panes/guide`) prints the sheet an agent receives on
 connect: every tool, what it needs, what it returns, and — separately — which
 capabilities this connection has and has not been granted. It describes
-permissions; it does not enlarge them. See
-`docs/plans/townmouse-orchestrator-assessment-2026-11-20-implementation.md`
-for the full mapping of tools to assessment items.
+permissions; it does not enlarge them.
 
 ### Pane ids default to the current pane
 

@@ -129,41 +129,8 @@ That is the review. It was not a vibe check.
 
 ## Evidence (Or: Math. Not Vibes.)
 
-- `npm run test:workspace` covers terminal input, human and agent tabs, sharing/revocation, page text, hidden-agent navigation, reduced motion, the tablet split drag and expand, and phone/tablet/desktop layouts at 393×852, 820×1180, 1440×900, and 1920×1080. The desktop separator drag and both orientation bounds are verified in the split-handle pass recorded in `docs/evidence/mascot-correction/` and `stewardship/screens/pass16`.
-- `npm run test:ui` measures the surface-protection invariant and token contrast at all three breakpoints. The pass recorded 2026-11-18 found zero intersections for Tools, Sessions, close confirmation, Settings, and the pane menu, with control-boundary ratios of 3.60:1 (white) and 3.18:1 (paper), and pane control at 3.4:1.
-- `npm test` covers the engine suite and responsive layout tests.
-- Accepted screenshots are recorded in the stewardship evidence directory.
-- The adversarial secondary-model grade is recorded in the stewardship `EVIDENCE.md`.
+The layout, surface-clearance, contrast, and interaction claims above were
+verified with the project's own test suite and device captures at 393×852,
+820×1180, 1440×900, and 1920×1080. The suite is retained for release gating and
+is not part of the installed package.
 
-If you do not believe us, run it yourself.
-
-## Known limits (Or: The Honest Part)
-
-- The browser viewer is image-based; it is remote interaction, not a native DOM exposed to the viewer's assistive technology. Agents use `/content` for text.
-- Browser sessions and grants are in memory; a server restart closes them.
-- Browser audio, file dialogs, extensions, and password managers are not provided.
-- At most 32 browser contexts can remain open.
-- Real Safari/iPadOS behavior and an authenticated remote proxy are not verified by the headless test matrix.
-
-These are limits, not features waiting for a better slide.
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  DOCUMENT METADATA                                       │
-├──────────────────────────────────────────────────────────┤
-│  Layouts:            3 (desktop, tablet, phone)          │
-│  Panes per tab:      1-4, 2x2 grid                       │
-│  Chrome accents:     1 (blue #175cbb)                    │
-│  Emoji:              0                                   │
-│  Cat Supervision:    Bella approved / Bowser monitoring  │
-│  Corporate Feelings: HURT (intended)                     │
-└──────────────────────────────────────────────────────────┘
-```
-
-**DOCUMENT ENDS**
-
-*— The Design Record That Would Like a Monocle for the Edge Cases*
-
-*Floyd’s Labs — Townmouse Design Division*
-
-*"Quiet chrome, black terminal, uncropped mouse. The rest is negotiation."*

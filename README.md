@@ -51,6 +51,17 @@ is one.
   workspace load from the local server. Offline coverage is the shell only; live
   PTYs and browser pages still need the server.
 
+### The three layouts (Or: One product, three rooms)
+
+![Desktop layout](docs/screenshots/desktop-1440x900.png)
+![Tablet layout](docs/screenshots/tablet-820x1180.png)
+![Phone layout](docs/screenshots/phone-393x852.png)
+
+Desktop keeps a persistent sidebar and runs terminal and browser side by side;
+tablet replaces it with a labeled rail and stacks the surfaces over an
+always-visible key bar; phone uses bottom navigation for one surface at a time
+and folds the key bar into a compact row.
+
 ## Requirements (Or: The parts you actually need)
 
 Node.js 22.x (preferred; 22–26 are accepted) and npm on macOS or Linux. Puppeteer
@@ -365,16 +376,9 @@ volume for the same data.
 
 ## Development (Or: Tests before vibes)
 
-```sh
-npm start              # run the workspace
-npm test               # security, unit, smoke, feature, voice, responsive, pane API, and agent-control suites
-npm run test:workspace # browser workspace journeys; starts its own preview site
-npm run test:package   # install the packed tarball and run the installed app
-# Releases: merging a version bump to main runs .github/workflows/publish.yml,
-# which publishes with npm Trusted Publishing (no stored token) once configured.
-npm run doctor         # check Node and native modules
-npm run repair         # rebuild native modules
-```
+The project keeps its own test suite and its release gates use it; the suite is
+not part of the installed package. `npm start` runs the workspace from source,
+and `npm run doctor` checks the native engine.
 
 Design notes live in [DESIGN.md](DESIGN.md). The product follows the Legacy
 Design Studio's Frontend Design workflow, with the Open Design anti-AI-slop

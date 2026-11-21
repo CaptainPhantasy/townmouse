@@ -132,9 +132,8 @@ agent guess from a picture alone, and it does not report success it cannot show.
   viewport so the owner's viewer scales the picture instead of rearranging the
   page. `mode: fit` restores the old behaviour.
 
-`docs/plans/townmouse-orchestrator-assessment-2026-11-20-implementation.md`
-maps each of these to the assessment item it answers, and
-`tests/agent-control.test.cjs` exercises them against a real browser.
+The project's test suite exercises these against a real browser; the suite is
+not part of the installed package.
 
 ## Runtime and trust
 

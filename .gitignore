@@ -13,6 +13,16 @@ node_modules/
 *.log
 *.tgz
 
+# Internal working material — not part of the public package surface.
+docs/evidence/
+docs/screenshots/*
+!docs/screenshots/desktop-1440x900.png
+!docs/screenshots/tablet-820x1180.png
+!docs/screenshots/phone-393x852.png
+docs/plans/
+docs/reference/
+docs/stt-research/
+
 # Harness control-plane — never ship (infra topology, governance state)
 # `**/.supercache` catches symlinks too (root `.supercache/` only matches dirs)
 .floyd/

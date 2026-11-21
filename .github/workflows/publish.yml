@@ -43,56 +43,63 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # The first publish of a new package must be interactive: a trusted
+          # publisher is configured on a package that already exists.
+          if ! npm view townmouse version >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::townmouse is not on npm yet. Publish the first version interactively; this workflow releases from then on."
+            exit 0
+          fi
           if npm view "townmouse@$VERSION" version >/dev/null 2>&1; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "townmouse@$VERSION is already on npm; nothing to release."
           else
-            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "townmouse@$VERSION is new; releasing."
           fi
 
       - name: Install build tools (node-pty native compile)
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq build-essential python3
 
       # Install and test with the runner's npm (10.x), which runs dependency
       # install scripts and therefore builds node-pty. Upgrading first would
       # skip that build and break the suite on Linux.
       - name: Install dependencies
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: npm ci
 
       - name: Run tests
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: npm test
 
       - name: Package install gate
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: npm run test:package
 
       - name: Build release assets
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: |
           npm pack --pack-destination .
           sha256sum townmouse-*.tgz > SHA256SUMS
 
       # Trusted publishing needs npm 11.5.1 or newer; upgrade after the tests.
       - name: Use npm with trusted publishing support
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: npm install -g npm@latest
 
       - name: Publish with provenance
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: npm publish --provenance --access public
 
       - name: Tag the release
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: |
           git tag "v${{ steps.version.outputs.version }}"
           git push origin "v${{ steps.version.outputs.version }}"
 
       - name: Create the GitHub release
-        if: steps.version.outputs.published == 'false'
+        if: steps.version.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

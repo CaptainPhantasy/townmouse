@@ -199,7 +199,7 @@ const FRAME_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Nest
 function startApp() {
   const app = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(APP_PORT), TOWNMOUSE_STATE_DIR: fs.mkdtempSync(path.join('/tmp', 'tm-agent-')) },
+    env: { ...process.env, PORT: String(APP_PORT), TOWNMOUSE_STATE_DIR: stateDir },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   app.stdout.on('data', (chunk) => { appLog += chunk; });
@@ -231,6 +231,7 @@ function byRole(elements, role, name) {
 }
 
 (async () => {
+  const stateDir = fs.mkdtempSync(path.join('/tmp', 'tm-agent-'));
   const app = startApp();
   const mainFixture = startFixture(FIXTURE_PORT, (req, res) => {
     if (req.url === '/next') { res.end(NEXT_PAGE); return; }
@@ -808,6 +809,7 @@ function byRole(elements, role, name) {
     frameFixture.close();
     await sleep(400);
     if (app.exitCode === null && app.signalCode === null) app.kill('SIGKILL');
+    try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch (_) { /* best effort */ }
   }
 
   const failures = results.filter((result) => !result.ok);

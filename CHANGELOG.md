@@ -2,9 +2,9 @@
 
 All notable changes to Townmouse and the TerminalOne engine it embeds.
 
-Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
+Townmouse is version 0.2.0, the second product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
 
-## [Unreleased]
+## [0.2.0] — 2026-11-21
 
 ### Standard browser view
 

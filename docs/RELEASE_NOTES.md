@@ -9,7 +9,7 @@
 **ENGINE HISTORY:** TerminalOne v1.0.0 — recorded 2026-06-22, 2:47 AM
 **LOCATION:** The Garage, Brown County, Indiana
 **BEVERAGE:** Coffee that completed its arc from "bold roast" to "war crime"
-**CURRENT STATE:** Two surfaces, four panes, 39 engine features deep, and a mouse with a monocle
+**CURRENT STATE:** Two surfaces, four panes, an agent control surface, 39 engine features deep, and a mouse with a monocle
 
 ---
 
@@ -58,11 +58,21 @@ That is the pitch. The rest is details.
 
 ---
 
+## 0.2.0 — What Changed (2026-11-21)
+
+**Agent control.** Browser panes are driven by role and name across cross-origin frames and open shadow roots, not only by coordinates. Every observation carries an id, capture time, viewport, scroll offset, address, and title; an action whose target moved is refused with "look again". Terminal panes report program, agent, and command status separately, and ordinary commands run as tracked jobs with exit codes. `pane read` is clean screen text by default; `--raw` keeps the terminal data.
+
+**Installation.** The packed artifact now installs and runs as an application: hoisted dependency layouts resolve, the macOS spawn helper is repaired at startup, Node 22–26 are accepted, a remapped container port works, and browser panes fall back to an installed Chrome or Chromium. Linux users on npm 12 must allow the node-pty build; `docs/PACKAGING.md` gives the exact command.
+
+**Standard view.** One compact address row, agent access behind Share, a collapsible chrome strip that gains 112–180 px of page, and the mascot only in the navigation rail. The Panes view is unchanged.
+
+---
+
 ## Where It Came From
 
 Townmouse was seeded on 2026-11-14 from TerminalOne commit `dd0cbde6` ("Preserve recovered TerminalOne glass browser workspace"), originally branch `dot/recover-terminalone-20261114`. The engine stays the canonical simple PTY. The browser workspace, agent browser, view/control grants, and workspace interface live here; they do not go upstream into TerminalOne.
 
-Product version: 0.1.0, the first product cut.
+Product version: 0.2.0, released 2026-11-21.
 
 ---
 
@@ -163,7 +173,7 @@ Townmouse is AGPL-3.0-only. If you run this software, or a modified version of i
 │  DOCUMENT METADATA                                        │
 ├──────────────────────────────────────────────────────────┤
 │  Classification:   Pre-Release Notes                      │
-│  Product:          Townmouse 0.1.0 (first product cut)    │
+│  Product:          Townmouse 0.2.0 (2026-11-21)           │
 │  Engine:           TerminalOne v1.0.0 (2026-06-22)        │
 │  Cat Supervision:  Bella Approved (keyboard walked on)    │
 │  Bowser Status:    Monitoring routers, sitting on tabs    │

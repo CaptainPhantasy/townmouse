@@ -45,6 +45,9 @@ Report vulnerabilities privately via **GitHub Security Advisories**:
 - View and control grants protect cooperative API clients. They are not a security boundary against a process that already has unrestricted access to the host.
 - Browser sessions and grants are held in memory; restarting the server closes them. At most 32 browser contexts can remain open.
 - Browser audio, file upload/download dialogs, extensions, and password-manager integration are not provided.
+- The request boundary accepts any port on a loopback hostname so a container can be published on a different host port. It still requires an exact same-origin `Origin`/`Host` match, so a page served from another local port cannot drive the server. A non-loopback hostname must be listed in `TERMINALONE_TRUSTED_ORIGINS` as an exact HTTPS origin.
+- On macOS the server makes node-pty's `spawn-helper` executable inside its own installed package at startup. npm 12 does not run dependency install scripts by default, and the tarball does not carry the mode bit; without the repair every terminal fails. The change is a mode bit on a file inside the package the server is already running from.
+- Browser panes use `TERMINALONE_CHROME` when set, otherwise Puppeteer's downloaded build, otherwise an installed Chrome, Chromium, Edge, or Brave. `GET /health` reports which one resolved. None of these are the user's personal profile.
 
 *Townmouse is AGPL-3.0-only.*
 

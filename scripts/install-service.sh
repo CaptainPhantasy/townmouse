@@ -34,6 +34,9 @@ T1_BIN_DIR_OVERRIDE="${TERMINALONE_BIN_DIR:-}"
 
 [ -n "$NODE" ] || { echo "ERROR: Townmouse requires Node 22.x; run scripts/node-runtime.sh doctor"; exit 1; }
 [ -f "$APP_DIR/src/server.js" ] || { echo "ERROR: $APP_DIR/src/server.js not found (is the volume mounted?)"; exit 1; }
+# A package tarball can lose execute bits on helper scripts. Restore the ones
+# this installer calls before it calls them.
+chmod +x "$APP_DIR/scripts/run-hooks" "$APP_DIR/scripts/t1.sh" "$APP_DIR/scripts/node-runtime.sh" 2>/dev/null || true
 if [ "${TERMINALONE_SKIP_RUNTIME_CHECK:-0}" != "1" ]; then
   "$APP_DIR/scripts/node-runtime.sh" doctor >/dev/null || {
     echo "Repairing Townmouse native modules for $($NODE -v)..."

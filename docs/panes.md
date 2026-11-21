@@ -175,7 +175,10 @@ by default; pass `--raw` to opt out. `pane keys` accepts logical names including
 `enter`, `esc`, `tab`, `ctrl+c`, `alt+x`, and arrows. `pane wait` long-polls for
 plain text, a regex, an idle interval, or an agent-reported state, and returns
 the matching output with `offset` and `elapsedMs`; the server caps a wait at 120
-seconds. `pane status` records `working`, `blocked`, `idle`, `done`, or `unknown`
+seconds. Regex patterns run in a worker thread with a 500 ms deadline, so a
+pattern that backtracks pathologically is terminated and refused instead of
+stalling the server; patterns are capped at 200 characters. `pane status` records
+`working`, `blocked`, `idle`, `done`, or `unknown`
 with an optional message; the pane header colors the badge and state responses
 carry `lastOutputAt`, `idleMs`, `exitCode`, and `exitSignal`. `pane dialog`
 answers a waiting page dialog. `attach` uploads a file with the scoped pane token

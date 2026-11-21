@@ -127,6 +127,7 @@ const MAIN_PAGE = `<!doctype html>
   <button id="expand">Expand layout</button>
   <label>Project name <input id="name" aria-label="Project name" placeholder="Project name" value="old text"></label>
   <div id="note" contenteditable="true" aria-label="Note field" style="border:1px solid #ccc;min-height:24px">old note</div>
+  <input type="password" aria-label="Password" value="hunter2">
   <button id="save">Save project</button>
   <select id="color" aria-label="Colour"><option value="red">Red</option><option value="blue">Blue</option></select>
   <input id="when" type="date" aria-label="Due date">
@@ -753,6 +754,43 @@ function byRole(elements, role, name) {
       });
       ensure(job.status === 'completed', 'the command completed', job);
       ensure(job.stdout === 'é', 'the split character decoded as one glyph', JSON.stringify(job.stdout));
+    });
+
+    await run('catalog: a password value is never serialized', async () => {
+      await json(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'navigate', url: `http://127.0.0.1:${FIXTURE_PORT}/` });
+      await sleep(300);
+      const catalogued = await json(`/panes/${browserPaneId}/browser/elements`);
+      ensure(!JSON.stringify(catalogued).includes('hunter2'), 'the password value is absent from the catalog');
+      const password = catalogued.elements.find((element) => element.name === 'Password');
+      ensure(password, 'the password field is catalogued', catalogued.elements.map((element) => element.name));
+      ensure(password.value === null && password.redacted === true, 'the password field is redacted', password);
+    });
+
+    await run('wait: a hostile url pattern returns promptly instead of stalling', async () => {
+      const started = Date.now();
+      const waited = await json(`/panes/${browserPaneId}/browser/wait`, 'POST', { url: '(.*)+Z', timeout: 300 });
+      const elapsed = Date.now() - started;
+      ensure(waited.matched === false, 'the literal pattern does not match', waited);
+      ensure(elapsed < 2500, 'the wait returned promptly', elapsed);
+    });
+
+    await run('wait: a normal regex still matches through the worker', async () => {
+      await json(`/panes/${terminalPaneId2}/command`, 'POST', { command: 'printf "READY42\\n"', waitMs: 300 });
+      const waited = await json(`/panes/${terminalPaneId2}/wait?regex=READY%5B0-9%5D%2B&timeout=4000&since=0`);
+      ensure(waited.matched === true && waited.reason === 'match', 'the regex matched', waited);
+    });
+
+    await run('wait: a catastrophic regex is refused promptly, not executed', async () => {
+      // Give the pattern a run it can actually backtrack over.
+      await json(`/panes/${terminalPaneId2}/command`, 'POST', {
+        command: `printf '%s\\n' '${'a'.repeat(40)}!'`,
+        waitMs: 300
+      });
+      const started = Date.now();
+      const refused = await api(`/panes/${terminalPaneId2}/wait?regex=${encodeURIComponent('(a|aa)+Z')}&timeout=5000&since=0`);
+      ensure(refused.status === 400, 'the hostile pattern was refused', { status: refused.status, body: refused.data });
+      ensure(/too long|literal/i.test(refused.data.error || ''), 'the refusal explains the limit', refused.data.error);
+      ensure(Date.now() - started < 3000, 'the refusal was prompt', Date.now() - started);
     });
 
     await run('journal: a stale ref is reported as missing, not guessed', async () => {

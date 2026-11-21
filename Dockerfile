@@ -38,7 +38,8 @@ COPY bin ./bin
 COPY README.md TOWNMOUSE.md DESIGN.md LICENSE SECURITY.md CHANGELOG.md ./
 RUN chmod +x scripts/panes bin/townmouse \
   && mkdir -p /home/node/.townmouse /home/node/.config/terminalone \
-  && chown -R node:node /home/node/.townmouse /home/node/.config/terminalone
+  && chown -R node:node /home/node/.townmouse /home/node/.config/terminalone \
+  && chmod 700 /home/node/.townmouse /home/node/.config/terminalone
 
 USER node
 EXPOSE 11001

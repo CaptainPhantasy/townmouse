@@ -508,6 +508,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       stdoutTruncated: false,
       stderrTruncated: false,
       child: null,
+      cancelled: false,
       waiters: []
     };
     const env = paneEnvironment({
@@ -519,10 +520,14 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       TOWNMOUSE_PANES_CLI: cliPath
     });
     const shell = resolveShell();
+    // A compound command's children are not killed by signalling only the
+    // shell. Run the job in its own process group so cancellation and pane
+    // close can terminate the whole workload.
     const child = spawn(shell, ['-lc', command], {
       cwd: pane.cwd || os.homedir(),
       env,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32'
     });
     job.child = child;
     const collect = (channel) => (chunk) => {
@@ -551,7 +556,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       finish('failed', { exitCode: null });
     });
     child.on('close', (code, signal) => {
-      finish(code === 0 ? 'completed' : 'failed', { exitCode: code, signal });
+      finish(job.cancelled ? 'cancelled' : (code === 0 ? 'completed' : 'failed'), { exitCode: code, signal });
     });
     pane.jobs.push(job);
     pane.liveJobs += 1;
@@ -580,7 +585,19 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
 
   function cancelJob(job) {
     if (job.status !== 'running' || !job.child) return false;
-    try { job.child.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    job.cancelled = true;
+    const child = job.child;
+    const pid = child.pid;
+    const signalGroup = (signal) => {
+      if (process.platform !== 'win32' && pid) {
+        try { process.kill(-pid, signal); return true; } catch (_) { /* fall through */ }
+      }
+      try { child.kill(signal); return true; } catch (_) { return false; }
+    };
+    signalGroup('SIGTERM');
+    const escalate = setTimeout(() => { signalGroup('SIGKILL'); }, 1000);
+    escalate.unref?.();
+    if (typeof child.once === 'function') child.once('exit', () => clearTimeout(escalate));
     return true;
   }
 

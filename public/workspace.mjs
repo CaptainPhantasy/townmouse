@@ -1272,7 +1272,7 @@ export async function init(T1) {
   });
   $('browser-frame').addEventListener('wheel', safe(async (event) => {
     event.preventDefault();
-    await action('scroll', { deltaY: event.deltaY });
+    await action('scroll', { deltaY: event.deltaY, pointer: true });
   }), { passive: false });
   $('browser-type').onsubmit = safe(async (event) => {
     event.preventDefault();
@@ -1289,7 +1289,7 @@ export async function init(T1) {
     if (touchStart !== null) {
       const delta = touchStart - event.changedTouches[0].clientY;
       touchStart = null;
-      if (Math.abs(delta) > 20) await action('scroll', { deltaY: delta });
+      if (Math.abs(delta) > 20) await action('scroll', { deltaY: delta, pointer: true });
     }
   }));
 

@@ -1953,7 +1953,7 @@ function queueBrowserScroll(record, deltaY, deltaX = 0) {
     record.wheelDelta = 0;
     record.wheelDeltaX = 0;
     if ((totalY || totalX) && !record.disposed) {
-      void browserAction(record, 'scroll', { deltaY: totalY, deltaX: totalX });
+      void browserAction(record, 'scroll', { deltaY: totalY, deltaX: totalX, pointer: true });
     }
   }, 70);
 }

@@ -815,6 +815,15 @@ function installBrowserWorkspace(app) {
                 if (node && typeof node.select === 'function') { node.select(); return; }
                 if (node && typeof node.setSelectionRange === 'function' && typeof node.value === 'string') {
                   node.setSelectionRange(0, node.value.length);
+                  return;
+                }
+                // A contenteditable is a textbox with neither API; select its
+                // contents with a Range so Backspace clears all of it.
+                if (node && node.isContentEditable) {
+                  const range = document.createRange();
+                  range.selectNodeContents(node);
+                  const selection = window.getSelection();
+                  if (selection) { selection.removeAllRanges(); selection.addRange(range); }
                 }
               });
               await p.keyboard.press('Backspace');
@@ -835,7 +844,14 @@ function installBrowserWorkspace(app) {
           }
           break;
         case 'scroll': {
-          if (data.ref || data.selector) {
+          if (data.pointer) {
+            // The human viewer's wheel gesture keeps the old pointer-targeted
+            // behaviour, so a list or iframe under the cursor scrolls itself.
+            const deltaX = Math.max(-1500, Math.min(1500, Number(data.deltaX ?? data.dx) || 0));
+            const deltaY = Math.max(-1500, Math.min(1500, Number(data.deltaY ?? data.dy) || 0));
+            await p.mouse.wheel({ deltaX, deltaY });
+            target = { scroller: 'pointer' };
+          } else if (data.ref || data.selector) {
             const scrolled = await dom.scroll(p, {
               marker: data.ref,
               selector: data.selector,
@@ -942,10 +958,16 @@ function installBrowserWorkspace(app) {
     return payload;
   }
 
-  function actionTab(id, action, data = {}) {
+  function actionTab(id, action, data = {}, options = {}) {
     const s = sessions.get(id);
     if (!s) deny('Browser pane no longer exists.', 404);
-    return enqueue(s, () => performAction(s, action, data));
+    return enqueue(s, () => {
+      // An action can wait behind a slow navigation or capture. Re-check the
+      // caller's grant inside the queue so a revoked token cannot execute a
+      // side effect it was authorized for moments earlier.
+      if (typeof options.authorize === 'function') options.authorize();
+      return performAction(s, action, data);
+    });
   }
 
   async function waitTab(id, conditions = {}) {
@@ -1170,7 +1192,9 @@ function installBrowserWorkspace(app) {
 
   app.post('/api/browser/:id/action', route(async (req, res) => {
     session(req, true);
-    const outcome = await actionTab(req.params.id, req.body.action, req.body);
+    const outcome = await actionTab(req.params.id, req.body.action, req.body, {
+      authorize: () => session(req, true)
+    });
     session(req); // Recheck grants after asynchronous work.
     res.status(outcome.httpStatus || 200).json(outcome);
   }));

@@ -84,9 +84,12 @@ async function main() {
     return;
   }
   if (scope === 'pane' && action === 'send-text') {
+    // paneTarget already removed an explicit id. Slicing the original list as
+    // though one was always present dropped the first word of the text when the
+    // pane came from the environment.
     const target = paneTarget(rest, 'pane send-text');
     const paneId = target.paneId;
-    let textParts = rest.slice(1);
+    let textParts = [...target.rest];
     let bracketed = true;
     if (textParts[0] === '--raw') { bracketed = false; textParts = textParts.slice(1); }
     let text = textParts.join(' ');
@@ -170,12 +173,16 @@ async function main() {
     return;
   }
   if (scope === 'pane' && action === 'browser') {
-    // Accept `browser <verb>` inside a pane or `browser <pane-id> <verb>`.
-    const hasPaneId = rest.length > 1 && /^p_[0-9a-f]+$/i.test(rest[0]);
-    const paneId = hasPaneId ? rest[0] : (process.env.TOWNMOUSE_PANE_ID || '');
-    const verb = hasPaneId ? rest[1] : rest[0];
-    const options = args(rest.slice(hasPaneId ? 2 : 1));
-    if (!paneId || !verb) throw new Error('pane browser requires an action (run inside a Townmouse pane, or pass a pane id first).');
+    // Accept the documented `browser <verb> <pane-id> ...`, the id-first
+    // `browser <pane-id> <verb> ...`, and `browser <verb> ...` inside a pane.
+    const parts = [...rest];
+    let paneId = '';
+    if (parts.length > 1 && /^p_[0-9a-f]+$/i.test(parts[0])) paneId = parts.shift();
+    const verb = parts.shift();
+    if (!paneId && parts.length && /^p_[0-9a-f]+$/i.test(parts[0])) paneId = parts.shift();
+    if (!paneId) paneId = process.env.TOWNMOUSE_PANE_ID || '';
+    const options = args(parts);
+    if (!paneId || !verb) throw new Error('pane browser requires an action (run inside a Townmouse pane, or pass a pane id).');
     const base = `/panes/${paneId}/browser`;
     const number = (value) => (value === undefined ? undefined : Number(value));
     const finish = (value) => {

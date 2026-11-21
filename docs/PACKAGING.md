@@ -78,6 +78,23 @@ The server refuses to start with that explanation rather than a stack trace when
 the engine cannot load. The container channel needs no such step; the image
 compiles node-pty during `npm ci`.
 
+**Release automation — trusted publishing, not tokens.** A tag matching `v*`
+triggers `.github/workflows/publish.yml`, which publishes with npm **Trusted
+Publishing**: GitHub's OIDC token stands in for a stored npm token, and npm
+records provenance tying the tarball to this repository and commit. Do not
+create an automation token for CI; npm warns against that use, and a long-lived
+publish token is a standing liability.
+
+One-time bootstrap, because a trusted publisher is configured on an existing
+package:
+
+1. Publish the first version interactively (`npm login --auth-type=web`, then
+   `npm publish --access public`, completing the second factor).
+2. On npmjs.com, open the package → Settings → **Trusted publishing** → add
+   GitHub Actions: owner `CaptainPhantasy`, repository `townmouse`, workflow
+   filename `publish.yml`, environment blank.
+3. From then on, pushing a `v*` tag publishes automatically with provenance.
+
 The CLI surface is small on purpose:
 
 ```sh
@@ -251,7 +268,7 @@ None of these are secrets. Shipping around them without saying so would be.
 - [ ] Codex review clean on the release commit.
 - [ ] `npm pack` inspected and checksummed.
 - [ ] Docker image built and smoke-tested.
-- [ ] Tag pushed; GitHub release notes; npm publish.
+- [ ] Tag pushed; GitHub release notes; npm publish (automatic via `publish.yml` once trusted publishing is configured).
 - [ ] Backup/rollback instructions included.
 
 If it is not checked, it is not shipped. That is the entire policy.

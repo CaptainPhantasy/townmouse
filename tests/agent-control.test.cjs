@@ -196,7 +196,7 @@ const FRAME_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Nest
 <script>document.getElementById('frame-button').addEventListener('click', () => { document.body.dataset.clicked = 'yes'; });</script>
 </body></html>`;
 
-function startApp() {
+function startApp(stateDir) {
   const app = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(APP_PORT), TOWNMOUSE_STATE_DIR: stateDir },
@@ -232,7 +232,7 @@ function byRole(elements, role, name) {
 
 (async () => {
   const stateDir = fs.mkdtempSync(path.join('/tmp', 'tm-agent-'));
-  const app = startApp();
+  const app = startApp(stateDir);
   const mainFixture = startFixture(FIXTURE_PORT, (req, res) => {
     if (req.url === '/next') { res.end(NEXT_PAGE); return; }
     res.end(MAIN_PAGE);

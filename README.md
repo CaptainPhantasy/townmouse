@@ -288,6 +288,8 @@ npm start              # run the workspace
 npm test               # security, unit, smoke, feature, voice, responsive, pane API, and agent-control suites
 npm run test:workspace # browser workspace journeys; starts its own preview site
 npm run test:package   # install the packed tarball and run the installed app
+# Releases: pushing a v* tag runs .github/workflows/publish.yml, which publishes
+# with npm Trusted Publishing (no stored token) once the publisher is configured.
 npm run doctor         # check Node and native modules
 npm run repair         # rebuild native modules
 ```

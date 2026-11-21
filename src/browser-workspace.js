@@ -982,14 +982,12 @@ function installBrowserWorkspace(app) {
     if (!hasUrl && !hasText && !hasSelector && !hasValue && !hasTitle) {
       deny('Provide url, title, text, selector, or value with ref.', 400);
     }
-    let urlPattern = null;
-    if (hasUrl) {
-      try { urlPattern = new RegExp(conditions.url); } catch (_) { urlPattern = null; }
-    }
     const started = Date.now();
     const check = async () => {
       const url = (() => { try { return s.page.url(); } catch (_) { return ''; } })();
-      if (hasUrl && (urlPattern ? urlPattern.test(url) : url === conditions.url)) return { matched: true, reason: 'url' };
+      // A literal, not a regular expression: an untrusted pattern tested on the
+      // event loop can stall every request through catastrophic backtracking.
+      if (hasUrl && url.includes(conditions.url)) return { matched: true, reason: 'url' };
       if (hasTitle) {
         const title = await s.page.title().catch(() => '');
         if (title.includes(conditions.title)) return { matched: true, reason: 'title' };

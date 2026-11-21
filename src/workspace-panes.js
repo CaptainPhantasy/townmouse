@@ -9,6 +9,7 @@ const pty = require('node-pty');
 const { resolveShell } = require('./shell-resolve');
 const { replayTranscript } = require('./replay-text');
 const { buildGuide } = require('./agent-guide');
+const { compileSafePattern } = require('./safe-regex');
 
 const MAX_PANES_PER_TAB = 4;
 const MAX_TABS = 24;
@@ -925,8 +926,10 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     }
     let matcher = null;
     if (pattern) {
-      try { matcher = new RegExp(pattern, 'im'); }
-      catch (error) { res.status(400).json({ error: `Invalid regex: ${error.message}` }); return; }
+      // Tested synchronously on the event loop; reject backtracking bombs.
+      const compiled = compileSafePattern(pattern);
+      if (compiled.error) { res.status(400).json({ error: compiled.error }); return; }
+      matcher = compiled.regex;
     }
     const started = Date.now();
     const result = await new Promise((resolve) => {

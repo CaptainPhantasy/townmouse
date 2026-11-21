@@ -127,6 +127,7 @@ const MAIN_PAGE = `<!doctype html>
   <button id="expand">Expand layout</button>
   <label>Project name <input id="name" aria-label="Project name" placeholder="Project name" value="old text"></label>
   <div id="note" contenteditable="true" aria-label="Note field" style="border:1px solid #ccc;min-height:24px">old note</div>
+  <input type="password" aria-label="Password" value="hunter2">
   <button id="save">Save project</button>
   <select id="color" aria-label="Colour"><option value="red">Red</option><option value="blue">Blue</option></select>
   <input id="when" type="date" aria-label="Due date">
@@ -753,6 +754,24 @@ function byRole(elements, role, name) {
       });
       ensure(job.status === 'completed', 'the command completed', job);
       ensure(job.stdout === 'é', 'the split character decoded as one glyph', JSON.stringify(job.stdout));
+    });
+
+    await run('catalog: a password value is never serialized', async () => {
+      await json(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'navigate', url: `http://127.0.0.1:${FIXTURE_PORT}/` });
+      await sleep(300);
+      const catalogued = await json(`/panes/${browserPaneId}/browser/elements`);
+      ensure(!JSON.stringify(catalogued).includes('hunter2'), 'the password value is absent from the catalog');
+      const password = catalogued.elements.find((element) => element.name === 'Password');
+      ensure(password, 'the password field is catalogued', catalogued.elements.map((element) => element.name));
+      ensure(password.value === null && password.redacted === true, 'the password field is redacted', password);
+    });
+
+    await run('wait: a hostile url pattern returns promptly instead of stalling', async () => {
+      const started = Date.now();
+      const waited = await json(`/panes/${browserPaneId}/browser/wait`, 'POST', { url: '(.*)+Z', timeout: 300 });
+      const elapsed = Date.now() - started;
+      ensure(waited.matched === false, 'the literal pattern does not match', waited);
+      ensure(elapsed < 2500, 'the wait returned promptly', elapsed);
     });
 
     await run('journal: a stale ref is reported as missing, not guessed', async () => {

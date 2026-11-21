@@ -150,6 +150,10 @@ function pageCatalog(options) {
     if (!existing) {
       try { el.setAttribute(MARK, ref); } catch (_) { /* detached or read-only host */ }
     }
+    // A catalog is a read path: it is served to view-only grants. A password
+    // field's value must never leave the page through it; the image shows
+    // bullets and /content omits form values for the same reason.
+    const isPassword = el.tagName === 'INPUT' && String(el.type || '').toLowerCase() === 'password';
     const descriptor = {
       ref,
       role: roleFor(el),
@@ -165,9 +169,12 @@ function pageCatalog(options) {
         : (el.getAttribute('aria-expanded') === 'false' ? false : null),
       required: Boolean(el.required) || el.getAttribute('aria-required') === 'true',
       readonly: Boolean(el.readOnly) || el.getAttribute('aria-readonly') === 'true',
-      value: (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')
-        ? String(el.value == null ? '' : el.value).slice(0, 400)
-        : null
+      value: isPassword
+        ? null
+        : (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')
+          ? String(el.value == null ? '' : el.value).slice(0, 400)
+          : null,
+      redacted: isPassword || undefined
     };
     if (el.tagName === 'IFRAME') {
       descriptor.role = 'iframe';

@@ -78,12 +78,15 @@ The server refuses to start with that explanation rather than a stack trace when
 the engine cannot load. The container channel needs no such step; the image
 compiles node-pty during `npm ci`.
 
-**Release automation — trusted publishing, not tokens.** A tag matching `v*`
-triggers `.github/workflows/publish.yml`, which publishes with npm **Trusted
-Publishing**: GitHub's OIDC token stands in for a stored npm token, and npm
-records provenance tying the tarball to this repository and commit. Do not
-create an automation token for CI; npm warns against that use, and a long-lived
-publish token is a standing liability.
+**Release automation — trusted publishing, not tokens.** Merging a version
+bump to `main` triggers `.github/workflows/publish.yml`. If that version is not
+yet on npm, the workflow runs the suite and package gate, publishes with npm
+**Trusted Publishing** (GitHub's OIDC token stands in for a stored npm token),
+tags the commit, and creates the GitHub release with the tarball and checksum
+attached. A merge whose version is already published skips after one registry
+read, so ordinary main updates do not re-release. Do not create an automation
+token for CI; npm warns against that use, and a long-lived publish token is a
+standing liability.
 
 One-time bootstrap, because a trusted publisher is configured on an existing
 package:
@@ -93,7 +96,9 @@ package:
 2. On npmjs.com, open the package → Settings → **Trusted publishing** → add
    GitHub Actions: owner `CaptainPhantasy`, repository `townmouse`, workflow
    filename `publish.yml`, environment blank.
-3. From then on, pushing a `v*` tag publishes automatically with provenance.
+3. From then on, merging a version bump to `main` publishes and releases
+   automatically with provenance. Bump `package.json`, date the changelog, and
+   merge; nothing else is needed.
 
 The CLI surface is small on purpose:
 
@@ -268,7 +273,7 @@ None of these are secrets. Shipping around them without saying so would be.
 - [ ] Codex review clean on the release commit.
 - [ ] `npm pack` inspected and checksummed.
 - [ ] Docker image built and smoke-tested.
-- [ ] Tag pushed; GitHub release notes; npm publish (automatic via `publish.yml` once trusted publishing is configured).
+- [ ] Version bumped and changelog dated; merge to `main` runs `publish.yml` (npm publish, tag, GitHub release) once trusted publishing is configured.
 - [ ] Backup/rollback instructions included.
 
 If it is not checked, it is not shipped. That is the entire policy.

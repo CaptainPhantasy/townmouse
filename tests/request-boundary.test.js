@@ -38,3 +38,20 @@ test('invalid trusted-origin configuration fails closed at startup', () => {
 test('DNS rebinding, null origins, other ports and cross-site websockets are rejected', () => {
  for (const headers of [{host:'evil.example:11001'}, {host:'localhost:11001',origin:'null'}, {host:'localhost:11001',origin:'http://localhost:1234'}, {host:'localhost:11001',origin:'https://evil.example'}, {host:'localhost:11001','sec-fetch-site':'cross-site'}]) assert.equal(isTrustedRequest({headers},11001),false);
 });
+test('a container published on a different host port still reaches the app', () => {
+ // `docker run -p 127.0.0.1:11801:11001` sends Host 127.0.0.1:11801.
+ for (const headers of [
+  { host: '127.0.0.1:11801' },
+  { host: '127.0.0.1:11801', origin: 'http://127.0.0.1:11801' },
+  { host: 'localhost:8080', origin: 'http://localhost:8080' },
+  { host: '[::1]:11801', origin: 'http://[::1]:11801' }
+ ]) assert.equal(isTrustedRequest({ headers }, 11001), true, JSON.stringify(headers));
+});
+test('a remapped port keeps the same-origin rule and stays closed to other hosts', () => {
+ for (const headers of [
+  { host: '127.0.0.1:11801', origin: 'http://localhost:11801' },
+  { host: '127.0.0.1:11801', origin: 'http://127.0.0.1:9999' },
+  { host: '127.0.0.1.evil.test:11801' },
+  { host: 'evil.example:11801', origin: 'http://evil.example:11801' }
+ ]) assert.equal(isTrustedRequest({ headers }, 11001), false, JSON.stringify(headers));
+});

@@ -32,8 +32,8 @@ The three prior release blockers from the earlier review are now cleared:
 ### 1. SSOT repository report is still governance-generated and heuristic
 - **Severity:** MEDIUM
 - **Beta disqualifier:** No
-- **Evidence:** `SSOT/repository_report.json:1-45`, `docs/BETA_RELEASE_EVIDENCE.md:1-77`
-- **Issue:** `SSOT/repository_report.json` still reflects the deterministic governance bootstrap's coarse heuristic output, not the nuanced beta-readiness evidence. However, the repository now contains a durable evidence artifact at `docs/BETA_RELEASE_EVIDENCE.md` that explicitly documents test results, install/uninstall verification, and the known governance limitation.
+- **Evidence:** `docs/reference/repository_report.json:1-45`, `docs/BETA_RELEASE_EVIDENCE.md:1-77`
+- **Issue:** `docs/reference/repository_report.json` still reflects the deterministic governance bootstrap's coarse heuristic output, not the nuanced beta-readiness evidence. However, the repository now contains a durable evidence artifact at `docs/BETA_RELEASE_EVIDENCE.md` that explicitly documents test results, install/uninstall verification, and the known governance limitation.
 - **Why it matters:** Anyone using only the SSOT report file could under-read product maturity. Anyone using the beta evidence doc gets the correct picture.
 
 ### 2. Physical iPad Add-to-Home-Screen was not re-run in this session
@@ -73,7 +73,7 @@ The three prior release blockers from the earlier review are now cleared:
 - `public/manifest.json:1-17` — standalone display, icons, and shortcuts remain coherent.
 - `public/service-worker.js:1-33` — guarded offline shell caching remains simple and acceptable for beta.
 - `scripts/t1.sh:1-32` — launcher behavior matches current README claims.
-- `SSOT/TerminalOne_SSOT.md` — additive governance receipt entries only.
+- `docs/reference/TerminalOne_Engine_SSOT.md` — additive governance receipt entries only.
 
 ## Conclusion
 

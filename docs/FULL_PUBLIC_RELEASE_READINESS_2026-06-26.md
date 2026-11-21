@@ -17,7 +17,7 @@ It separates:
 - [OBSERVED] No GitHub Actions workflows are present: `.github/**` missing from repo scan
 - [OBSERVED] No `LICENSE*`, `SECURITY*`, `CONTRIBUTING*`, or `CODEOWNERS*` files are present in the repo scan
 - [OBSERVED] `package.json` lacks public-distribution metadata such as `license`, `repository`, `homepage`, `bugs`, and `keywords`: `package.json:1-32`
-- [OBSERVED] `SSOT/repository_report.json` is governance-generated and heuristic, not a trustworthy public-release summary: `SSOT/repository_report.json:1-45`
+- [OBSERVED] `docs/reference/repository_report.json` is governance-generated and heuristic, not a trustworthy public-release summary: `docs/reference/repository_report.json:1-45`
 
 ---
 

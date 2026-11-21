@@ -43,10 +43,21 @@ because a launch post would look better without it.
 - Package name: `townmouse`.
 - `bin`: `townmouse` starts `src/server.js`, prints the URL, and opens a browser
   unless `--no-open` is passed.
-- Runtime: Node 22.x, npm, and a Chromium/Chrome binary for browser panes.
+- Runtime: Node 22.x preferred and declared as `>=22 <27`, npm, and a
+  Chromium/Chrome binary for browser panes. `scripts/node-runtime.sh` prefers 22
+  and falls back to any installed major where node-pty loads, because node-pty
+  is built on Node-API.
 - `postinstall` runs `scripts/prepare-native.sh`, which marks node-pty's macOS
-  spawn helpers executable. If no matching node-pty prebuild exists, the install
-  needs a compiler toolchain.
+  spawn helpers executable. **It is not enough on its own:** npm 12 skips
+  dependency install scripts by default (`allow-scripts = [""]`), so the server
+  also repairs the helper mode at startup (`src/pty-permissions.js`). The macOS
+  package gate exercises an install with `--ignore-scripts`.
+- On Linux, node-pty has no prebuilt addon. A consumer install needs Python 3,
+  make, and a C++ compiler, and must be allowed to run node-pty's install script.
+- Browser panes resolve an engine in this order: `TERMINALONE_CHROME`,
+  Puppeteer's downloaded build, then a system Chrome/Chromium/Edge/Brave.
+  `GET /health` reports `browser.engine`, so an install without a browser says
+  so instead of failing at the first pane.
 - `npm run doctor` checks the Node version and native modules; `npm run repair`
   rebuilds node-pty if they do not match.
 - `npm pack` is the release artifact; `npm publish` publishes it under a semver
@@ -89,8 +100,10 @@ docker build -t townmouse .
 docker run --rm -p 127.0.0.1:11001:11001 -v townmouse-home:/home/node/.townmouse -v townmouse-config:/home/node/.config/terminalone townmouse
 ```
 
-Publish only to host loopback. Mount project directories explicitly; the
-terminal starts in `/home/node`, not in your project. Health:
+The host port may differ from the container port; the request boundary accepts
+loopback hostnames on any port and still enforces same-origin. Publish only to
+host loopback. Mount project directories explicitly; the terminal starts in
+`/home/node`, not in your project. Health:
 
 ```sh
 curl http://127.0.0.1:11001/health
@@ -109,7 +122,9 @@ a startup error.
 
 `scripts/install-service.sh` builds a local `Townmouse.app`, installs a launcher,
 and writes the launcher path into the bundle so the wrapper can start the
-backend. That is a developer convenience, not a distribution strategy.
+backend. The installer scripts ship in the npm package, so this works from a
+global or local install; it is still a local convenience build, not a signed
+distribution.
 
 A distributable `.app` must bundle or launch the Node server or npm CLI, use a
 stable data directory, and be codesigned and notarized. Until that is done, there
@@ -148,7 +163,8 @@ CLI, and data directory is Townmouse.
 ## Release gates
 
 1. `npm ci` from a clean checkout.
-2. `npm test` green, including `test:panes` (the 16-test pane API suite).
+2. `npm test` green, including `test:panes`, `test:agent-control` (36 journeys),
+   and the security suite.
 3. Four-pane UI acceptance: 2 terminals + 2 browsers, no console errors.
 4. Attachment test: image upload once, path in PTY, URL serves 200.
 5. Input test: a burst of keystrokes produces one ordered input POST.
@@ -156,7 +172,12 @@ CLI, and data directory is Townmouse.
    commit.
 7. `npm pack --dry-run` contains `bin/`, `src/`, `public/panes.*`,
    `scripts/panes`, `LICENSE`, and no secrets or local evidence.
-8. Docker image builds and answers `/health` on loopback.
+8. `npm run test:package` green: a clean project installs the packed tarball
+   with a native build on Linux or with `--ignore-scripts` on macOS. The installed
+   app starts, serves its engine assets, creates `~/.townmouse` with safe modes,
+   spawns a PTY, runs a tracked command, and opens a browser pane.
+9. Docker image builds and answers `/health` on loopback, including when the
+   published host port differs from the container port.
 
 A release that skips a gate is a branch with a nicer tag. The cats are not
 impressed, and Bella has already walked across the checklist.
@@ -204,6 +225,7 @@ None of these are secrets. Shipping around them without saying so would be.
 
 - [ ] Version and changelog updated.
 - [ ] Clean `npm ci` and `npm test`.
+- [ ] `npm run test:package` green: the packed tarball installs and runs.
 - [ ] Pane UI/attachment/input evidence refreshed.
 - [ ] Codex review clean on the release commit.
 - [ ] `npm pack` inspected and checksummed.

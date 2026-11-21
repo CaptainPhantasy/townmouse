@@ -1,6 +1,6 @@
 # TerminalOne SSOT (Single Source of Truth)
 **Created:** 2026-06-17T14:07:01-04:00
-**Last Updated:** 2026-06-17T14:20:00-04:00
+**Last Updated:** 2026-11-19T00:00:00-05:00
 **Governance:** .supercache/ v1.7.0
 
 > **Compliance Notice:** This file must match the structure at
@@ -29,7 +29,7 @@ When an agent reads this SSOT to perform a task:
    - Confidence = 100%
 3. If any fact cannot be verified to 100% confidence:
    - Mark it **UNVERIFIED** inline in the section where it appears
-   - Add an entry to `Issues/TerminalOne_ISSUES.md` to track the discrepancy
+   - Add an entry to `docs/reference/TerminalOne_ISSUES.md` to track the discrepancy
    - Do NOT proceed on the assumption that the fact is true
 
 ### Positive Reinforcement (required)
@@ -113,8 +113,8 @@ This pattern is deliberate — it reinforces evidence-first thinking and makes t
 
 | Timestamp | Section / Line | Fact Verified | Evidence Source | Confidence |
 |---|---|---|---|
-| 2026-06-17T14:20:00-04:00 | Current State / Architecture Facts | Project is now a Node.js CommonJS terminal emulator using Express+ws+node-pty+xterm.js on port 11001 | `/Volumes/SanDisk1Tb/TerminalOne/FLOYD.md`, `/Volumes/SanDisk1Tb/SSOT/port-registry.json` | 100% |
-| 2026-06-17T14:20:00-04:00 | Key Decisions | Port 11001 claimed and terminal part cloned without harness/launcher code | `/Volumes/SanDisk1Tb/SSOT/port-registry.json`, agent edits | 100% |
+| 2026-06-17T14:20:00-04:00 | Current State / Architecture Facts | Project is now a Node.js CommonJS terminal emulator using Express+ws+node-pty+xterm.js on port 11001 | Local TerminalOne notes and port registry | 100% |
+| 2026-06-17T14:20:00-04:00 | Key Decisions | Port 11001 claimed and terminal part cloned without harness/launcher code | Local port registry and agent edits | 100% |
 | 2026-06-19T00:00:00-04:00 | Architecture Facts / Responsive layout | App shell no longer overflows the viewport on any iPad size; uses dvh/dvw (vh/vw fallback) with safe-area insets on .app-shell (border-box). Verified across 10 tablet viewports incl. iPad A16 11th-gen (820×1180) portrait/landscape/Split View via tests/responsive-test.js (puppeteer): scrollH/W ≤ vh/vw, key bar + footer within viewport, terminal contained. | tests/responsive-test.js (npm test), public/index.html:23-63,146-152 | 100% |
 
 ---
@@ -124,6 +124,7 @@ This pattern is deliberate — it reinforces evidence-first thinking and makes t
 - 2026-06-17T14:07:01-04:00 — Initialized SSOT.
 - 2026-06-17T14:20:00-04:00 — Cloned terminal part from harness-launcher; claimed port 11001; updated FLOYD.md and SSOT architecture facts.
 - 2026-06-19T00:00:00-04:00 — Fixed iPad/tablet viewport overflow (app exceeded viewport). Root cause: double-counted safe-area insets (body padding + 100vh on .app-shell under viewport-fit=cover). Moved insets onto .app-shell (border-box), switched to 100dvh/dvw with vh/vw fallback, removed redundant keybar bottom inset, hardened #terminal overflow, added tablet/Split-View/landscape-with-keyboard media queries. Added tests/responsive-test.js (10 viewports incl. iPad A16 11th-gen); wired into npm test. Full suite green.
+- 2026-11-19T00:00:00-05:00 — Moved this SSOT to docs/reference/TerminalOne_Engine_SSOT.md and updated its internal issues-log path to docs/reference/TerminalOne_ISSUES.md.
 
 <!-- Append new entries BELOW this comment line, in chronological order. -->
 <!-- Never edit or remove existing entries — this is the authoritative change history. -->
@@ -151,12 +152,12 @@ D) Completeness matrix (item -> done/blocked -> evidence)
 ## Hard gate
 If any requested item has no evidence row, final status MUST be INCOMPLETE.
 
-- 2026-06-17T14:07:02-04:00 — Governance orchestrator verified bootstrap and workers. Receipt: /Users/douglastalley/.omp/governance/receipts/TerminalOne-orchestrator-20260617-140701.json
+- 2026-06-17T14:07:02-04:00 — Governance orchestrator verified bootstrap and workers (local receipt).
 
-- 2026-06-17T14:18:58-04:00 — Governance orchestrator verified bootstrap and workers. Receipt: /Users/douglastalley/.omp/governance/receipts/TerminalOne-orchestrator-20260617-141858.json
+- 2026-06-17T14:18:58-04:00 — Governance orchestrator verified bootstrap and workers (local receipt).
 
-- 2026-06-22T18:54:31-04:00 — Governance orchestrator verified bootstrap and workers. Receipt: /Users/douglastalley/.omp/governance/receipts/TerminalOne-orchestrator-20260622-185430.json
+- 2026-06-22T18:54:31-04:00 — Governance orchestrator verified bootstrap and workers (local receipt).
 
-- 2026-06-22T21:14:57-04:00 — Governance orchestrator verified bootstrap and workers. Receipt: /Users/douglastalley/.omp/governance/receipts/TerminalOne-orchestrator-20260622-211456.json
+- 2026-06-22T21:14:57-04:00 — Governance orchestrator verified bootstrap and workers (local receipt).
 
-- 2026-06-26T17:40:14-04:00 — Governance orchestrator verified bootstrap and workers. Receipt: /Users/douglastalley/.omp/governance/receipts/TerminalOne-orchestrator-20260626-174013.json
+- 2026-06-26T17:40:14-04:00 — Governance orchestrator verified bootstrap and workers (local receipt).

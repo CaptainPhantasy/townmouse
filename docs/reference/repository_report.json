@@ -35,8 +35,8 @@
     "target_users": "Unknown: no code-only user description evidence used by bootstrap",
     "key_features": "Code-only source/framework/database/test scan: source_files=49, framework=Express, database=None, tests=5",
     "risks": "Code-only risk scan: tests=5, TODO/FIXME/HACK=3, manifests=1",
-    "template": "/Volumes/SanDisk1Tb/.supercache/templates/repository-report-template.md",
-    "spec": "/Volumes/SanDisk1Tb/.supercache/contracts/repository-report-spec.md"
+    "template": "repository-report-template.md (local archive)",
+    "spec": "repository-report-spec.md (local archive)"
   },
   "_verified": true,
   "_critic_rounds": 3,

@@ -13,6 +13,7 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const byId = (id) => document.getElementById(id);
 const els = {
+  app: byId('panes-app'),
   grid: byId('pane-grid'),
   tabStrip: byId('tabstrip'),
   workspace: byId('workspace'),
@@ -77,32 +78,35 @@ const els = {
 };
 
 const TERMINAL_THEME = {
-  background: '#080b0a',
-  foreground: '#d7e6df',
-  cursor: '#7fe3c0',
-  cursorAccent: '#080b0a',
-  selectionBackground: 'rgba(127, 227, 192, 0.24)',
-  black: '#141b18',
+  background: '#0a0d12',
+  foreground: '#e8eef6',
+  cursor: '#8ab4ff',
+  cursorAccent: '#0a0d12',
+  selectionBackground: 'rgba(138, 180, 255, 0.24)',
+  black: '#11161d',
   red: '#ff8f8f',
   green: '#7fe3c0',
   yellow: '#e9d6a1',
-  blue: '#8fb8dd',
+  blue: '#8ab4ff',
   magenta: '#d9b1cf',
   cyan: '#8fe6d4',
-  white: '#dfeae5',
-  brightBlack: '#61776d',
+  white: '#e8eef6',
+  brightBlack: '#5f6f88',
   brightRed: '#ffb3b3',
   brightGreen: '#a5f2d8',
   brightYellow: '#f3e5bd',
-  brightBlue: '#b2cee8',
+  brightBlue: '#a9c8ff',
   brightMagenta: '#e8cae1',
   brightCyan: '#b6f4e6',
-  brightWhite: '#f2faf6'
+  brightWhite: '#f4f8ff'
 };
 
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const RELOAD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>';
+const MAXIMIZE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5"/></svg>';
+const RESTORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M4 15h5v5M20 15h-5v5M9 9h6v6H9z"/></svg>';
+const LOCK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 
 let token = '';
 let currentState = null;
@@ -344,22 +348,37 @@ function showAttachmentNotice(attachment, file) {
   showNotice(`Attached ${file.name} · ${attachment.url}`, 'info', 8000, attachment.url);
 }
 
+function syncMenuState() {
+  const anyOpen = [els.contextMenu, els.browserContextMenu]
+    .some((menu) => menu && !menu.hidden);
+  els.app?.classList.toggle('menu-open', anyOpen);
+}
+
+function syncDialogState() {
+  const anyOpen = [els.browserControl, els.pageDialog]
+    .some((dialog) => dialog && !dialog.hidden);
+  els.app?.classList.toggle('dialog-open', anyOpen);
+}
+
 function hideContextMenu() {
   contextRecordId = null;
   browserContextRecordId = null;
   if (els.contextMenu) els.contextMenu.hidden = true;
   if (els.browserContextMenu) els.browserContextMenu.hidden = true;
+  syncMenuState();
 }
 
-function showBrowserContextMenu(record, clientX, clientY) {
+function showBrowserContextMenu(record, _clientX, _clientY) {
   if (!els.browserContextMenu || !record || record.kind !== 'browser') return;
+  // A blocking page prompt owns the bottom strip; the rail would be hidden
+  // behind it and the action would look broken.
+  if (els.app?.classList.contains('dialog-open')) return;
   hideContextMenu();
+  closeSheets();
   browserContextRecordId = record.id;
   record.suppressClickUntil = Date.now() + 700;
   els.browserContextMenu.hidden = false;
-  const rect = els.browserContextMenu.getBoundingClientRect();
-  els.browserContextMenu.style.left = `${Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX))}px`;
-  els.browserContextMenu.style.top = `${Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY))}px`;
+  syncMenuState();
   els.browserContextMenu.querySelector('[role="menuitem"]')?.focus();
 }
 
@@ -387,15 +406,14 @@ function wireBrowserContext(record) {
   }
 }
 
-function showContextMenu(record, clientX, clientY) {
+function showContextMenu(record, _clientX, _clientY) {
   if (!els.contextMenu || !record || record.kind !== 'terminal') return;
+  if (els.app?.classList.contains('dialog-open')) return;
+  hideContextMenu();
+  closeSheets();
   contextRecordId = record.id;
   els.contextMenu.hidden = false;
-  const rect = els.contextMenu.getBoundingClientRect();
-  const left = Math.max(6, Math.min(window.innerWidth - rect.width - 6, clientX));
-  const top = Math.max(6, Math.min(window.innerHeight - rect.height - 6, clientY));
-  els.contextMenu.style.left = `${left}px`;
-  els.contextMenu.style.top = `${top}px`;
+  syncMenuState();
   els.contextMenu.querySelector('[role="menuitem"]')?.focus();
 }
 
@@ -431,14 +449,22 @@ function hideBrowserControl() {
   browserControlPoint = null;
   browserControlKind = '';
   if (els.browserControl) els.browserControl.hidden = true;
+  syncDialogState();
 }
 
 function showBrowserControl(record, control, point) {
   if (!els.browserControl || !record || !control) return;
+  // Only dismiss soft docks when the control is first revealed; later updates
+  // of an already-visible control must not close a sheet the user opened.
+  if (els.browserControl.hidden) {
+    closeSheets();
+    hideContextMenu();
+  }
   browserControlRecordId = record.id;
   browserControlPoint = point;
   browserControlKind = control.kind;
   els.browserControl.hidden = false;
+  syncDialogState();
   if (control.kind === 'select') {
     els.browserControlLabel.textContent = 'Choose an option';
     els.browserControlSelect.hidden = false;
@@ -457,7 +483,7 @@ function showBrowserControl(record, control, point) {
     els.browserControlValue.type = control.kind;
     els.browserControlValue.value = control.value || '';
   }
-  els.browserControlSelect.focus();
+  (control.kind === 'select' ? els.browserControlSelect : els.browserControlValue).focus();
 }
 
 async function applyBrowserControl() {
@@ -477,11 +503,19 @@ function hidePageDialog() {
   pageDialogId = null;
   pageDialogType = '';
   if (els.pageDialog) els.pageDialog.hidden = true;
+  syncDialogState();
 }
 
 function showPageDialog(record, dialog) {
   if (!els.pageDialog || !record || !dialog || !dialog.id) return;
   if (pageDialogId !== dialog.id) {
+    // A blocking page dialog outranks the soft docks. Close them on arrival;
+    // the next snapshot reuses this id, so a sheet the user reopens later is
+    // not closed again. The browser control shares the bottom strip, so it
+    // must not be left underneath the prompt.
+    closeSheets();
+    hideContextMenu();
+    hideBrowserControl();
     pageDialogRecordId = record.id;
     pageDialogId = dialog.id;
     pageDialogType = dialog.type || 'alert';
@@ -491,6 +525,7 @@ function showPageDialog(record, dialog) {
     els.pageDialogAccept.textContent = pageDialogType === 'alert' ? 'OK' : 'Accept';
   }
   els.pageDialog.hidden = false;
+  syncDialogState();
 }
 
 async function answerPageDialog(action) {
@@ -778,6 +813,8 @@ function applyState(next, { force = false } = {}) {
   } else {
     updatePaneChrome(tab);
   }
+  // rebuild() returns before updatePaneChrome() when the active tab is empty.
+  discardStaleOverlays();
   prunePaneMemory();
   if (els.tabsDialog.open) renderTabsDialog();
   if (tab) document.title = `${tab.title} — Panes`;
@@ -1029,6 +1066,35 @@ function rebuild(tab) {
   }
   updatePaneChrome(tab);
   applyPaneLayout(tab);
+  syncMaximizeButtons();
+}
+
+// Maximize/restore is available both from Alt+M and from a visible control in
+// the pane header, so the feature is discoverable without knowing the shortcut.
+function togglePaneMaximized(paneId) {
+  const id = paneId || effectiveActivePaneId();
+  const record = records.get(id);
+  if (!record) return;
+  const maximize = !(els.grid.classList.contains('is-maximized') && record.root.classList.contains('is-maximized'));
+  els.grid.classList.toggle('is-maximized', maximize);
+  for (const [candidateId, candidate] of records) {
+    candidate.root.classList.toggle('is-maximized', maximize && candidateId === id);
+  }
+  syncMaximizeButtons();
+  logStatus(maximize ? 'Pane maximized.' : 'Pane restored.');
+}
+
+function syncMaximizeButtons() {
+  const gridMaximized = els.grid.classList.contains('is-maximized');
+  for (const record of records.values()) {
+    const button = record.maximizeButton;
+    if (!button) continue;
+    const active = gridMaximized && record.root.classList.contains('is-maximized');
+    button.innerHTML = active ? RESTORE_ICON : MAXIMIZE_ICON;
+    button.setAttribute('aria-label', active ? 'Restore pane' : 'Maximize pane');
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    button.title = active ? 'Restore split view (Alt+M)' : 'Maximize pane (Alt+M)';
+  }
 }
 
 function updateEmptyState(tab) {
@@ -1040,6 +1106,18 @@ function updateEmptyState(tab) {
     els.emptyCopy.textContent = `${tab.title} has no panes yet. Add a terminal or a browser.`;
   }
   els.emptyActions.hidden = false;
+}
+
+// Compact age for agent-reported status, so an old report does not read as a
+// fresh one. Program status and agent status are shown as separate facts.
+function formatAge(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 45) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 function updatePaneChrome(tab) {
@@ -1058,10 +1136,22 @@ function updatePaneChrome(tab) {
       if (record.root.dataset.status !== status) record.root.dataset.status = status;
       const agentState = pane.agentState || '';
       record.root.dataset.agentState = agentState;
+      record.root.dataset.programStatus = status;
+      const ageMs = Number(pane.agentStateAgeMs);
+      const agentText = agentState
+        ? `${agentState}${Number.isFinite(ageMs) ? ` · ${formatAge(ageMs)}` : ''}`
+        : '';
       const kindText = status === 'exited'
-        ? 'Terminal · exited'
-        : agentState ? `Terminal · ${agentState}` : 'Terminal';
+        ? (agentText ? `Terminal · exited · ${agentText}` : 'Terminal · exited')
+        : agentText ? `Terminal · ${agentText}` : 'Terminal';
       if (record.kindEl.textContent !== kindText) record.kindEl.textContent = kindText;
+      const command = pane.command;
+      const commandText = command
+        ? ` Last command: ${command.status}${Number.isFinite(command.exitCode) ? ` (exit ${command.exitCode})` : ''}.`
+        : '';
+      record.kindEl.title = (agentState
+        ? `Program: ${status}. Agent last reported "${agentState}" ${Number.isFinite(ageMs) ? formatAge(ageMs) : 'recently'} ago.`
+        : `Program: ${status}. The agent has not reported a status.`) + commandText;
     } else {
       if (record.kindEl.textContent !== 'Browser') record.kindEl.textContent = 'Browser';
       if (pane.url && !record.addressDirty && document.activeElement !== record.addressInput && record.addressInput.value !== pane.url) {
@@ -1070,9 +1160,19 @@ function updatePaneChrome(tab) {
       record.currentUrl = pane.url || record.currentUrl;
     }
   });
-  if (pageDialogRecordId && !records.has(pageDialogRecordId)) hidePageDialog();
+  discardStaleOverlays();
   updateKeybar();
   updateBackButton();
+}
+
+// Overlay ids can outlive their pane when a tab is switched or a pane closes.
+// Reconcile them with the rebuilt records so a stale menu/control/dialog does
+// not keep the reserved strip (and its .dialog-open/.menu-open class) latched.
+function discardStaleOverlays() {
+  if (browserControlRecordId && !records.has(browserControlRecordId)) hideBrowserControl();
+  if (contextRecordId && !records.has(contextRecordId)) hideContextMenu();
+  if (browserContextRecordId && !records.has(browserContextRecordId)) hideContextMenu();
+  if (pageDialogRecordId && !records.has(pageDialogRecordId)) hidePageDialog();
 }
 
 function updateActiveClasses() {
@@ -1193,6 +1293,7 @@ function createTerminalPane(pane) {
     '<header class="pane-header">' +
       '<span class="pane-title"></span>' +
       '<span class="pane-kind">Terminal</span>' +
+      `<button type="button" class="pane-maximize" aria-label="Maximize pane" title="Maximize (Alt+M)">${MAXIMIZE_ICON}</button>` +
       `<button type="button" class="pane-close" aria-label="Close terminal pane">${CLOSE_ICON}</button>` +
     '</header>' +
     '<div class="pane-body"><div class="terminal-host"></div></div>';
@@ -1224,6 +1325,8 @@ function createTerminalPane(pane) {
   };
   record.titleEl.textContent = pane.title || 'Terminal';
   record.closeButton.setAttribute('aria-label', `Close terminal pane ${pane.title || 'Terminal'}`);
+  record.maximizeButton = root.querySelector('.pane-maximize');
+  record.maximizeButton.addEventListener('click', () => { togglePaneMaximized(pane.id); });
   root.addEventListener('pointerdown', onPanePointerDown);
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
   record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
@@ -1509,6 +1612,7 @@ function createBrowserPane(pane) {
     '<header class="pane-header">' +
       '<span class="pane-title"></span>' +
       '<span class="pane-kind">Browser</span>' +
+      `<button type="button" class="pane-maximize" aria-label="Maximize pane" title="Maximize (Alt+M)">${MAXIMIZE_ICON}</button>` +
       `<button type="button" class="pane-close" aria-label="Close browser pane">${CLOSE_ICON}</button>` +
     '</header>' +
     '<div class="pane-body">' +
@@ -1516,6 +1620,7 @@ function createBrowserPane(pane) {
         `<button type="button" class="browser-icon-button browser-back" aria-label="Back">${BACK_ICON}</button>` +
         '<button type="button" class="browser-icon-button browser-forward" aria-label="Forward"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>' +
         `<button type="button" class="browser-icon-button browser-reload" aria-label="Reload">${RELOAD_ICON}</button>` +
+        `<button type="button" class="browser-icon-button browser-size" aria-label="Lock browser size" aria-pressed="false" title="Fixed size: keep the page from resizing with your viewer">${LOCK_ICON}</button>` +
         '<form class="address-form" novalidate>' +
           '<input class="address-input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter an address" aria-label="Address">' +
           '<button type="submit" class="address-go">Go</button>' +
@@ -1548,6 +1653,8 @@ function createBrowserPane(pane) {
     backButton: root.querySelector('.browser-back'),
     forwardButton: root.querySelector('.browser-forward'),
     reloadButton: root.querySelector('.browser-reload'),
+    sizeButton: root.querySelector('.browser-size'),
+    sizing: pane.sizing === 'fixed' ? 'fixed' : 'fit',
     width: 1280,
     height: 800,
     currentUrl: pane.url || '',
@@ -1569,6 +1676,8 @@ function createBrowserPane(pane) {
   };
   record.titleEl.textContent = pane.title || 'Browser';
   record.closeButton.setAttribute('aria-label', `Close browser pane ${pane.title || 'Browser'}`);
+  record.maximizeButton = root.querySelector('.pane-maximize');
+  record.maximizeButton.addEventListener('click', () => { togglePaneMaximized(pane.id); });
   record.addressInput.value = pane.url && pane.url !== 'about:blank' ? pane.url : '';
   record.backButton.disabled = true;
   record.forwardButton.disabled = true;
@@ -1579,6 +1688,7 @@ function createBrowserPane(pane) {
   record.backButton.addEventListener('click', () => { void browserAction(record, 'back'); });
   record.forwardButton.addEventListener('click', () => { void browserAction(record, 'forward'); });
   record.reloadButton.addEventListener('click', () => { void browserAction(record, 'reload'); });
+  record.sizeButton.addEventListener('click', () => { void toggleBrowserSizing(record); });
   record.addressForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void navigateBrowser(record);
@@ -1651,6 +1761,9 @@ function createBrowserPane(pane) {
   wireBrowserContext(record);
   const resizeBrowser = () => {
     if (record.disposed || !record.root.isConnected) return;
+    // Fixed-size mode: the human's viewer never rearranges the page. The image
+    // is scaled with object-fit instead.
+    if (record.sizing === 'fixed') return;
     const rect = record.view.getBoundingClientRect();
     const width = Math.round(rect.width);
     const height = Math.round(rect.height);
@@ -1684,6 +1797,45 @@ function createBrowserPane(pane) {
     }
   });
   return root;
+}
+
+function updateBrowserSizingChrome(record) {
+  if (!record.sizeButton) return;
+  const fixed = record.sizing === 'fixed';
+  record.sizeButton.setAttribute('aria-pressed', fixed ? 'true' : 'false');
+  record.sizeButton.setAttribute('aria-label', fixed ? 'Unlock browser size' : 'Lock browser size');
+  record.sizeButton.title = fixed
+    ? `Fixed at ${record.width}×${record.height} — your viewer scales the picture, not the page. Click to fit the pane again.`
+    : 'Fixed size: keep the page from resizing when you open menus, resize the viewer, or switch tabs.';
+}
+
+async function toggleBrowserSizing(record) {
+  if (record.disposed) return;
+  const next = record.sizing === 'fixed' ? 'fit' : 'fixed';
+  try {
+    const size = await api(`/panes/${record.id}/browser/sizing`, {
+      method: 'POST',
+      body: { mode: next, width: record.width, height: record.height }
+    });
+    if (record.disposed) return;
+    record.sizing = size && size.sizing === 'fixed' ? 'fixed' : 'fit';
+    if (size && Number.isFinite(size.width)) record.width = size.width;
+    if (size && Number.isFinite(size.height)) record.height = size.height;
+    updateBrowserSizingChrome(record);
+    if (record.sizing === 'fit') {
+      record.lastViewport = '';
+      record.resizeBrowser?.();
+    }
+    requestSnapshot(record, 100);
+    showNotice(
+      record.sizing === 'fixed'
+        ? `Browser size locked at ${record.width}×${record.height}.`
+        : 'Browser fits the pane again.',
+      'info'
+    );
+  } catch (error) {
+    if (!record.disposed) showNotice(error.message || 'Could not change browser sizing.', 'error');
+  }
 }
 
 function requestSnapshot(record, delay = 0) {
@@ -1744,6 +1896,8 @@ function applySnapshot(record, snapshot) {
     record.image.src = `data:image/jpeg;base64,${snapshot.image}`;
     record.image.alt = snapshot.title ? `Snapshot of ${snapshot.title}` : 'Browser page snapshot';
   }
+  if (snapshot.sizing) record.sizing = snapshot.sizing === 'fixed' ? 'fixed' : 'fit';
+  updateBrowserSizingChrome(record);
   if (typeof snapshot.canGoBack === 'boolean') {
     record.canGoBack = snapshot.canGoBack;
     record.backButton.disabled = !snapshot.canGoBack;
@@ -1920,7 +2074,11 @@ function requestClose(kind, id, title) {
     els.closeConfirmCopy.textContent = 'Closing this pane ends its shell and any running job. This cannot be undone.';
   }
   els.closeApprove.textContent = kind === 'tab' ? 'Close tab' : 'Close pane';
-  els.closeConfirm.showModal();
+  closeSheets();
+  hideContextMenu();
+  els.closeConfirm.show();
+  syncPanelState();
+  els.closeCancel.focus();
 }
 
 async function closeTab(tabId, title) {
@@ -2039,14 +2197,26 @@ function updateAddLimits() {
   els.emptyNewTab.disabled = atTabLimit;
 }
 
+function syncPanelState() {
+  const anyOpen = [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]
+    .some((dialog) => dialog && dialog.open);
+  els.app?.classList.toggle('panel-open', anyOpen);
+}
+
 function openSheets(dialog) {
-  if (!dialog.open) dialog.showModal();
+  if (dialog.open) return;
+  closeSheets();
+  hideContextMenu();
+  dialog.show();
+  syncPanelState();
+  dialog.querySelector('button, input, select')?.focus();
 }
 
 function closeSheets() {
-  if (els.tabsDialog.open) els.tabsDialog.close();
-  if (els.menuDialog.open) els.menuDialog.close();
-  if (els.shortcutsDialog?.open) els.shortcutsDialog.close();
+  for (const dialog of [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]) {
+    if (dialog?.open) dialog.close();
+  }
+  syncPanelState();
 }
 
 function openTabsDialog() {
@@ -2138,13 +2308,9 @@ function bindEvents() {
     }
     if (event.key.toLowerCase() === 'm') {
       const paneId = effectiveActivePaneId();
-      const record = records.get(paneId);
-      if (!record) return;
+      if (!records.get(paneId)) return;
       event.preventDefault();
-      const maximize = !els.grid.classList.contains('is-maximized');
-      els.grid.classList.toggle('is-maximized', maximize);
-      for (const [id, candidate] of records) candidate.root.classList.toggle('is-maximized', maximize && id === paneId);
-      logStatus(maximize ? 'Pane maximized.' : 'Pane restored.');
+      togglePaneMaximized(paneId);
       return;
     }
     if (/^[1-9]$/.test(event.key) && tabs.length) {
@@ -2284,8 +2450,7 @@ function bindEvents() {
   els.menuFontUp.addEventListener('click', () => adjustPaneFont(1));
   els.menuFontDown.addEventListener('click', () => adjustPaneFont(-1));
   els.menuShortcuts.addEventListener('click', () => {
-    closeSheets();
-    if (!els.shortcutsDialog.open) els.shortcutsDialog.showModal();
+    openSheets(els.shortcutsDialog);
   });
   els.readerRefresh.addEventListener('click', refreshReaderView);
   els.readerClose.addEventListener('click', closeReaderView);
@@ -2304,6 +2469,33 @@ function bindEvents() {
       if (dialog) dialog.close();
     });
   });
+
+  for (const dialog of [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]) {
+    dialog?.addEventListener('close', syncPanelState);
+  }
+  // closeSheets() can dismiss the confirmation programmatically (for example
+  // when a page dialog arrives); clear the pending target on every close.
+  // The close event is queued, so requestClose may have already reopened the
+  // dialog with a new target by the time it fires.
+  els.closeConfirm?.addEventListener('close', () => {
+    if (!els.closeConfirm.open) pendingClose = null;
+  });
+  // Capture-phase: the docks are non-modal, so focus can sit in an xterm that
+  // consumes Escape before a bubble listener would ever see it.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    // Check the sheet list directly: this runs on every Escape in a TUI, and a
+    // document-wide dialog query would also match non-sheet overlays.
+    const anySheet = [els.tabsDialog, els.menuDialog, els.shortcutsDialog, els.closeConfirm]
+      .some((dialog) => dialog && dialog.open);
+    if (!anySheet) return;
+    // A pane owns its keys. Escape goes to vim/less/the page; the dock has a
+    // visible close control because it is not modal.
+    if (event.target instanceof Element && event.target.closest('.pane')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeSheets();
+  }, true);
 
   for (const dialog of [els.tabsDialog, els.menuDialog]) {
     dialog.addEventListener('click', (event) => {

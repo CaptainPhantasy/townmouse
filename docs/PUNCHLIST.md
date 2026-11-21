@@ -477,9 +477,9 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 - [ ] **P2-65 - Stored cursor, bell, and scrollback settings are collected but never applied**
   *Expectation:* Changing or importing terminal settings changes the terminal.  
-  *Current:* `public/features/settings-sync.mjs` collects and imports `cursorStyle`, `cursorBlink`, `bell`, `scrollback`, and `fontSize` (`:22-26,41-47`), and `.feature-manifest.md:24` claims cursor/bell/scrollback settings are DONE, but `index.html` hardcodes `cursorStyle:'block'`, `cursorBlink:true`, and `scrollback:10000` (`public/index.html:1042-1052`) and has no bell handling or settings UI for these options.  
+  *Current:* `public/features/settings-sync.mjs` collects and imports `cursorStyle`, `cursorBlink`, `bell`, `scrollback`, and `fontSize` (`:22-26,41-47`), and `docs/reference/feature-manifest.md:24` claims cursor/bell/scrollback settings are DONE, but `index.html` hardcodes `cursorStyle:'block'`, `cursorBlink:true`, and `scrollback:10000` (`public/index.html:1042-1052`) and has no bell handling or settings UI for these options.\
   *Fix:* Read these values when constructing each Terminal and on settings import; add controls for cursor style, blink, bell, and scrollback; test that an imported setting changes `term.options` and behavior.  
-  *Evidence:* `public/features/settings-sync.mjs:22-26,41-47`; `public/index.html:1042-1052`; `.feature-manifest.md:24`.  
+  *Evidence:* `public/features/settings-sync.mjs:22-26,41-47`; `public/index.html:1042-1052`; `docs/reference/feature-manifest.md:24`.
 
 - [ ] **P2-66 - Localhost and agent URLs click out of Townmouse; file paths are not linkable in Panes**
   *Expectation:* URLs printed by agents, especially `http://localhost:<port>`, open in the built-in browser or pane; external links can use the system browser; paths are openable or copyable.  
@@ -621,9 +621,9 @@ This is the living punch list for Townmouse: each unchecked item is an open gap 
 
 - [ ] **P2-89 - Release evidence and SSOT are stale or reference commands that do not exist**
   *Expectation:* Evidence is current for the released commit and reproducible from the repo without dead commands or paths.  
-  *Current:* `docs/BETA_RELEASE_EVIDENCE.md` is dated 2026-07-12, lists `npm run test:input-guard`, `test:feature`, and `test:feature-behavior` (not present in `package.json`), says server LOC 549 (now 922) and 6 suites, and describes TerminalOne rather than Townmouse (`:8-30`). `SSOT/repository_report.json` still says TerminalOne and 90 percent completion. `Issues/TerminalOne_ISSUES.md:7` says "No open issues." `DESIGN.md:117` references `stewardship/screens/pass16`, which is not in the repo.  
+  *Current:* `docs/BETA_RELEASE_EVIDENCE.md` is dated 2026-07-12, lists `npm run test:input-guard`, `test:feature`, and `test:feature-behavior` (not present in `package.json`), says server LOC 549 (now 922) and 6 suites, and describes TerminalOne rather than Townmouse (`:8-30`). `docs/reference/repository_report.json` still says TerminalOne and 90 percent completion. `docs/reference/TerminalOne_ISSUES.md:7` says "No open issues." `DESIGN.md:117` references `stewardship/screens/pass16`, which is not in the repo.\
   *Fix:* Regenerate the evidence from the current commit using existing npm scripts; update counts and suites; add Townmouse sections for panes, attachments, security, and mobile; refresh or clearly mark SSOT as generated/stale; check in referenced screenshots or point to `docs/evidence`; update the issues list.  
-  *Evidence:* `docs/BETA_RELEASE_EVIDENCE.md:8-30`; `SSOT/repository_report.json:1-10`; `Issues/TerminalOne_ISSUES.md:7`; `DESIGN.md:117`; `package.json` scripts.  
+  *Evidence:* `docs/BETA_RELEASE_EVIDENCE.md:8-30`; `docs/reference/repository_report.json:1-10`; `docs/reference/TerminalOne_ISSUES.md:7`; `DESIGN.md:117`; `package.json` scripts.
 
 - [ ] **P2-90 - No automated coverage for attachments, touch, pane UI, or reconnect races; evidence scripts are fragile**
   *Expectation:* Every shipped critical path has a pass/fail test wired into `npm test`, including the attachment security boundary and mobile interactions.  

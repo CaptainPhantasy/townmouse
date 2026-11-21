@@ -17,6 +17,12 @@ agent-first surface: a workspace tab holds one to four panes, and each pane is
 either a live PTY terminal or a live headless-browser page. Tabs are created by
 the human or by the orchestrator, and every tab can hold a different mix.
 
+On first start, with no saved workspace, the pane surface seeds one tab with a
+terminal pane titled **Orchestrator**. That is a real PTY of its own — a second
+shell alongside the standard terminal view — created by the same server process,
+not a second application instance. It is intentional: the workspace opens with a
+place for the orchestrator to work. Keep it.
+
 The terminal panes are real PTYs from the embedded TerminalOne engine. The
 browser panes are real Chromium pages rendered by the server. Neither one is a
 screenshot pretending to be a workspace.
@@ -89,6 +95,67 @@ No code is copied between the browser and the terminal. Run the CLI directly:
 "$TOWNMOUSE_PANES_CLI" active --tab <tab-id> --pane <pane-id>
 ```
 
+### Instruction sheet
+
+`panes guide` (or `GET /api/panes/guide`) prints the sheet an agent receives on
+connect: every tool, what it needs, what it returns, and — separately — which
+capabilities this connection has and has not been granted. It describes
+permissions; it does not enlarge them. `npm run test:agent-control` verifies
+the guide and the boundary between agent and owner capabilities.
+
+### Pane ids default to the current pane
+
+Inside a pane, the pane id can be omitted. The CLI recognises a real id by shape
+(`p_…`) and otherwise falls back to `TOWNMOUSE_PANE_ID`, so `panes pane read` and
+`panes pane browser click` work with no argument.
+
+### Tracked commands
+
+`pane run` types a line into the interactive terminal and returns recent output.
+That does **not** prove the command finished. For ordinary, non-interactive
+commands use a tracked job:
+
+```sh
+"$TOWNMOUSE_PANES_CLI" pane exec -- "npm test"        # waits, returns exit code
+"$TOWNMOUSE_PANES_CLI" pane exec --no-wait -- "make"   # returns a job id
+"$TOWNMOUSE_PANES_CLI" pane job <job-id>               # poll it
+```
+
+A job reports `status` (`running` | `completed` | `failed`), `exitCode`,
+`signal`, `stdout`, `stderr`, and truncation flags. Keep the interactive
+terminal for programs such as `dlaude` that stay open and wait for input.
+
+### Clean and raw terminal text
+
+`pane read` renders screen text (`replayTranscript`) so escape codes do not
+clutter the output, and `--raw` returns the original terminal data. Both modes
+report `offset`, `bufferStart`, and a `truncated` flag.
+
+### Browser control
+
+```sh
+"$TOWNMOUSE_PANES_CLI" pane browser observe --elements        # labelled screenshot + controls
+"$TOWNMOUSE_PANES_CLI" pane browser elements                  # controls only
+"$TOWNMOUSE_PANES_CLI" pane browser click --ref e12
+"$TOWNMOUSE_PANES_CLI" pane browser click --x 300 --y 200 --observation 42
+"$TOWNMOUSE_PANES_CLI" pane browser type --ref e12 --replace "café 東京"
+"$TOWNMOUSE_PANES_CLI" pane browser key Alt+M
+"$TOWNMOUSE_PANES_CLI" pane browser hover --ref e12
+"$TOWNMOUSE_PANES_CLI" pane browser drag --from-ref e12 --to-ref e15
+"$TOWNMOUSE_PANES_CLI" pane browser scroll --ref e12 --dy 400
+"$TOWNMOUSE_PANES_CLI" pane browser select --ref e12 --value blue
+"$TOWNMOUSE_PANES_CLI" pane browser navigate https://example.com
+"$TOWNMOUSE_PANES_CLI" pane browser wait --text "Saved" --timeout 10000
+"$TOWNMOUSE_PANES_CLI" pane browser sizing fixed --width 1280 --height 800
+```
+
+Controls are identified by role and name, including inside cross-origin frames
+and open shadow roots. Each action returns a `status` (`completed`, `missing`,
+`wrong-kind`, `failed`, `stale`, `unconfirmed`); a coordinate used with a stale
+`--observation` is refused with exit code 4 and a message to look again. Every
+wait is bounded. In `fixed` sizing the owner's viewer scales the picture instead
+of rearranging the page.
+
 `pane create` defaults to `TOWNMOUSE_TAB_ID` when `--tab` is omitted. It also
 accepts `--cwd` and `--title`. `tab create` accepts `--activate` when the new
 tab should become active; without it, the CLI creates the tab without moving the
@@ -97,9 +164,10 @@ tab holds up to four panes. A single tab can be all terminals, all browsers, or
 any mix.
 
 `pane url` requires a browser pane. `pane run` writes the command with a newline
-and returns the last 4,000 characters of output after its wait. `pane input`
-writes raw text and does not append a newline. Both `pane run` and `pane input`
-require a terminal pane.
+and returns the last 4,000 characters of output after its wait, flagged
+`confirmed: false` because typing a line is not proof the command finished; use
+`pane exec` for a tracked job. `pane input` writes raw text and does not append a
+newline. Both `pane run` and `pane input` require a terminal pane.
 
 `pane send-text` preserves literal text and wraps it in bracketed-paste markers
 by default; pass `--raw` to opt out. `pane keys` accepts logical names including

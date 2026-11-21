@@ -36,6 +36,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Validate a consumer's tarball install, including the Linux native addon build.
+      - name: Package install gate
+        run: npm run test:package
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

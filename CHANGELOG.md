@@ -4,6 +4,35 @@ All notable changes to Townmouse and the TerminalOne engine it embeds.
 
 Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only. The 1.0.x entries below are the engine's inherited release history; the version numbers and dates stay exactly where history put them.
 
+## [Unreleased]
+
+### Standard browser view
+
+- One compact address row is the header. Agent access sits behind **Share** instead of occupying its own row, and the state line is a single slim line.
+- A **Collapse** control hides every bar above the page and remembers the choice, leaving a 32 px strip that names the current page and restores the controls. Measured gain: 112 px on desktop, 180 px on tablet, 127 px on phone.
+- The mascot lives in the navigation rail only; it no longer occupies the working area.
+
+### Agent control
+
+- Browser panes address controls by role and name across cross-origin frames and open shadow roots. Every observation carries an id, capture time, viewport, scroll offset, address, title, and a truncation flag.
+- A coordinate target from a page that has changed since it was observed is refused with "look again"; element refs are stable and re-checked before use.
+- Actions report `completed`, `missing`, `wrong-kind`, `failed`, `stale`, or `unconfirmed`, with the focused control and value. Navigation returns the new page's title.
+- Modifier chords (`Alt+M`), hover, drag, replace-typing, named-area scrolling, and bounded waits.
+- Ordinary commands run as tracked jobs with an exit code; `pane read` defaults to clean screen text and `--raw` keeps the original terminal data.
+- Program, agent-reported, and command status are three separate channels, and a fresh program clears the previous agent report.
+- Visible maximize/restore control and a fixed-size browser lock that the owner's viewer cannot resize.
+- New panes drop inherited parent-harness session markers (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, and related).
+
+### Packaging
+
+- Dependency assets resolve through Node's lookup paths, so a normal `npm install` with hoisted dependencies serves the terminal engine instead of 404ing it.
+- The server repairs node-pty's macOS spawn-helper mode at startup; npm 12 skips dependency install scripts by default, so the postinstall cannot be the only fix.
+- Browser panes fall back to an installed Chrome, Chromium, Edge, or Brave; `GET /health` reports the resolved engine.
+- `npx townmouse` works on Node 22–26. Node 22 is still preferred; the engine range is `>=22 <27`.
+- Containers accept a remapped host port, the image has a `HEALTHCHECK`, and the build context no longer carries `.runtime`.
+- The macOS installer scripts ship in the npm package.
+- New gates: `npm run test:package` exercises a fresh tarball install, including a native build on Linux and a scripts-disabled install on macOS; `tests/agent-control.test.cjs` covers 36 agent journeys.
+
 ## [0.1.0] — 2026-11-15
 
 ### Workspace

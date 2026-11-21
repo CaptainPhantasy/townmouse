@@ -408,11 +408,11 @@
  </style>
  <link rel="stylesheet" href="/workspace.css">
 </head>
-<body data-style="default" data-theme="tokyo-night" data-device="desktop">
+<body class="workspace" data-style="default" data-theme="tokyo-night" data-device="desktop">
  <canvas id="fxCanvas" aria-hidden="true"></canvas>
- <div class="banner" id="banner"></div>
 
  <div class="app-shell">
+  <div class="banner" id="banner"></div>
   <header class="terminal-header">
    <div class="terminal-title">Townmouse</div>
    <div class="terminal-actions">
@@ -444,9 +444,12 @@
  </div>
 
  <!-- Settings modal -->
- <div id="settingsModal" role="dialog" aria-modal="true" aria-label="Settings">
+ <div id="settingsModal" role="dialog" aria-label="Settings">
   <div class="settings-panel">
-   <h2>Settings</h2>
+   <div class="settings-dock-bar">
+    <h2>Settings</h2>
+    <button id="settingsCloseTop" type="button">Done</button>
+   </div>
    <div class="settings-row">
     <label for="styleSelect">Terminal style</label>
     <select id="styleSelect">
@@ -748,6 +751,9 @@
    const banner = $('#banner');
    banner.textContent = msg;
    banner.className = `banner ${type}`;
+   // hideBanner writes an inline display:none that would otherwise outrank
+   // every .banner.error/.warn rule and keep later banners invisible.
+   banner.style.display = '';
   }
 
   function hideBanner() {
@@ -1497,11 +1503,16 @@
    $('#styleSelect').value = currentStyle;
    $('#themeSelect').value = currentTheme;
    loadVoiceSettings();
-   $('.app-shell').inert = true;
+   // Settings is a docked peer of the shell, not a modal over it. The terminal
+   // stays visible, live, and operable while settings are adjusted.
+   document.querySelectorAll('dialog.workspace-drawer[open]').forEach((dialog) => dialog.close());
    $('#settingsModal').classList.add('open');
    $('#styleSelect').focus();
   }
-  function closeSettings() { $('.app-shell').inert = false; $('#settingsModal').classList.remove('open'); $('#settingsBtn').focus(); }
+  function closeSettings() {
+   $('#settingsModal').classList.remove('open');
+   document.querySelector('#workspace-tools')?.focus();
+  }
 
   // ── Wire up ──────────────────────────────────────────────────────────────────
   buildThemeOptions();
@@ -1511,15 +1522,19 @@
 
   $('#settingsModal').addEventListener('keydown', e => {
    if (e.key === 'Escape') { e.preventDefault(); closeSettings(); }
-   if (e.key !== 'Tab') return;
-   const items = [...$('#settingsModal').querySelectorAll('button, select, input, textarea')].filter(el => !el.disabled);
-   const first = items[0], last = items[items.length - 1];
-   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsClose').addEventListener('click', closeSettings);
+  $('#settingsCloseTop').addEventListener('click', closeSettings);
   $('#settingsModal').addEventListener('click', (e) => { if (e.target === $('#settingsModal')) closeSettings(); });
+  document.addEventListener('keydown', (e) => {
+   if (e.key !== 'Escape' || !$('#settingsModal').classList.contains('open')) return;
+   // Capture-phase: with the terminal live behind the dock, xterm would consume
+   // Escape before a bubble listener could close Settings.
+   e.preventDefault();
+   e.stopPropagation();
+   closeSettings();
+  }, true);
   $('#styleSelect').addEventListener('change', (e) => applyStyle(e.target.value));
   $('#themeSelect').addEventListener('change', (e) => applyTheme(e.target.value));
   $('#voiceSave').addEventListener('click', saveVoiceSettings);
@@ -1570,7 +1585,11 @@
       c = document.createElement('div');
       c.id = 't1toastHost';
       c.className = 't1toast-host';
-      document.querySelector('.terminal-container').appendChild(c);
+      // In flow above the terminal: a toast may never cover live output.
+      const shell = document.querySelector('.app-shell');
+      const terminalContainer = shell?.querySelector('.terminal-container');
+      if (shell && terminalContainer) shell.insertBefore(c, terminalContainer);
+      else document.querySelector('.terminal-container')?.appendChild(c);
     }
     return c;
   }

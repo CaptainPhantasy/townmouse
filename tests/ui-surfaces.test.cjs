@@ -320,6 +320,25 @@ async function assertDockClear(page, viewport, panelName, panelSelector) {
       await page.click('#menu-dialog [data-close]');
       await wait(300);
 
+      // Visible maximize/restore control: the Alt+M shortcut is an accelerator,
+      // not the only way to discover the feature.
+      await page.evaluate(() => document.querySelector('.pane-terminal .xterm-helper-textarea')?.focus());
+      assert(await page.$('.pane-maximize'), `${viewport.name}: pane has a maximize control`);
+      const maximizeBox = await page.$eval('.pane-maximize', (el) => {
+        const rect = el.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, label: el.getAttribute('aria-label') };
+      });
+      assert(maximizeBox.width >= 20 && maximizeBox.height >= 20,
+        `${viewport.name}: maximize control has a real target (${maximizeBox.width}x${maximizeBox.height})`);
+      assert(/maximize/i.test(maximizeBox.label || ''), `${viewport.name}: maximize control is labelled`);
+      await page.click('.pane-maximize');
+      await page.waitForFunction('document.querySelector("#pane-grid").classList.contains("is-maximized")', { timeout: 3000 });
+      assert(await page.$eval('.pane-maximize', (el) => /restore/i.test(el.getAttribute('aria-label') || '')),
+        `${viewport.name}: maximize control becomes a restore control`);
+      await page.click('.pane-maximize');
+      await page.waitForFunction('!document.querySelector("#pane-grid").classList.contains("is-maximized")', { timeout: 3000 });
+      await wait(200);
+
       // Context actions are a docked rail, not a floating menu on a pane.
       await page.evaluate(() => {
         const pane = document.querySelector('.pane-terminal') || document.querySelector('.pane');

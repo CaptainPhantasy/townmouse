@@ -18,10 +18,17 @@ async function call(method, suffix, body) {
   const res = await fetch(api + suffix, {
     method,
     headers: { 'Content-Type': 'application/json', 'X-Townmouse-Token': token },
+    // A hung server must not hang the agent. Long enough for a 120s bounded
+    // wait plus the round trip.
+    signal: AbortSignal.timeout(Number(process.env.TOWNMOUSE_CLI_TIMEOUT_MS) || 135000),
     ...(body ? { body: JSON.stringify(body) } : {})
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    // Keep the structured body: a refused action (stale target, missing
+    // element) explains itself better than the bare error string.
+    throw Object.assign(new Error(data.error || data.message || `HTTP ${res.status}`), { data, status: res.status });
+  }
   return data;
 }
 
@@ -52,22 +59,33 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+// Pane ids look like `p_1a2b3c4d5e6f`. Inside a pane the id can be omitted
+// entirely, and then the remaining arguments are the whole command — so the id
+// has to be recognised by shape, not by position.
+function paneTarget(list, verb) {
+  if (list.length && /^p_[0-9a-f]+$/i.test(list[0])) {
+    return { paneId: list[0], rest: list.slice(1) };
+  }
+  const paneId = process.env.TOWNMOUSE_PANE_ID || '';
+  if (!paneId) throw new Error(`${verb} requires a pane id, or TOWNMOUSE_PANE_ID (run inside a Townmouse pane).`);
+  return { paneId, rest: list };
+}
+
 async function main() {
   const [scope, action, ...rest] = process.argv.slice(2);
   if (scope === 'pane' && (action === 'run' || action === 'input')) {
-    const paneId = rest[0];
-    if (!paneId) throw new Error(`pane ${action} requires a pane id.`);
-    const payload = rest.slice(1).join(' ');
+    const target = paneTarget(rest, `pane ${action}`);
+    const payload = target.rest.join(' ');
     if (action === 'run') {
-      print(await call('POST', `/panes/${paneId}/command`, { command: payload }));
+      print(await call('POST', `/panes/${target.paneId}/command`, { command: payload }));
     } else {
-      print(await call('POST', `/panes/${paneId}/input`, { data: payload }));
+      print(await call('POST', `/panes/${target.paneId}/input`, { data: payload }));
     }
     return;
   }
   if (scope === 'pane' && action === 'send-text') {
-    const paneId = rest[0];
-    if (!paneId) throw new Error('pane send-text requires a pane id.');
+    const target = paneTarget(rest, 'pane send-text');
+    const paneId = target.paneId;
     let textParts = rest.slice(1);
     let bracketed = true;
     if (textParts[0] === '--raw') { bracketed = false; textParts = textParts.slice(1); }
@@ -77,26 +95,22 @@ async function main() {
     return;
   }
   if (scope === 'pane' && action === 'keys') {
-    const paneId = rest[0];
-    if (!paneId) throw new Error('pane keys requires a pane id.');
-    const keys = rest.slice(1);
+    const { paneId, rest: keys } = paneTarget(rest, 'pane keys');
     if (!keys.length) throw new Error('pane keys requires at least one key name.');
     print(await call('POST', `/panes/${paneId}/keys`, { keys }));
     return;
   }
   if (scope === 'pane' && action === 'status') {
-    const paneId = rest[0];
-    if (!paneId) throw new Error('pane status requires a pane id.');
-    const options = args(rest.slice(1));
+    const { paneId, rest: remaining } = paneTarget(rest, 'pane status');
+    const options = args(remaining);
     const state = options.state || options._[0];
     if (!state) throw new Error('pane status requires --state working|blocked|idle|done|unknown.');
     print(await call('POST', `/panes/${paneId}/status`, { state, message: options.message }));
     return;
   }
   if (scope === 'pane' && action === 'dialog') {
-    const paneId = rest[0];
-    if (!paneId) throw new Error('pane dialog requires a pane id.');
-    const options = args(rest.slice(1));
+    const { paneId, rest: remaining } = paneTarget(rest, 'pane dialog');
+    const options = args(remaining);
     const dialogAction = options.accept ? 'accept' : options.dismiss ? 'dismiss' : '';
     if (!dialogAction) throw new Error('pane dialog requires --accept or --dismiss.');
     print(await call('POST', `/panes/${paneId}/browser/dialog`, {
@@ -106,9 +120,8 @@ async function main() {
     return;
   }
   if (scope === 'pane' && action === 'wait') {
-    const paneId = rest[0];
-    if (!paneId) throw new Error('pane wait requires a pane id.');
-    const options = args(rest.slice(1));
+    const { paneId, rest: remaining } = paneTarget(rest, 'pane wait');
+    const options = args(remaining);
     const query = new URLSearchParams();
     if (options.match !== undefined) query.set('match', String(options.match));
     if (options.regex !== undefined) query.set('regex', String(options.regex));
@@ -119,6 +132,162 @@ async function main() {
     if (!query.toString()) throw new Error('pane wait requires --match, --regex, --idle, or --state.');
     print(await call('GET', `/panes/${paneId}/wait?${query.toString()}`));
     return;
+  }
+  if (scope === 'guide') {
+    print(await call('GET', '/guide'));
+    return;
+  }
+  if (scope === 'pane' && action === 'exec') {
+    const { paneId, rest: parts } = paneTarget(rest, 'pane exec');
+    let wait = true;
+    let timeoutMs;
+    const cleaned = [];
+    for (let i = 0; i < parts.length; i++) {
+      const value = parts[i];
+      if (value === '--') continue;
+      if (value === '--no-wait') { wait = false; continue; }
+      if (value === '--wait-ms' || value === '--timeout') { timeoutMs = Number(parts[++i]); continue; }
+      cleaned.push(value);
+    }
+    const command = cleaned.join(' ');
+    if (!command) throw new Error('pane exec requires a command.');
+    const result = await call('POST', `/panes/${paneId}/jobs`, { command, wait, timeoutMs });
+    print(result);
+    if (result.status === 'running') process.exitCode = 3;
+    else if (result.status !== 'completed') process.exitCode = 1;
+    return;
+  }
+  if (scope === 'pane' && action === 'job') {
+    // `panes pane job <job-id>` works inside a pane; otherwise supply both.
+    const hasPaneId = rest.length > 1 && /^p_[0-9a-f]+$/i.test(rest[0]);
+    const paneId = hasPaneId ? rest[0] : (process.env.TOWNMOUSE_PANE_ID || '');
+    const jobId = hasPaneId ? rest[1] : rest[0];
+    if (!paneId || !jobId) throw new Error('pane job requires a job id, or a pane id and a job id.');
+    const result = await call('GET', `/panes/${paneId}/jobs/${jobId}`);
+    print(result);
+    if (result.status === 'running') process.exitCode = 3;
+    else if (result.status !== 'completed') process.exitCode = 1;
+    return;
+  }
+  if (scope === 'pane' && action === 'browser') {
+    // Accept `browser <verb>` inside a pane or `browser <pane-id> <verb>`.
+    const hasPaneId = rest.length > 1 && /^p_[0-9a-f]+$/i.test(rest[0]);
+    const paneId = hasPaneId ? rest[0] : (process.env.TOWNMOUSE_PANE_ID || '');
+    const verb = hasPaneId ? rest[1] : rest[0];
+    const options = args(rest.slice(hasPaneId ? 2 : 1));
+    if (!paneId || !verb) throw new Error('pane browser requires an action (run inside a Townmouse pane, or pass a pane id first).');
+    const base = `/panes/${paneId}/browser`;
+    const number = (value) => (value === undefined ? undefined : Number(value));
+    const finish = (value) => {
+      print(value);
+      if (value && value.ok === false) process.exitCode = value.status === 'stale' ? 4 : 1;
+      return value;
+    };
+    switch (verb) {
+      case 'observe': {
+        const query = [];
+        if (options.elements) query.push('elements=1');
+        if (options.max) query.push(`max=${encodeURIComponent(options.max)}`);
+        const result = await call('GET', `${base}/observe${query.length ? '?' + query.join('&') : ''}`);
+        if (options['image-file'] && result.image) {
+          fs.writeFileSync(String(options['image-file']), Buffer.from(result.image, 'base64'));
+          result.imageFile = String(options['image-file']);
+          delete result.image;
+        }
+        print(result);
+        return;
+      }
+      case 'elements': {
+        const query = options.max ? `?max=${encodeURIComponent(options.max)}` : '';
+        print(await call('GET', `${base}/elements${query}`));
+        return;
+      }
+      case 'click':
+      case 'hover': {
+        const body = { action: verb };
+        if (options.ref) body.ref = String(options.ref);
+        else { body.x = number(options.x); body.y = number(options.y); }
+        if (options.observation !== undefined) body.observationId = Number(options.observation);
+        if (options.force) body.force = true;
+        finish(await call('POST', `${base}/action`, body));
+        return;
+      }
+      case 'type': {
+        const body = { action: 'type', text: options._.join(' ') };
+        if (options.ref) body.ref = String(options.ref);
+        if (options.replace) body.replace = true;
+        finish(await call('POST', `${base}/action`, body));
+        return;
+      }
+      case 'key': {
+        const keys = options._.slice(0).map(String);
+        if (!keys.length) throw new Error('pane browser key requires at least one key.');
+        finish(await call('POST', `${base}/action`, { action: 'key', keys }));
+        return;
+      }
+      case 'drag': {
+        finish(await call('POST', `${base}/action`, {
+          action: 'drag',
+          fromRef: options['from-ref'],
+          toRef: options['to-ref'],
+          fromX: number(options['from-x']),
+          fromY: number(options['from-y']),
+          toX: number(options['to-x']),
+          toY: number(options['to-y'])
+        }));
+        return;
+      }
+      case 'scroll': {
+        finish(await call('POST', `${base}/action`, {
+          action: 'scroll',
+          ref: options.ref,
+          selector: options.selector,
+          dx: number(options.dx),
+          dy: number(options.dy ?? options.amount)
+        }));
+        return;
+      }
+      case 'select': {
+        if (!options.ref) throw new Error('pane browser select requires --ref.');
+        finish(await call('POST', `${base}/action`, { action: 'select', ref: String(options.ref), value: options.value }));
+        return;
+      }
+      case 'navigate': {
+        const url = options._[0];
+        if (!url) throw new Error('pane browser navigate requires a URL.');
+        print(await call('POST', `${base}/action`, { action: 'navigate', url }));
+        return;
+      }
+      case 'back':
+      case 'forward':
+      case 'reload':
+        print(await call('POST', `${base}/action`, { action: verb }));
+        return;
+      case 'wait': {
+        print(await call('POST', `${base}/wait`, {
+          url: options.url,
+          title: options.title,
+          text: options.text,
+          selector: options.selector,
+          value: options.value,
+          ref: options.ref,
+          timeout: number(options.timeout)
+        }));
+        return;
+      }
+      case 'text': {
+        print(await call('GET', `${base}/content`));
+        return;
+      }
+      case 'sizing': {
+        const mode = options._[0];
+        if (!['fit', 'fixed'].includes(mode)) throw new Error('pane browser sizing requires fit or fixed.');
+        print(await call('POST', `${base}/sizing`, { mode, width: number(options.width), height: number(options.height) }));
+        return;
+      }
+      default:
+        throw new Error(`Unknown browser action: ${verb}`);
+    }
   }
   const a = args(rest);
   if (scope === 'attach') {
@@ -150,15 +319,19 @@ async function main() {
   }
   if (!scope || scope === 'help' || scope === '--help') {
     console.log(`Usage:
+  panes guide                               Print the agent instruction sheet.
   panes state
   panes tab list
   panes tab create [--title TEXT] [--activate]
   panes tab close <tab-id>
   panes pane create --tab <tab-id> --kind terminal|browser [--url URL] [--cwd PATH] [--title TEXT]
   panes pane url <pane-id> <url>
-  panes pane run <pane-id> <command...>
-  panes pane read <pane-id> [--lines N]
-  panes pane text <pane-id>
+  panes pane exec <pane-id> -- <command...> [--wait-ms N] [--no-wait]
+                                            Tracked job: exit code + output.
+  panes pane job <pane-id> <job-id>         Re-read a tracked job.
+  panes pane run <pane-id> <command...>     Type into the interactive terminal (unconfirmed).
+  panes pane read <pane-id> [--lines N] [--raw]
+  panes pane text <pane-id>                 Browser page text.
   panes pane input <pane-id> <text...>
   panes pane send-text <pane-id> [--raw] <text...>
   panes pane keys <pane-id> <key...>        (enter, esc, tab, ctrl+c, alt+x, arrows)
@@ -166,10 +339,27 @@ async function main() {
                             [--since OFFSET] [--timeout MS]
   panes pane status <pane-id> --state working|blocked|idle|done|unknown [--message TEXT]
   panes pane dialog <pane-id> --accept|--dismiss [--text VALUE]
+
+  Browser control (pane ids may be omitted inside a Townmouse pane):
+  panes pane browser observe <pane-id> [--elements] [--max N] [--image-file PATH]
+  panes pane browser elements <pane-id> [--max N]
+  panes pane browser click <pane-id> [--ref e12 | --x N --y N [--observation N]]
+  panes pane browser hover <pane-id> [--ref e12 | --x N --y N]
+  panes pane browser drag <pane-id> --from-ref e12 --to-ref e15
+  panes pane browser type <pane-id> <text...> [--ref e12] [--replace]
+  panes pane browser key <pane-id> <key...>  (Alt+M, Control+Shift+Tab, arrows)
+  panes pane browser scroll <pane-id> [--ref e12 | --selector CSS] [--dy N] [--dx N]
+  panes pane browser select <pane-id> --ref e12 --value V
+  panes pane browser navigate <pane-id> <url>
+  panes pane browser back|forward|reload <pane-id>
+  panes pane browser wait <pane-id> [--url U | --text T | --selector S | --value V --ref e12]
+                                    [--timeout MS]
+  panes pane browser sizing <pane-id> fit|fixed [--width N] [--height N]
   panes pane close <pane-id>
   panes attach <file> [--pane <pane-id>] [--type MIME]
   panes active --tab <tab-id> [--pane <pane-id>]
 
+Exit codes: 0 done, 1 failed/missing, 3 still running, 4 stale target.
 Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID.`);
     return;
   }
@@ -185,24 +375,34 @@ Environment: TOWNMOUSE_API, TOWNMOUSE_TOKEN, TOWNMOUSE_TAB_ID, TOWNMOUSE_PANE_ID
     if (action === 'close') { print(await call('DELETE', `/tabs/${a._[0]}`)); return; }
   }
   if (scope === 'pane') {
+    const hasPaneId = a._.length > 0 && /^p_[0-9a-f]+$/i.test(a._[0]);
+    const paneId = hasPaneId ? a._[0] : (process.env.TOWNMOUSE_PANE_ID || '');
+    const positional = hasPaneId ? a._.slice(1) : a._;
     if (action === 'create') {
       const tab = a.tab || process.env.TOWNMOUSE_TAB_ID;
       if (!tab) throw new Error('--tab is required (or run inside a Townmouse pane).');
       print(await call('POST', `/tabs/${tab}/panes`, { kind: a.kind || 'terminal', url: a.url, cwd: a.cwd, title: a.title, createdBy: 'agent' }));
       return;
     }
-    if (action === 'url') { print(await call('POST', `/panes/${a._[0]}/url`, { url: a._[1] })); return; }
-    if (action === 'run') { print(await call('POST', `/panes/${a._[0]}/command`, { command: a._.slice(1).join(' ') })); return; }
-    if (action === 'input') { print(await call('POST', `/panes/${a._[0]}/input`, { data: a._.slice(1).join(' ') })); return; }
-    if (action === 'text') { print(await call('GET', `/panes/${a._[0]}/browser/content`)); return; }
+    if (action === 'url') { print(await call('POST', `/panes/${paneId}/url`, { url: positional[0] })); return; }
+    if (action === 'run') { print(await call('POST', `/panes/${paneId}/command`, { command: positional.join(' ') })); return; }
+    if (action === 'input') { print(await call('POST', `/panes/${paneId}/input`, { data: positional.join(' ') })); return; }
+    if (action === 'text') { print(await call('GET', `/panes/${paneId}/browser/content`)); return; }
     if (action === 'read') {
-      const data = await call('GET', `/panes/${a._[0]}/read?since=0`);
+      if (!paneId) throw new Error('pane read requires a pane id (or run inside a Townmouse pane).');
+      // Clean screen text by default; --raw keeps the original escape data.
+      const mode = a.raw === true ? 'raw' : 'clean';
+      const data = await call('GET', `/panes/${paneId}/text?mode=${mode}`);
       const lines = Number(a.lines || 80);
-      const text = String(data.data || '').split('\n').slice(-lines).join('\n');
-      print({ ...data, data: text });
+      const text = String(data.text || '').split('\n').slice(-lines).join('\n');
+      print({ ...data, text, data: text });
       return;
     }
-    if (action === 'close') { print(await call('DELETE', `/panes/${a._[0]}`)); return; }
+    if (action === 'close') {
+      if (!paneId) throw new Error('pane close requires a pane id (or run inside a Townmouse pane).');
+      print(await call('DELETE', `/panes/${paneId}`));
+      return;
+    }
   }
   console.error('Unknown command. Run: panes help');
   process.exitCode = 2;

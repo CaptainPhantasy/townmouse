@@ -185,6 +185,28 @@ button { cursor: pointer; }
 
 .pane-close:hover { background: var(--hover); color: var(--text); }
 
+/* Visible maximize/restore control: the Alt+M shortcut stays, but the feature
+   should not depend on knowing it. */
+.pane-maximize {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+}
+
+.pane-maximize svg { width: 14px; height: 14px; }
+
+.pane-maximize:hover { background: var(--hover); color: var(--text); }
+
+.pane-maximize[aria-pressed="true"] { color: var(--text); background: var(--hover); }
+
 .pane-body {
   position: relative;
   flex: 1 1 auto;
@@ -246,6 +268,12 @@ button { cursor: pointer; }
 
 .browser-icon-button:hover,
 .address-go:hover { background: var(--hover); color: var(--text); }
+
+/* Locked browser size is a state the owner should be able to see at a glance. */
+.browser-icon-button[aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
 
 .address-form {
   display: flex;
@@ -875,7 +903,7 @@ button { cursor: pointer; }
     box-sizing: border-box;
   }
   .pane-header { height: 44px; }
-  .pane-close { width: 44px; min-width: 44px; height: 44px; }
+  .pane-close, .pane-maximize { width: 44px; min-width: 44px; height: 44px; }
   .address-input, .browser-type-input, .pane-bar input, .pane-bar select {
     font-size: 16px;
   }
@@ -923,7 +951,7 @@ button { cursor: pointer; }
 @media (pointer: coarse), (max-width: 699px) {
   .bar-button { min-width: 44px; min-height: 44px; }
   .icon-button { width: 44px; height: 44px; }
-  .pane-close { width: 44px; min-width: 44px; height: 44px; }
+  .pane-close, .pane-maximize { width: 44px; min-width: 44px; height: 44px; }
   .browser-icon-button, .address-go { min-width: 44px; height: 44px; }
   .address-input, .browser-type-input, .pane-bar input, .pane-bar select { height: 44px; }
   .tab-select { min-height: 44px; }

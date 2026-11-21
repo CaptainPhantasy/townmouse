@@ -104,6 +104,9 @@ const TERMINAL_THEME = {
 const CLOSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 const RELOAD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>';
+const MAXIMIZE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5"/></svg>';
+const RESTORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M4 15h5v5M20 15h-5v5M9 9h6v6H9z"/></svg>';
+const LOCK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 
 let token = '';
 let currentState = null;
@@ -1063,6 +1066,35 @@ function rebuild(tab) {
   }
   updatePaneChrome(tab);
   applyPaneLayout(tab);
+  syncMaximizeButtons();
+}
+
+// Maximize/restore is available both from Alt+M and from a visible control in
+// the pane header, so the feature is discoverable without knowing the shortcut.
+function togglePaneMaximized(paneId) {
+  const id = paneId || effectiveActivePaneId();
+  const record = records.get(id);
+  if (!record) return;
+  const maximize = !(els.grid.classList.contains('is-maximized') && record.root.classList.contains('is-maximized'));
+  els.grid.classList.toggle('is-maximized', maximize);
+  for (const [candidateId, candidate] of records) {
+    candidate.root.classList.toggle('is-maximized', maximize && candidateId === id);
+  }
+  syncMaximizeButtons();
+  logStatus(maximize ? 'Pane maximized.' : 'Pane restored.');
+}
+
+function syncMaximizeButtons() {
+  const gridMaximized = els.grid.classList.contains('is-maximized');
+  for (const record of records.values()) {
+    const button = record.maximizeButton;
+    if (!button) continue;
+    const active = gridMaximized && record.root.classList.contains('is-maximized');
+    button.innerHTML = active ? RESTORE_ICON : MAXIMIZE_ICON;
+    button.setAttribute('aria-label', active ? 'Restore pane' : 'Maximize pane');
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    button.title = active ? 'Restore split view (Alt+M)' : 'Maximize pane (Alt+M)';
+  }
 }
 
 function updateEmptyState(tab) {
@@ -1074,6 +1106,18 @@ function updateEmptyState(tab) {
     els.emptyCopy.textContent = `${tab.title} has no panes yet. Add a terminal or a browser.`;
   }
   els.emptyActions.hidden = false;
+}
+
+// Compact age for agent-reported status, so an old report does not read as a
+// fresh one. Program status and agent status are shown as separate facts.
+function formatAge(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 45) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 function updatePaneChrome(tab) {
@@ -1092,10 +1136,22 @@ function updatePaneChrome(tab) {
       if (record.root.dataset.status !== status) record.root.dataset.status = status;
       const agentState = pane.agentState || '';
       record.root.dataset.agentState = agentState;
+      record.root.dataset.programStatus = status;
+      const ageMs = Number(pane.agentStateAgeMs);
+      const agentText = agentState
+        ? `${agentState}${Number.isFinite(ageMs) ? ` · ${formatAge(ageMs)}` : ''}`
+        : '';
       const kindText = status === 'exited'
-        ? 'Terminal · exited'
-        : agentState ? `Terminal · ${agentState}` : 'Terminal';
+        ? (agentText ? `Terminal · exited · ${agentText}` : 'Terminal · exited')
+        : agentText ? `Terminal · ${agentText}` : 'Terminal';
       if (record.kindEl.textContent !== kindText) record.kindEl.textContent = kindText;
+      const command = pane.command;
+      const commandText = command
+        ? ` Last command: ${command.status}${Number.isFinite(command.exitCode) ? ` (exit ${command.exitCode})` : ''}.`
+        : '';
+      record.kindEl.title = (agentState
+        ? `Program: ${status}. Agent last reported "${agentState}" ${Number.isFinite(ageMs) ? formatAge(ageMs) : 'recently'} ago.`
+        : `Program: ${status}. The agent has not reported a status.`) + commandText;
     } else {
       if (record.kindEl.textContent !== 'Browser') record.kindEl.textContent = 'Browser';
       if (pane.url && !record.addressDirty && document.activeElement !== record.addressInput && record.addressInput.value !== pane.url) {
@@ -1237,6 +1293,7 @@ function createTerminalPane(pane) {
     '<header class="pane-header">' +
       '<span class="pane-title"></span>' +
       '<span class="pane-kind">Terminal</span>' +
+      `<button type="button" class="pane-maximize" aria-label="Maximize pane" title="Maximize (Alt+M)">${MAXIMIZE_ICON}</button>` +
       `<button type="button" class="pane-close" aria-label="Close terminal pane">${CLOSE_ICON}</button>` +
     '</header>' +
     '<div class="pane-body"><div class="terminal-host"></div></div>';
@@ -1268,6 +1325,8 @@ function createTerminalPane(pane) {
   };
   record.titleEl.textContent = pane.title || 'Terminal';
   record.closeButton.setAttribute('aria-label', `Close terminal pane ${pane.title || 'Terminal'}`);
+  record.maximizeButton = root.querySelector('.pane-maximize');
+  record.maximizeButton.addEventListener('click', () => { togglePaneMaximized(pane.id); });
   root.addEventListener('pointerdown', onPanePointerDown);
   root.addEventListener('focusin', () => { void setActivePane(pane.id); });
   record.closeButton.addEventListener('click', () => { requestClose('pane', pane.id, record.titleEl.textContent); });
@@ -1553,6 +1612,7 @@ function createBrowserPane(pane) {
     '<header class="pane-header">' +
       '<span class="pane-title"></span>' +
       '<span class="pane-kind">Browser</span>' +
+      `<button type="button" class="pane-maximize" aria-label="Maximize pane" title="Maximize (Alt+M)">${MAXIMIZE_ICON}</button>` +
       `<button type="button" class="pane-close" aria-label="Close browser pane">${CLOSE_ICON}</button>` +
     '</header>' +
     '<div class="pane-body">' +
@@ -1560,6 +1620,7 @@ function createBrowserPane(pane) {
         `<button type="button" class="browser-icon-button browser-back" aria-label="Back">${BACK_ICON}</button>` +
         '<button type="button" class="browser-icon-button browser-forward" aria-label="Forward"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>' +
         `<button type="button" class="browser-icon-button browser-reload" aria-label="Reload">${RELOAD_ICON}</button>` +
+        `<button type="button" class="browser-icon-button browser-size" aria-label="Lock browser size" aria-pressed="false" title="Fixed size: keep the page from resizing with your viewer">${LOCK_ICON}</button>` +
         '<form class="address-form" novalidate>' +
           '<input class="address-input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Enter an address" aria-label="Address">' +
           '<button type="submit" class="address-go">Go</button>' +
@@ -1592,6 +1653,8 @@ function createBrowserPane(pane) {
     backButton: root.querySelector('.browser-back'),
     forwardButton: root.querySelector('.browser-forward'),
     reloadButton: root.querySelector('.browser-reload'),
+    sizeButton: root.querySelector('.browser-size'),
+    sizing: pane.sizing === 'fixed' ? 'fixed' : 'fit',
     width: 1280,
     height: 800,
     currentUrl: pane.url || '',
@@ -1613,6 +1676,8 @@ function createBrowserPane(pane) {
   };
   record.titleEl.textContent = pane.title || 'Browser';
   record.closeButton.setAttribute('aria-label', `Close browser pane ${pane.title || 'Browser'}`);
+  record.maximizeButton = root.querySelector('.pane-maximize');
+  record.maximizeButton.addEventListener('click', () => { togglePaneMaximized(pane.id); });
   record.addressInput.value = pane.url && pane.url !== 'about:blank' ? pane.url : '';
   record.backButton.disabled = true;
   record.forwardButton.disabled = true;
@@ -1623,6 +1688,7 @@ function createBrowserPane(pane) {
   record.backButton.addEventListener('click', () => { void browserAction(record, 'back'); });
   record.forwardButton.addEventListener('click', () => { void browserAction(record, 'forward'); });
   record.reloadButton.addEventListener('click', () => { void browserAction(record, 'reload'); });
+  record.sizeButton.addEventListener('click', () => { void toggleBrowserSizing(record); });
   record.addressForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void navigateBrowser(record);
@@ -1695,6 +1761,9 @@ function createBrowserPane(pane) {
   wireBrowserContext(record);
   const resizeBrowser = () => {
     if (record.disposed || !record.root.isConnected) return;
+    // Fixed-size mode: the human's viewer never rearranges the page. The image
+    // is scaled with object-fit instead.
+    if (record.sizing === 'fixed') return;
     const rect = record.view.getBoundingClientRect();
     const width = Math.round(rect.width);
     const height = Math.round(rect.height);
@@ -1728,6 +1797,45 @@ function createBrowserPane(pane) {
     }
   });
   return root;
+}
+
+function updateBrowserSizingChrome(record) {
+  if (!record.sizeButton) return;
+  const fixed = record.sizing === 'fixed';
+  record.sizeButton.setAttribute('aria-pressed', fixed ? 'true' : 'false');
+  record.sizeButton.setAttribute('aria-label', fixed ? 'Unlock browser size' : 'Lock browser size');
+  record.sizeButton.title = fixed
+    ? `Fixed at ${record.width}×${record.height} — your viewer scales the picture, not the page. Click to fit the pane again.`
+    : 'Fixed size: keep the page from resizing when you open menus, resize the viewer, or switch tabs.';
+}
+
+async function toggleBrowserSizing(record) {
+  if (record.disposed) return;
+  const next = record.sizing === 'fixed' ? 'fit' : 'fixed';
+  try {
+    const size = await api(`/panes/${record.id}/browser/sizing`, {
+      method: 'POST',
+      body: { mode: next, width: record.width, height: record.height }
+    });
+    if (record.disposed) return;
+    record.sizing = size && size.sizing === 'fixed' ? 'fixed' : 'fit';
+    if (size && Number.isFinite(size.width)) record.width = size.width;
+    if (size && Number.isFinite(size.height)) record.height = size.height;
+    updateBrowserSizingChrome(record);
+    if (record.sizing === 'fit') {
+      record.lastViewport = '';
+      record.resizeBrowser?.();
+    }
+    requestSnapshot(record, 100);
+    showNotice(
+      record.sizing === 'fixed'
+        ? `Browser size locked at ${record.width}×${record.height}.`
+        : 'Browser fits the pane again.',
+      'info'
+    );
+  } catch (error) {
+    if (!record.disposed) showNotice(error.message || 'Could not change browser sizing.', 'error');
+  }
 }
 
 function requestSnapshot(record, delay = 0) {
@@ -1788,6 +1896,8 @@ function applySnapshot(record, snapshot) {
     record.image.src = `data:image/jpeg;base64,${snapshot.image}`;
     record.image.alt = snapshot.title ? `Snapshot of ${snapshot.title}` : 'Browser page snapshot';
   }
+  if (snapshot.sizing) record.sizing = snapshot.sizing === 'fixed' ? 'fixed' : 'fit';
+  updateBrowserSizingChrome(record);
   if (typeof snapshot.canGoBack === 'boolean') {
     record.canGoBack = snapshot.canGoBack;
     record.backButton.disabled = !snapshot.canGoBack;
@@ -2198,13 +2308,9 @@ function bindEvents() {
     }
     if (event.key.toLowerCase() === 'm') {
       const paneId = effectiveActivePaneId();
-      const record = records.get(paneId);
-      if (!record) return;
+      if (!records.get(paneId)) return;
       event.preventDefault();
-      const maximize = !els.grid.classList.contains('is-maximized');
-      els.grid.classList.toggle('is-maximized', maximize);
-      for (const [id, candidate] of records) candidate.root.classList.toggle('is-maximized', maximize && id === paneId);
-      logStatus(maximize ? 'Pane maximized.' : 'Pane restored.');
+      togglePaneMaximized(paneId);
       return;
     }
     if (/^[1-9]$/.test(event.key) && tabs.length) {

@@ -3,8 +3,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawn } = require('child_process');
 const pty = require('node-pty');
 const { resolveShell } = require('./shell-resolve');
+const { replayTranscript } = require('./replay-text');
+const { buildGuide } = require('./agent-guide');
 
 const MAX_PANES_PER_TAB = 4;
 const MAX_TABS = 24;
@@ -14,6 +17,43 @@ const MAX_BUFFER = 200_000;
 // input/state/close so terminal streams cannot starve the controls. Panes over
 // this cap fall back to the polling API instead of holding a socket open.
 const MAX_ACTIVE_STREAMS = 4;
+
+// Tracked, non-interactive jobs. Bounded so a long session cannot accumulate
+// output forever. Interactive programs still belong in the PTY.
+const MAX_JOBS_PER_PANE = 40;
+const MAX_JOB_OUTPUT = 512 * 1024;
+
+// Variables a parent AI harness exports about *its own* process. A pane is an
+// independent session, not a child of whatever launched the TownMouse server,
+// so inheriting these makes a fresh harness believe it is a nested child
+// (which, among other things, disables conversation saving). Credentials and
+// configuration are deliberately kept.
+const INHERITED_SESSION_ENV = new Set([
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_AUTO_MODE_SERVER',
+  'CLAUDE_PID',
+  'CLAUDE_EFFORT'
+]);
+
+function paneEnvironment(extra = {}) {
+  const env = {};
+  const strip = new Set(INHERITED_SESSION_ENV);
+  for (const name of String(process.env.TOWNMOUSE_PANE_ENV_STRIP || '').split(',')) {
+    const trimmed = name.trim();
+    if (trimmed) strip.add(trimmed);
+  }
+  for (const [key, value] of Object.entries(process.env)) {
+    if (strip.has(key)) continue;
+    env[key] = value;
+  }
+  return { ...env, ...extra };
+}
 
 function installWorkspacePanes(app, browserWorkspace, options = {}) {
   const port = options.port || Number(process.env.PORT) || 11357;
@@ -51,7 +91,11 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   const route = (fn) => async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try { await fn(req, res); }
-    catch (error) { res.status(error.status || 400).json({ error: error.message }); }
+    catch (error) {
+      // Some refusals (a stale target) carry a structured body so the caller can
+      // tell "rejected, look again" apart from an ordinary error.
+      res.status(error.status || 400).json(error.body || { error: error.message });
+    }
   };
   app.use('/api/panes', (req, res, next) => {
     if (req.body == null) req.body = {};
@@ -127,17 +171,26 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   }
 
   function startPanePty(pane) {
-    const env = {
-      ...process.env,
+    const env = paneEnvironment({
       TERM: 'xterm-256color',
       TOWNMOUSE_API: apiUrl,
       TOWNMOUSE_TOKEN: token,
       TOWNMOUSE_TAB_ID: pane.tabId,
       TOWNMOUSE_PANE_ID: pane.id,
       TOWNMOUSE_PANES_CLI: cliPath
-    };
+    });
     pane.cwd = pane.cwd || os.homedir();
     const shell = resolveShell();
+    // A fresh program is not the previous task. Drop the old agent-reported
+    // "done"/"working" label rather than presenting it as a report about this
+    // program.
+    pane.agentState = null;
+    pane.agentMessage = '';
+    pane.agentStateAt = null;
+    pane.exited = false;
+    pane.exitCode = null;
+    pane.exitSignal = null;
+    pane.startedAt = Date.now();
     const child = pty.spawn(shell, ['-l'], {
       name: 'xterm-256color', cols: pane.cols, rows: pane.rows,
       cwd: pane.cwd, env
@@ -153,12 +206,13 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       for (const stream of pane.streams) sendStreamEvent(stream, event);
     });
     child.onExit((event = {}) => {
+      // Program status only. Whether the *agent* finished is its own report,
+      // and a quiet or exited program is not that report.
       pane.exited = true;
       pane.exitCode = Number.isFinite(Number(event.exitCode)) ? Number(event.exitCode) : null;
       pane.exitSignal = event.signal ?? null;
+      pane.exitedAt = Date.now();
       pane.lastOutputAt = Date.now();
-      pane.agentState = 'done';
-      pane.agentStateAt = Date.now();
     });
   }
 
@@ -179,6 +233,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       buffer: '', bufferStart: 0, totalOffset: 0, streams: new Set(),
       cols: clampCols(opts.cols), rows: clampRows(opts.rows), exited: false,
       exitCode: null, exitSignal: null, lastOutputAt: Date.now(), createdAt: Date.now(),
+      startedAt: null, exitedAt: null, jobs: [], liveJobs: 0,
       agentState: null, agentMessage: '', agentStateAt: null
     };
     if (pane.kind === 'browser') {
@@ -294,27 +349,79 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
         const liveUrl = browser.page.url();
         if (liveUrl && liveUrl !== 'about:blank') pane.url = liveUrl;
         if (!pane.titleLocked) pane.title = browser.title || pane.title;
+        pane.sizing = browser.sizing;
       } else {
         pane.url = '';
         if (!pane.titleLocked) pane.title = 'Browser unavailable';
       }
     }
+    const programStatus = pane.exited ? 'exited' : (pane.kind === 'terminal' && !pane.pty ? 'starting' : 'running');
+    const latestJob = pane.jobs.length ? serializeJob(pane.jobs[pane.jobs.length - 1], false) : null;
     return {
       id: pane.id, tabId: pane.tabId, kind: pane.kind, title: pane.title,
       url: pane.url, browserId: pane.browserId,
+      sizing: pane.kind === 'browser' ? pane.sizing : undefined,
       cwd: pane.kind === 'terminal' ? pane.cwd : undefined,
       cols: pane.cols, rows: pane.rows,
-      status: pane.exited ? 'exited' : (pane.kind === 'terminal' && !pane.pty ? 'starting' : 'running'),
+      // Kept flat for existing callers; the three meanings are also exposed
+      // separately below so they cannot be confused with one another.
+      status: programStatus,
+      programStatus,
+      program: {
+        status: programStatus,
+        startedAt: pane.startedAt,
+        exitedAt: pane.exitedAt,
+        exitCode: pane.exitCode,
+        exitSignal: pane.exitSignal
+      },
       lastOutputAt: pane.lastOutputAt,
       idleMs: Math.max(0, Date.now() - pane.lastOutputAt),
       exitCode: pane.exitCode,
       exitSignal: pane.exitSignal,
+      // Agent-reported status: what the AI last said about its own work.
       agentState: pane.agentState,
       agentMessage: pane.agentMessage,
       agentStateAt: pane.agentStateAt,
+      agentStateAgeMs: pane.agentStateAt ? Math.max(0, Date.now() - pane.agentStateAt) : null,
+      agent: {
+        state: pane.agentState,
+        message: pane.agentMessage,
+        reportedAt: pane.agentStateAt,
+        ageMs: pane.agentStateAt ? Math.max(0, Date.now() - pane.agentStateAt) : null
+      },
+      // Command status: the most recent tracked job, if any.
+      command: latestJob ? {
+        jobId: latestJob.id,
+        status: latestJob.status,
+        exitCode: latestJob.exitCode,
+        startedAt: latestJob.startedAt,
+        endedAt: latestJob.endedAt
+      } : null,
       createdBy: pane.createdBy,
       active: pane.id === activePaneId
     };
+  }
+
+  function serializeJob(job, includeOutput = true) {
+    const payload = {
+      id: job.id,
+      paneId: job.paneId,
+      command: job.command,
+      status: job.status,
+      startedAt: job.startedAt,
+      endedAt: job.endedAt,
+      elapsedMs: (job.endedAt || Date.now()) - job.startedAt,
+      exitCode: job.exitCode,
+      signal: job.signal,
+      timedOut: job.timedOut
+    };
+    if (includeOutput) {
+      payload.stdout = job.stdout;
+      payload.stderr = job.stderr;
+      payload.stdoutTruncated = job.stdoutTruncated;
+      payload.stderrTruncated = job.stderrTruncated;
+    }
+    return payload;
   }
   function serializeTab(tab) {
     return { id: tab.id, title: tab.title, createdBy: tab.createdBy || 'human', active: tab.id === activeTabId, panes: tab.panes.map(serializePane) };
@@ -360,6 +467,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     panes.delete(pane.id);
     for (const stream of pane.streams) { try { stream.end(); } catch (_) { /* already closed */ } }
     pane.streams.clear();
+    for (const job of pane.jobs || []) cancelJob(job);
     killPty(pane);
     if (pane.kind === 'browser' && pane.browserId) browserWorkspace.close(pane.browserId).catch(() => {});
     if (activePaneId === pane.id) {
@@ -367,6 +475,135 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       activePaneId = next ? next.id : null;
     }
     scheduleSave();
+  }
+
+  // ── Tracked jobs ─────────────────────────────────────────────────────────
+  //
+  // An ordinary, non-interactive command gets a real process with a pid, an
+  // exit code, and output attributed to it. Typing into the interactive shell
+  // and reading back recent output does not prove anything finished, and the
+  // two operations are kept separate on purpose.
+
+  function pruneJobs(pane) {
+    while (pane.jobs.length > MAX_JOBS_PER_PANE) {
+      const index = pane.jobs.findIndex((job) => job.status !== 'running');
+      if (index < 0) break;
+      pane.jobs.splice(index, 1);
+    }
+  }
+
+  function startJob(pane, command) {
+    const job = {
+      id: 'j_' + crypto.randomBytes(6).toString('hex'),
+      paneId: pane.id,
+      command,
+      status: 'running',
+      startedAt: Date.now(),
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      stdout: '',
+      stderr: '',
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      child: null,
+      waiters: []
+    };
+    const env = paneEnvironment({
+      TERM: 'dumb',
+      TOWNMOUSE_API: apiUrl,
+      TOWNMOUSE_TOKEN: token,
+      TOWNMOUSE_TAB_ID: pane.tabId,
+      TOWNMOUSE_PANE_ID: pane.id,
+      TOWNMOUSE_PANES_CLI: cliPath
+    });
+    const shell = resolveShell();
+    const child = spawn(shell, ['-lc', command], {
+      cwd: pane.cwd || os.homedir(),
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    job.child = child;
+    const collect = (channel) => (chunk) => {
+      const text = chunk.toString('utf8');
+      const key = channel === 'stdout' ? 'stdout' : 'stderr';
+      const truncatedKey = channel === 'stdout' ? 'stdoutTruncated' : 'stderrTruncated';
+      if (job[key].length < MAX_JOB_OUTPUT) {
+        job[key] += text.slice(0, MAX_JOB_OUTPUT - job[key].length);
+      }
+      if (job[key].length >= MAX_JOB_OUTPUT || text.length > MAX_JOB_OUTPUT) job[truncatedKey] = true;
+    };
+    child.stdout.on('data', collect('stdout'));
+    child.stderr.on('data', collect('stderr'));
+    const finish = (status, detail = {}) => {
+      if (job.status !== 'running') return;
+      job.status = status;
+      job.endedAt = Date.now();
+      job.exitCode = detail.exitCode ?? null;
+      job.signal = detail.signal ?? null;
+      if (detail.timedOut) job.timedOut = true;
+      delete job.child;
+      for (const waiter of job.waiters.splice(0)) waiter();
+    };
+    child.on('error', (error) => {
+      job.stderr += (job.stderr ? '\n' : '') + String(error.message || error);
+      finish('failed', { exitCode: null });
+    });
+    child.on('close', (code, signal) => {
+      finish(code === 0 ? 'completed' : 'failed', { exitCode: code, signal });
+    });
+    pane.jobs.push(job);
+    pane.liveJobs += 1;
+    pruneJobs(pane);
+    return job;
+  }
+
+  function waitForJob(job, timeoutMs) {
+    if (job.status !== 'running') return Promise.resolve(job);
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(job);
+      };
+      const timer = setTimeout(() => {
+        // The job keeps running; the caller simply learns it is not done yet.
+        done();
+      }, Math.max(50, Math.min(120000, Number(timeoutMs) || 30000)));
+      job.waiters.push(done);
+      timer.unref?.();
+    });
+  }
+
+  function cancelJob(job) {
+    if (job.status !== 'running' || !job.child) return false;
+    try { job.child.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    return true;
+  }
+
+  // ── Clean terminal text ──────────────────────────────────────────────────
+
+  function cleanPaneText(pane, since) {
+    const start = Math.max(pane.bufferStart, Number(since) || pane.bufferStart);
+    const raw = pane.buffer.slice(start - pane.bufferStart);
+    // Render at the width the output was produced at where possible; the
+    // transcript renderer is what resume already uses for the same reason.
+    const text = replayTranscript(raw, Math.max(20, Math.min(400, pane.cols || 120)));
+    return {
+      text,
+      raw,
+      mode: 'clean',
+      cols: pane.cols,
+      bufferStart: pane.bufferStart,
+      offset: pane.totalOffset,
+      // The ring buffer is bounded; when the requested position predates what
+      // is still held, say so rather than quietly returning less.
+      truncated: Number(since) > 0 && Number(since) < pane.bufferStart,
+      evicted: pane.bufferStart
+    };
   }
 
   app.get('/api/panes/bootstrap', route(async (req, res) => {
@@ -378,6 +615,22 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     res.json({ token, state: state(), api: apiUrl });
   }));
   app.get('/api/panes/state', auth, route(async (req, res) => { await ensureInitial(); res.json(state()); }));
+
+  // The instruction sheet an agent gets when it connects. It describes the
+  // tools and this connection's permissions; it never enlarges them.
+  app.get('/api/panes/guide', auth, route(async (req, res) => {
+    const cli = {
+      available: fs.existsSync(cliPath),
+      path: cliPath,
+      env: {
+        api: 'TOWNMOUSE_API',
+        token: 'TOWNMOUSE_TOKEN',
+        tab: 'TOWNMOUSE_TAB_ID',
+        pane: 'TOWNMOUSE_PANE_ID'
+      }
+    };
+    res.json(buildGuide({ cli }));
+  }));
   app.post('/api/panes/tabs', auth, route(async (req, res) => {
     await ensureInitial();
     const createdBy = req.body.createdBy === 'agent' ? 'agent' : 'human';
@@ -474,11 +727,26 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
   app.post('/api/panes/panes/:id/browser/action', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
-    const browser = await browserWorkspace.action(pane.browserId, req.body.action, req.body);
-    pane.url = browser.url;
-    if (!pane.titleLocked) pane.title = browser.title || pane.title;
-    if (!['click', 'type', 'key', 'scroll', 'selectAt', 'setValueAt'].includes(req.body.action)) scheduleSave();
-    res.json({ ...serializePane(pane), control: browser.control || null });
+    const outcome = await browserWorkspace.action(pane.browserId, req.body.action, req.body);
+    pane.url = outcome.url;
+    if (!pane.titleLocked) pane.title = outcome.title || pane.title;
+    if (!['click', 'type', 'key', 'scroll', 'select', 'setValue', 'selectAt', 'setValueAt', 'hover', 'drag'].includes(req.body.action)) scheduleSave();
+    // The action result is nested so it cannot be mistaken for the pane's
+    // program status; those are three different meanings of "status".
+    res.status(outcome.httpStatus || 200).json({
+      ...serializePane(pane),
+      // Flat `control` stays for the human viewer's picker overlay.
+      control: outcome.control || null,
+      action: {
+        ok: outcome.ok,
+        status: outcome.status,
+        message: outcome.message || null,
+        warning: outcome.warning || null,
+        target: outcome.target || null,
+        control: outcome.control || null,
+        observationId: outcome.observationId || null
+      }
+    });
   }));
   app.post('/api/panes/panes/:id/browser/reopen', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
@@ -506,13 +774,51 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (!pane.titleLocked) pane.title = snap.title || pane.title;
     res.json(snap);
   }));
+  app.get('/api/panes/panes/:id/browser/observe', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const observed = await browserWorkspace.observe(pane.browserId, {
+      elements: req.query.elements === '1' || req.query.elements === 'true',
+      max: req.query.max
+    });
+    pane.url = observed.url;
+    if (!pane.titleLocked) pane.title = observed.title || pane.title;
+    res.json(observed);
+  }));
+  app.get('/api/panes/panes/:id/browser/elements', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const catalogued = await browserWorkspace.elements(pane.browserId, { max: req.query.max });
+    pane.url = catalogued.url;
+    if (!pane.titleLocked) pane.title = catalogued.title || pane.title;
+    res.json(catalogued);
+  }));
+  app.post('/api/panes/panes/:id/browser/wait', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    res.json(await browserWorkspace.wait(pane.browserId, req.body || {}));
+  }));
+  app.post('/api/panes/panes/:id/browser/sizing', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
+    const size = await browserWorkspace.sizing(pane.browserId, req.body.mode, req.body);
+    res.json(size);
+  }));
   app.get('/api/panes/panes/:id/browser/content', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'browser') { res.status(400).json({ error: 'Browser pane required.' }); return; }
     const browser = browserWorkspace.get(pane.browserId);
     if (!browser) { res.status(404).json({ error: 'Browser pane no longer exists.' }); return; }
-    const text = await browser.page.evaluate(() => document.body.innerText);
-    res.json({ url: browser.page.url(), title: browser.title || pane.title, text: String(text || '').slice(0, 100000) });
+    const info = await browserWorkspace.content(pane.browserId, { limit: req.query.limit });
+    res.json({
+      url: info.url,
+      title: info.title || browser.title || pane.title,
+      text: info.text,
+      totalLength: info.totalLength,
+      truncated: info.truncated,
+      frameCount: info.frameCount,
+      frames: info.frames
+    });
   }));
   app.get('/api/panes/panes/:id/stream', auth, (req, res) => {
     const pane = panes.get(req.params.id);
@@ -655,13 +961,78 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     pane.pty.resize(pane.cols, pane.rows);
     res.json({ cols: pane.cols, rows: pane.rows });
   }));
+  app.get('/api/panes/panes/:id/text', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const mode = req.query.mode === 'raw' ? 'raw' : 'clean';
+    const since = req.query.since === undefined ? pane.bufferStart : Number(req.query.since);
+    if (mode === 'raw') {
+      const start = Math.max(pane.bufferStart, Number(since) || pane.bufferStart);
+      res.json({
+        mode: 'raw',
+        text: pane.buffer.slice(start - pane.bufferStart),
+        offset: pane.totalOffset,
+        bufferStart: pane.bufferStart,
+        truncated: Number(since) > 0 && Number(since) < pane.bufferStart
+      });
+      return;
+    }
+    const clean = cleanPaneText(pane, since);
+    res.json({
+      mode: 'clean',
+      text: clean.text,
+      cols: clean.cols,
+      offset: clean.offset,
+      bufferStart: clean.bufferStart,
+      truncated: clean.truncated
+    });
+  }));
+
+  app.post('/api/panes/panes/:id/jobs', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const command = String(req.body.command || '').replace(/\r?\n$/, '');
+    if (!command.trim()) { res.status(400).json({ error: 'command must not be empty.' }); return; }
+    if (command.length > 10000) { res.status(400).json({ error: 'command is too long.' }); return; }
+    const job = startJob(pane, command);
+    const wait = req.body.wait !== false;
+    if (wait) await waitForJob(job, req.body.timeoutMs);
+    scheduleSave();
+    res.status(202).json(serializeJob(job));
+  }));
+
+  app.get('/api/panes/panes/:id/jobs/:jobId', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const job = pane.jobs.find((candidate) => candidate.id === req.params.jobId);
+    if (!job) { res.status(404).json({ error: 'Job not found.' }); return; }
+    res.json(serializeJob(job));
+  }));
+
+  app.delete('/api/panes/panes/:id/jobs/:jobId', auth, route(async (req, res) => {
+    const pane = panes.get(req.params.id);
+    if (!pane || pane.kind !== 'terminal') { res.status(400).json({ error: 'Terminal pane required.' }); return; }
+    const job = pane.jobs.find((candidate) => candidate.id === req.params.jobId);
+    if (!job) { res.status(404).json({ error: 'Job not found.' }); return; }
+    const cancelled = cancelJob(job);
+    res.json({ cancelled, job: serializeJob(job) });
+  }));
+
   app.post('/api/panes/panes/:id/command', auth, route(async (req, res) => {
     const pane = panes.get(req.params.id);
     if (!pane || pane.kind !== 'terminal' || !pane.pty) { res.status(400).json({ error: 'Terminal pane required.' }); return; }
     const command = String(req.body.command || '').replace(/\r?\n$/, '');
     pane.pty.write(command + '\n');
     await new Promise((resolve) => setTimeout(resolve, Number(req.body.waitMs) || 300));
-    res.json({ ok: true, output: pane.buffer.slice(-4000), offset: pane.totalOffset });
+    // This proves the line was written and shows recent output. It does not
+    // prove the command finished; use POST /jobs for that.
+    res.json({
+      ok: true,
+      confirmed: false,
+      note: 'The line was typed into the interactive terminal. For a tracked completion and exit code, use POST /api/panes/panes/<id>/jobs.',
+      output: pane.buffer.slice(-4000),
+      offset: pane.totalOffset
+    });
   }));
 
   async function closeAll() {
@@ -671,6 +1042,7 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     if (restored) await saveState().catch(() => { /* best effort on shutdown */ });
     for (const pane of [...panes.values()]) {
+      for (const job of pane.jobs || []) cancelJob(job);
       killPty(pane);
       if (pane.kind === 'browser' && pane.browserId) {
         await browserWorkspace.close(pane.browserId).catch(() => {});

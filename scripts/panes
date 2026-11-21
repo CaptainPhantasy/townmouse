@@ -32,12 +32,18 @@ async function call(method, suffix, body) {
   return data;
 }
 
+// Options that never take a value. Without this list, `--replace "text"` would
+// consume the text as the flag's value and clear the field instead of filling
+// it.
+const BOOLEAN_FLAGS = new Set(['replace', 'elements', 'activate', 'accept', 'dismiss', 'force', 'help']);
+
 function args(list) {
   const out = { _: [] };
   for (let i = 0; i < list.length; i++) {
     const value = list[i];
     if (value.startsWith('--')) {
       const key = value.slice(2);
+      if (BOOLEAN_FLAGS.has(key)) { out[key] = true; continue; }
       const next = list[i + 1];
       if (next && !next.startsWith('--')) { out[key] = next; i++; }
       else out[key] = true;
@@ -47,6 +53,18 @@ function args(list) {
 }
 
 function print(value) { console.log(JSON.stringify(value, null, 2)); }
+
+// How many leading tokens are `pane exec` options rather than the command.
+function leadingOptionCount(list) {
+  let count = 0;
+  while (count < list.length) {
+    const value = list[count];
+    if (value === '--no-wait') { count += 1; continue; }
+    if (value === '--wait-ms' || value === '--timeout') { count += 2; continue; }
+    break;
+  }
+  return count;
+}
 
 const MIME_BY_EXT = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -144,15 +162,18 @@ async function main() {
     const { paneId, rest: parts } = paneTarget(rest, 'pane exec');
     let wait = true;
     let timeoutMs;
-    const cleaned = [];
-    for (let i = 0; i < parts.length; i++) {
-      const value = parts[i];
-      if (value === '--') continue;
+    // Everything after the first `--` is the command, verbatim. Without a
+    // separator, only leading options are consumed; the rest is the command.
+    const separator = parts.indexOf('--');
+    const optionPart = separator >= 0 ? parts.slice(0, separator) : parts.slice(0, leadingOptionCount(parts));
+    const commandPart = separator >= 0 ? parts.slice(separator + 1) : parts.slice(optionPart.length);
+    for (let i = 0; i < optionPart.length; i++) {
+      const value = optionPart[i];
       if (value === '--no-wait') { wait = false; continue; }
-      if (value === '--wait-ms' || value === '--timeout') { timeoutMs = Number(parts[++i]); continue; }
-      cleaned.push(value);
+      if (value === '--wait-ms' || value === '--timeout') { timeoutMs = Number(optionPart[++i]); continue; }
+      throw new Error(`Unknown pane exec option: ${value}. Put the command after --.`);
     }
-    const command = cleaned.join(' ');
+    const command = commandPart.join(' ');
     if (!command) throw new Error('pane exec requires a command.');
     const result = await call('POST', `/panes/${paneId}/jobs`, { command, wait, timeoutMs });
     print(result);

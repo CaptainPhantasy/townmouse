@@ -722,6 +722,39 @@ function byRole(elements, role, name) {
       fs.rmSync(marker, { force: true });
     });
 
+    await run('cli: --replace does not swallow the text', async () => {
+      await json(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'navigate', url: `http://127.0.0.1:${FIXTURE_PORT}/` });
+      await sleep(300);
+      const catalogued = await json(`/panes/${browserPaneId}/browser/elements`);
+      const input = byRole(catalogued.elements, 'textbox', 'Project name');
+      const panes = path.join(ROOT, 'scripts', 'panes');
+      const output = execFileSync(process.execPath,
+        [panes, 'pane', 'browser', 'type', browserPaneId, '--ref', input.ref, '--replace', 'café 東京'],
+        { env: { ...process.env, TOWNMOUSE_API: `${BASE}/api/panes`, TOWNMOUSE_TOKEN: token }, encoding: 'utf8' });
+      const result = JSON.parse(output);
+      ensure(result.action.status === 'completed', 'typing completed', result.action);
+      ensure(result.action.control && result.action.control.value === 'café 東京',
+        'the replacement text reached the field', result.action.control);
+    });
+
+    await run('cli: exec keeps command arguments after --', async () => {
+      const panes = path.join(ROOT, 'scripts', 'panes');
+      const output = execFileSync(process.execPath,
+        [panes, 'pane', 'exec', terminalPaneId, '--', 'printf', '%s', '--no-wait'],
+        { env: { ...process.env, TOWNMOUSE_API: `${BASE}/api/panes`, TOWNMOUSE_TOKEN: token }, encoding: 'utf8' });
+      const job = JSON.parse(output);
+      ensure(job.status === 'completed', 'the command completed', job);
+      ensure(job.stdout === '--no-wait', 'the separator preserved the command argument', job.stdout);
+    });
+
+    await run('jobs: a multi-byte character split across chunks survives', async () => {
+      const job = await json(`/panes/${terminalPaneId}/jobs`, 'POST', {
+        command: `node -e "process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 25)"`
+      });
+      ensure(job.status === 'completed', 'the command completed', job);
+      ensure(job.stdout === 'é', 'the split character decoded as one glyph', JSON.stringify(job.stdout));
+    });
+
     await run('journal: a stale ref is reported as missing, not guessed', async () => {
       const click = await api(`/panes/${browserPaneId}/browser/action`, 'POST', { action: 'click', ref: 'e99999' });
       ensure(click.status === 404, 'unknown ref is 404', click.status);

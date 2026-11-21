@@ -255,10 +255,14 @@ async function assertDockClear(page, viewport, panelName, panelSelector) {
       if (viewport.name === 'desktop') {
         const navBefore = await readRect(page, '.workspace-nav');
         const canvasBefore = await readRect(page, '.browser-canvas');
+        assert(navBefore, `${viewport.name}: navigation was not rendered before collapsing`);
+        assert(canvasBefore, `${viewport.name}: browser canvas was not rendered before collapsing`);
         await page.click('#workspace-nav-toggle');
         await wait(500);
         const navAfter = await readRect(page, '.workspace-nav');
         const canvasAfter = await readRect(page, '.browser-canvas');
+        assert(navAfter, `${viewport.name}: navigation disappeared after collapsing`);
+        assert(canvasAfter, `${viewport.name}: browser canvas disappeared after collapsing`);
         assert(navAfter.width <= 80, `collapsed navigation should be a rail, got ${navAfter.width}px`);
         assert(canvasAfter.width > canvasBefore.width,
           `collapsed navigation should give the browser width (${canvasBefore.width} -> ${canvasAfter.width})`);

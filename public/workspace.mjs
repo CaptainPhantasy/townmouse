@@ -91,6 +91,7 @@ export async function init(T1) {
   navToggle.innerHTML = icon('chevron') + '<span>Collapse</span>';
   sidebar.prepend(navToggle);
   const LS_NAV = 'townmouse.navCollapsed';
+  const LS_BROWSER_CHROME = 'townmouse.browserChrome';
   const setNavCollapsed = (collapsed) => {
     body.classList.toggle('nav-collapsed', collapsed);
     navToggle.setAttribute('aria-expanded', String(!collapsed));
@@ -115,13 +116,18 @@ export async function init(T1) {
       '<button type="button" id="browser-expand" class="browser-icon-button" aria-label="Expand browser view" aria-expanded="false" title="Expand browser view">' + icon('expand') + '</button>' +
       '<button type="button" id="hide-browser-compact" class="browser-strip-button" aria-label="Hide browser view" title="Hide view">' + icon('hide') + '<span>Hide</span></button>' +
     '</div>' +
+    '<button type="button" id="browser-chrome-restore" class="browser-chrome-restore" hidden aria-label="Show browser controls">' +
+      icon('chevron') + '<span class="browser-chrome-restore-title" id="browser-chrome-restore-title">New tab</span>' +
+      '<span class="browser-chrome-restore-hint">Show controls</span>' +
+    '</button>' +
     '<header class="browser-heading"><div><span class="browser-eyebrow">Browser workspace</span><h2 id="browser-title">New tab</h2></div><button type="button" id="hide-browser" aria-label="Hide browser view">Hide view</button></header>' +
     '<form id="browser-address">' +
       '<button type="button" id="browser-back" aria-label="Go back" title="Back">‹</button>' +
       '<button type="button" id="browser-forward" aria-label="Go forward" title="Forward">›</button>' +
       '<button type="button" id="browser-reload" aria-label="Reload page" title="Reload">↻</button>' +
-      '<input id="browser-url" aria-label="Web or local address" placeholder="Search or enter a web or localhost address" autocomplete="off">' +
+      '<input id="browser-url" aria-label="Web or local address" placeholder="Search or enter address" autocomplete="off">' +
       '<button type="button" id="browser-share-bottom" class="browser-strip-button" aria-label="Sharing and tab controls" aria-controls="browser-permissions" aria-expanded="false">' + icon('share') + '<span>Share</span></button>' +
+      '<button type="button" id="browser-chrome-toggle" class="browser-strip-button" aria-label="Collapse browser controls" aria-expanded="true" title="Collapse browser controls">' + icon('chevron') + '<span>Collapse</span></button>' +
       '<button type="submit">Go</button>' +
     '</form>' +
     '<div class="browser-permissions" id="browser-permissions">' +
@@ -135,11 +141,11 @@ export async function init(T1) {
       '<span class="browser-badge" id="browser-kind">Human</span>' +
       '<span class="browser-badge" id="browser-permission">Private</span>' +
       '<strong id="browser-title-compact">New tab</strong>' +
-      '<span id="browser-message-text">Enter an address or localhost URL.</span>' +
+      '<span id="browser-message-text"></span>' +
     '</div>' +
     '<div class="browser-canvas">' +
       '<img id="browser-frame" alt="Live browser page. Click to interact; use the text field below for typing." tabindex="0" hidden>' +
-      '<div id="browser-empty"><img class="browser-mascot" src="/brand/townmouse-monocled.webp" alt="Townmouse, the monocled colonial mouse holding a terminal sign"><h3>A place for the web</h3><p>Open documentation, preview a local app,<br>or work alongside your terminal agent.</p></div>' +
+      '<div id="browser-empty"><h3>A place for the web</h3><p>Open documentation, preview a local app,<br>or work alongside your terminal agent.</p></div>' +
     '</div>' +
     '<form id="browser-type"><input aria-label="Text to send to browser" placeholder="Type into the focused page field"><button type="submit">Send</button><button type="button" id="browser-tab" aria-label="Send Tab key">Tab</button><button type="button" id="browser-enter" aria-label="Send Enter key">Enter</button></form>';
   const splitHandle = document.createElement('div');
@@ -311,7 +317,7 @@ export async function init(T1) {
   const setAddressPlaceholder = () => {
     $('browser-url').placeholder = isNarrow()
       ? 'Search or address'
-      : 'Search or enter a web or localhost address';
+      : 'Search or enter address';
   };
   setAddressPlaceholder();
   window.addEventListener('resize', setAddressPlaceholder);
@@ -832,6 +838,34 @@ export async function init(T1) {
   }
   function toggleShare() { setShareExpanded(!browser.classList.contains('share-open')); }
 
+  // Browser chrome is collapsible so the page can use the whole surface. The
+  // collapsed state is remembered; the restore strip names the current page so
+  // a collapsed surface never becomes a mystery.
+  let chromeCollapsed = false;
+  try { chromeCollapsed = localStorage.getItem(LS_BROWSER_CHROME) === 'collapsed'; } catch (_) { /* storage may be blocked */ }
+  function setChromeCollapsed(collapsed, persist = true) {
+    chromeCollapsed = collapsed;
+    browser.classList.toggle('chrome-collapsed', collapsed);
+    const toggle = $('browser-chrome-toggle');
+    const restore = $('browser-chrome-restore');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-label', collapsed ? 'Show browser controls' : 'Collapse browser controls');
+      toggle.title = collapsed ? 'Show browser controls' : 'Collapse browser controls';
+    }
+    if (restore) restore.hidden = !collapsed;
+    if (collapsed) { browser.classList.remove('share-open'); setShareExpanded(false); }
+    if (persist) {
+      try { localStorage.setItem(LS_BROWSER_CHROME, collapsed ? 'collapsed' : 'expanded'); } catch (_) { /* storage may be blocked */ }
+    }
+    // The canvas changes size without a window resize, so tell the server.
+    window.setTimeout(() => { resizeViewer().catch(() => {}); }, 0);
+  }
+  function updateChromeRestoreTitle(title) {
+    const label = $('browser-chrome-restore-title');
+    if (label) label.textContent = title || 'New tab';
+  }
+
   async function resizeViewer() {
     if (!current || browser.hidden) return;
     const box = browser.querySelector('.browser-canvas');
@@ -876,6 +910,7 @@ export async function init(T1) {
       const title = current.kind === 'agent' ? 'Agent browser' : (snap.title || 'New tab');
       $('browser-title').textContent = title;
       $('browser-title-compact').textContent = title;
+      updateChromeRestoreTitle(title);
       if (document.activeElement !== $('browser-url')) $('browser-url').value = blank ? '' : snap.url;
       updateBrowserState();
       renderTabs();
@@ -908,7 +943,7 @@ export async function init(T1) {
     const tab = await api('', 'POST', { kind: 'human' });
     tabs.push(tab);
     await show(tab);
-    setMessage(isNarrow() ? 'Private browser. Share only when needed.' : 'Private browser. Choose agent access only when you want to share.');
+    setMessage('');
   };
   const openBrowser = async () => {
     const human = tabs.filter((tab) => tab.kind === 'human');
@@ -1090,6 +1125,9 @@ export async function init(T1) {
   $('hide-browser-compact').onclick = hide;
   $('browser-share-toggle').onclick = toggleShare;
   $('browser-share-bottom').onclick = toggleShare;
+  $('browser-chrome-toggle').onclick = () => setChromeCollapsed(true);
+  $('browser-chrome-restore').onclick = () => setChromeCollapsed(false);
+  setChromeCollapsed(chromeCollapsed, false);
 
   $('workspace-tools').setAttribute('aria-controls', 'workspace-drawer');
   $('workspace-tools').setAttribute('aria-expanded', 'false');

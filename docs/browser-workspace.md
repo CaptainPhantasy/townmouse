@@ -65,8 +65,11 @@ Three layouts, not one layout stretched until it apologizes.
 
 ## Sharing
 
-Human tabs start Private. On a phone or tablet, select **Share** to open the
-sharing row. On desktop, the sharing row is always visible.
+Human tabs start Private. Select **Share** to open the sharing row at every
+width; it starts closed so the page keeps the space. A **Collapse** control
+removes every bar above the page and remembers the choice, leaving a slim strip
+that names the page and brings the controls back. The mascot stays in the
+navigation rail and no longer appears in the working area.
 
 This is the **compatibility** path. For agent work, open `/panes.html`; the
 orchestrator receives `TOWNMOUSE_API` and `scripts/panes` directly, with no
@@ -99,6 +102,39 @@ Send field, Tab, and Enter buttons interact with page inputs.
 
 Localhost means the terminal server host, not the phone or tablet. HTTP and HTTPS
 are supported; file URLs and embedded URL credentials are rejected.
+
+## Agent control
+
+The agent surface describes what it sees and what it did. It does not make an
+agent guess from a picture alone, and it does not report success it cannot show.
+
+- **Observations.** `GET /api/browser/:id/observe` returns a screenshot plus a
+  label: observation id, capture time, viewport size, scroll offset, address,
+  title, and a revision counter. `?elements=1` adds the controls.
+- **Controls by identity.** `GET /api/browser/:id/elements` catalogs controls
+  across every frame (including cross-origin iframes) and open shadow roots with
+  role, accessible name, value, state, box, and a stable `ref` (`e12`). The ref
+  is a DOM marker, not an index, so it survives unrelated re-renders.
+- **Actions.** `POST /api/browser/:id/action` accepts `click`, `hover`, `drag`,
+  `type`, `key`, `scroll`, `select`, `navigate`, `back`, `forward`, and `reload`,
+  by `ref` or by coordinate. Key combinations such as `Alt+M` are supported;
+  `type` with `replace: true` clears the field first.
+- **Results.** Every action returns `status`: `completed`, `missing`,
+  `wrong-kind`, `failed`, `stale`, or `unconfirmed`, plus the focused control and
+  its value where useful. A coordinate cites the observation it came from; if
+  the page's geometry moved, the action is refused with `409` and an instruction
+  to look again.
+- **Waiting.** `POST /api/browser/:id/wait` waits for an address, title, text,
+  selector, or field value, always bounded by a timeout.
+- **Scrolling.** `scroll` with a ref or selector scrolls that element's own
+  scroll box; without one it scrolls the page deliberately.
+- **Sizing.** `POST /api/browser/:id/sizing` with `mode: fixed` locks the page
+  viewport so the owner's viewer scales the picture instead of rearranging the
+  page. `mode: fit` restores the old behaviour.
+
+`docs/plans/townmouse-orchestrator-assessment-2026-11-20-implementation.md`
+maps each of these to the assessment item it answers, and
+`tests/agent-control.test.cjs` exercises them against a real browser.
 
 ## Runtime and trust
 

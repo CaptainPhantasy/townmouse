@@ -1,9 +1,17 @@
 node_modules
 .git
 .github
+# Internal working state — never part of the image, and .runtime alone is ~700 MB.
+.runtime
+.quarantine
+evidence
 docs/evidence
+docs/plans
+docs/reference
+docs/screenshots
 stewardship
 tests
 Issues
 *.log
+*.tgz
 .DS_Store

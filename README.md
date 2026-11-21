@@ -53,10 +53,16 @@ is one.
 
 ## Requirements (Or: The parts you actually need)
 
-Node.js 22.x and npm on macOS or Linux. Puppeteer is a production dependency
-because browser tabs and panes are real Chromium pages; `npm ci` downloads a
-compatible Chromium. Set `TERMINALONE_CHROME` to use an operator-installed
-Chromium instead.
+Node.js 22.x (preferred; 22–26 are accepted) and npm on macOS or Linux. Puppeteer
+is a production dependency because browser tabs and panes are real Chromium
+pages; `npm ci` downloads a compatible Chromium. If that download is skipped —
+npm 12 skips dependency install scripts by default — TownMouse falls back to an
+installed Chrome, Chromium, Edge, or Brave. Set `TERMINALONE_CHROME` to choose a
+specific binary. `GET /health` reports which engine resolved.
+
+On Linux, npm 12 skips dependency install scripts by default and node-pty has no
+prebuilt Linux binary; install with `--allow-scripts=node-pty`, or run
+`npm rebuild node-pty`, then `npm run doctor`. The container needs neither.
 
 `npm run doctor` checks the Node version and native modules. If `node-pty`
 needs rebuilding, `npm run repair` does that. The engine is native code; it is
@@ -95,7 +101,13 @@ townmouse --port 12000 --no-open
 ### With Docker
 
 ```sh
-docker build -t townmouse .
+TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
+  GIT_REVISION=$(git rev-parse HEAD) \
+  docker build \
+    --build-arg TOWNMOUSE_VERSION="$TOWNMOUSE_VERSION" \
+    --build-arg GIT_REVISION="$GIT_REVISION" \
+    -t townmouse:"$TOWNMOUSE_VERSION" \
+    -t townmouse:latest .
 docker run --rm -p 127.0.0.1:11001:11001 \
   -v townmouse-home:/home/node/.townmouse \
   -v townmouse-config:/home/node/.config/terminalone \
@@ -273,9 +285,10 @@ volume for the same data.
 
 ```sh
 npm start              # run the workspace
-npm test               # security, unit, smoke, feature, voice, responsive, and pane API suites
+npm test               # security, unit, smoke, feature, voice, responsive, pane API, and agent-control suites
 npm run test:workspace # browser workspace journeys; starts its own preview site
-npm run doctor         # check Node 22 and native modules
+npm run test:package   # install the packed tarball and run the installed app
+npm run doctor         # check Node and native modules
 npm run repair         # rebuild native modules
 ```
 
@@ -290,9 +303,9 @@ More docs:
 - [docs/PACKAGING.md](docs/PACKAGING.md) — npm, Docker, the macOS wrapper, release gates, and backup.
 - [TOWNMOUSE.md](TOWNMOUSE.md) — product boundary and origin.
 
-## Status (Or: Version 0.1.0, and honest about it)
+## Status (Or: Version 0.2.0, and honest about it)
 
-Version 0.1.0, the first product cut. Two working surfaces: the single
+Version 0.2.0. 0.1.0 was the first product cut. Two working surfaces: the single
 terminal/browser workspace and the pane workspace. The pane workspace is the
 native path for agent work; the single-browser workspace remains for
 compatibility. Known limits are under Security and in

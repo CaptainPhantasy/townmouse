@@ -36,6 +36,14 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # The suite above tests the checkout. This installs the packed tarball the
+      # way a user does (with install scripts ignored) and exercises the
+      # installed application: engine assets, data-directory modes, a live PTY,
+      # and a browser pane. It is the gate that would have caught a dev tree
+      # masquerading as an application.
+      - name: Package install gate
+        run: npm run test:package
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:

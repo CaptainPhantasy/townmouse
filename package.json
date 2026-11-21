@@ -1,6 +1,6 @@
 {
   "name": "townmouse",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A terminal and agent browser workspace built on TerminalOne.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -29,19 +29,22 @@
     "dev": "scripts/node-runtime.sh exec src/server.js",
     "doctor": "scripts/node-runtime.sh doctor",
     "repair": "scripts/node-runtime.sh repair",
-    "test": "npm run test:security && bash tests/hooks.test.sh && npm run test:unit && scripts/node-runtime.sh exec tests/smoke-test.js && scripts/node-runtime.sh exec tests/feature-test.js && scripts/node-runtime.sh exec tests/feature-behavior-test.js && scripts/node-runtime.sh exec tests/voice-input.test.js && scripts/node-runtime.sh exec tests/responsive-test.js && npm run test:panes && npm run test:voice-routing",
-    "test:unit": "scripts/node-runtime.sh exec tests/input-guard.test.mjs && node --test tests/input-chunks.test.mjs tests/replay-text.test.mjs tests/attachments-retention.test.mjs tests/service-worker.test.js tests/commercial-polish.test.js tests/autosave-restore.test.mjs tests/shell-resolve.test.js && node --test tests/clipboard-text.test.mjs",
+    "test": "npm run test:security && bash tests/hooks.test.sh && npm run test:unit && scripts/node-runtime.sh exec tests/smoke-test.js && scripts/node-runtime.sh exec tests/feature-test.js && scripts/node-runtime.sh exec tests/feature-behavior-test.js && scripts/node-runtime.sh exec tests/voice-input.test.js && scripts/node-runtime.sh exec tests/responsive-test.js && npm run test:ui && npm run test:panes && npm run test:agent-control && npm run test:voice-routing",
+    "test:unit": "scripts/node-runtime.sh exec tests/input-guard.test.mjs && node --test tests/input-chunks.test.mjs tests/replay-text.test.mjs tests/attachments-retention.test.mjs tests/service-worker.test.js tests/commercial-polish.test.js tests/autosave-restore.test.mjs tests/shell-resolve.test.js tests/static-deps.test.js tests/pty-permissions.test.js tests/chrome-resolve.test.js && node --test tests/clipboard-text.test.mjs",
     "test:smoke": "scripts/node-runtime.sh exec tests/smoke-test.js",
     "test:features": "scripts/node-runtime.sh exec tests/feature-test.js",
     "test:behavior": "scripts/node-runtime.sh exec tests/feature-behavior-test.js",
     "test:voice": "scripts/node-runtime.sh exec tests/voice-input.test.js",
     "test:responsive": "scripts/node-runtime.sh exec tests/responsive-test.js",
     "test:workspace": "scripts/node-runtime.sh exec tests/workspace-journeys.cjs",
+    "test:ui": "scripts/node-runtime.sh exec tests/ui-surfaces.test.cjs && scripts/node-runtime.sh exec tests/owner-recovery.test.cjs",
     "postinstall": "sh scripts/prepare-native.sh",
     "test:security": "node --test tests/request-boundary.test.js tests/request-boundary-integration.test.js",
     "test:panes": "node tests/panes-api.test.cjs && node tests/panes-persistence.test.cjs && node tests/resume-width.test.cjs && node tests/attachments-ui.test.cjs && node tests/idle-wake.test.cjs && node tests/multi-window.test.cjs",
+    "test:agent-control": "scripts/node-runtime.sh exec tests/agent-control.test.cjs",
     "test:voice-routing": "node tests/voice-routing.test.cjs",
-    "test:maximize": "node tests/panes-maximize.test.cjs"
+    "test:maximize": "node tests/panes-maximize.test.cjs",
+    "test:package": "scripts/node-runtime.sh exec tests/package-install.test.cjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -55,7 +58,7 @@
     "ws": "^8.21.1"
   },
   "engines": {
-    "node": ">=22 <23"
+    "node": ">=22 <27"
   },
   "files": [
     "bin/",
@@ -63,6 +66,10 @@
     "public/",
     "scripts/node-runtime.sh",
     "scripts/prepare-native.sh",
+    "scripts/install-service.sh",
+    "scripts/uninstall-service.sh",
+    "scripts/t1.sh",
+    "scripts/run-hooks",
     "README.md",
     "TOWNMOUSE.md",
     "DESIGN.md",

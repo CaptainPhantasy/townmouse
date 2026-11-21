@@ -82,6 +82,28 @@ export async function init(T1) {
   sidebar.querySelector('#workspace-attach')?.setAttribute('aria-label', 'Attach a file to the terminal');
   sidebar.querySelector('#workspace-tools')?.setAttribute('aria-label', 'Tools and settings');
 
+  // Desktop can trade the labeled menu for a 72px rail, giving the live
+  // surfaces the reclaimed width. The choice survives reloads.
+  const navToggle = document.createElement('button');
+  navToggle.type = 'button';
+  navToggle.id = 'workspace-nav-toggle';
+  navToggle.className = 'workspace-nav-toggle';
+  navToggle.innerHTML = icon('chevron') + '<span>Collapse</span>';
+  sidebar.prepend(navToggle);
+  const LS_NAV = 'townmouse.navCollapsed';
+  const LS_BROWSER_CHROME = 'townmouse.browserChrome';
+  const setNavCollapsed = (collapsed) => {
+    body.classList.toggle('nav-collapsed', collapsed);
+    navToggle.setAttribute('aria-expanded', String(!collapsed));
+    navToggle.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+    navToggle.querySelector('span').textContent = collapsed ? 'Expand' : 'Collapse';
+    try { localStorage.setItem(LS_NAV, collapsed ? '1' : '0'); } catch (_) { /* storage may be blocked */ }
+  };
+  let navCollapsed = false;
+  try { navCollapsed = localStorage.getItem(LS_NAV) === '1'; } catch (_) { /* default expanded */ }
+  setNavCollapsed(navCollapsed);
+  navToggle.addEventListener('click', () => setNavCollapsed(!body.classList.contains('nav-collapsed')));
+
   const browser = document.createElement('section');
   browser.className = 'browser-surface';
   browser.hidden = true;
@@ -94,13 +116,18 @@ export async function init(T1) {
       '<button type="button" id="browser-expand" class="browser-icon-button" aria-label="Expand browser view" aria-expanded="false" title="Expand browser view">' + icon('expand') + '</button>' +
       '<button type="button" id="hide-browser-compact" class="browser-strip-button" aria-label="Hide browser view" title="Hide view">' + icon('hide') + '<span>Hide</span></button>' +
     '</div>' +
+    '<button type="button" id="browser-chrome-restore" class="browser-chrome-restore" hidden aria-label="Show browser controls">' +
+      icon('chevron') + '<span class="browser-chrome-restore-title" id="browser-chrome-restore-title">New tab</span>' +
+      '<span class="browser-chrome-restore-hint">Show controls</span>' +
+    '</button>' +
     '<header class="browser-heading"><div><span class="browser-eyebrow">Browser workspace</span><h2 id="browser-title">New tab</h2></div><button type="button" id="hide-browser" aria-label="Hide browser view">Hide view</button></header>' +
     '<form id="browser-address">' +
       '<button type="button" id="browser-back" aria-label="Go back" title="Back">‹</button>' +
       '<button type="button" id="browser-forward" aria-label="Go forward" title="Forward">›</button>' +
       '<button type="button" id="browser-reload" aria-label="Reload page" title="Reload">↻</button>' +
-      '<input id="browser-url" aria-label="Web or local address" placeholder="Search or enter a web or localhost address" autocomplete="off">' +
+      '<input id="browser-url" aria-label="Web or local address" placeholder="Search or enter address" autocomplete="off">' +
       '<button type="button" id="browser-share-bottom" class="browser-strip-button" aria-label="Sharing and tab controls" aria-controls="browser-permissions" aria-expanded="false">' + icon('share') + '<span>Share</span></button>' +
+      '<button type="button" id="browser-chrome-toggle" class="browser-strip-button" aria-label="Collapse browser controls" aria-expanded="true" title="Collapse browser controls">' + icon('chevron') + '<span>Collapse</span></button>' +
       '<button type="submit">Go</button>' +
     '</form>' +
     '<div class="browser-permissions" id="browser-permissions">' +
@@ -114,11 +141,11 @@ export async function init(T1) {
       '<span class="browser-badge" id="browser-kind">Human</span>' +
       '<span class="browser-badge" id="browser-permission">Private</span>' +
       '<strong id="browser-title-compact">New tab</strong>' +
-      '<span id="browser-message-text">Enter an address or localhost URL.</span>' +
+      '<span id="browser-message-text"></span>' +
     '</div>' +
     '<div class="browser-canvas">' +
       '<img id="browser-frame" alt="Live browser page. Click to interact; use the text field below for typing." tabindex="0" hidden>' +
-      '<div id="browser-empty"><img class="browser-mascot" src="/brand/townmouse-monocled.webp" alt="Townmouse, the monocled colonial mouse holding a terminal sign"><h3>A place for the web</h3><p>Open documentation, preview a local app,<br>or work alongside your terminal agent.</p></div>' +
+      '<div id="browser-empty"><h3>A place for the web</h3><p>Open documentation, preview a local app,<br>or work alongside your terminal agent.</p></div>' +
     '</div>' +
     '<form id="browser-type"><input aria-label="Text to send to browser" placeholder="Type into the focused page field"><button type="submit">Send</button><button type="button" id="browser-tab" aria-label="Send Tab key">Tab</button><button type="button" id="browser-enter" aria-label="Send Enter key">Enter</button></form>';
   const splitHandle = document.createElement('div');
@@ -142,6 +169,7 @@ export async function init(T1) {
     '<header><div><small>Townmouse controls</small><h2>Tools &amp; settings</h2></div><button id="drawer-close" type="button">Done</button></header>' +
     '<input id="tool-filter" placeholder="Find a tool" aria-label="Find a tool" autocomplete="off">' +
     '<div class="drawer-groups" id="drawer-groups">' +
+      '<section class="drawer-group drawer-group-workspace" data-group="workspace"><h3>Workspace</h3><div class="drawer-list" id="drawer-workspace"></div></section>' +
       '<section class="drawer-group" data-group="session"><h3>Session</h3><div class="drawer-list" id="drawer-session"></div></section>' +
       '<section class="drawer-group" data-group="appearance"><h3>Appearance</h3><div class="drawer-list" id="drawer-appearance"></div></section>' +
       '<section class="drawer-group" data-group="tools"><h3>Terminal tools</h3><div class="drawer-list" id="drawer-tools"></div></section>' +
@@ -171,6 +199,20 @@ export async function init(T1) {
   body.append(closeConfirm);
 
   const $ = (id) => document.getElementById(id);
+  // One dock, one panel. Opening a panel closes the others so two surfaces
+  // never stack in the same reserved strip.
+  let dockTrigger = null;
+  const closeOtherDocks = (keep) => {
+    document.querySelectorAll('dialog.workspace-drawer[open]').forEach((dialog) => {
+      if (dialog !== keep) dialog.close();
+    });
+    // Settings is a div, not a dialog, so the selector above cannot see it.
+    // Close it here or Tools/Sessions can stack on top of it in the same dock.
+    const settings = document.getElementById('settingsModal');
+    if (settings && settings !== keep && settings.classList.contains('open')) {
+      settings.classList.remove('open');
+    }
+  };
   const settingsModal = document.getElementById('settingsModal');
   const terminalActions = document.querySelector('.terminal-actions');
   const toolbar = $('t1toolbar');
@@ -249,13 +291,33 @@ export async function init(T1) {
   });
   $('drawer-tools').append(readerRow);
 
+  // Phone navigation is four surfaces. Panes and Attach are actions, so they
+  // live here as labeled rows instead of competing for a sixth bottom-nav slot.
+  for (const [label, desc, iconName, target] of [
+    ['Panes', 'Open the four-pane workspace', 'split', 'workspace-panes'],
+    ['Attach a file', 'Upload into the terminal', 'plus', 'workspace-attach']
+  ]) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'drawer-row drawer-phone-only';
+    row.dataset.search = (label + ' ' + desc).toLowerCase();
+    row.setAttribute('aria-label', label + '. ' + desc);
+    row.innerHTML = icon(iconName) +
+      '<span class="drawer-row-copy"><span class="drawer-row-name">' + label + '</span><span class="drawer-row-desc">' + desc + '</span></span>';
+    row.addEventListener('click', () => {
+      row.closest('dialog')?.close();
+      $(target)?.click();
+    });
+    $('drawer-workspace').append(row);
+  }
+
   const isNarrow = () => window.matchMedia('(max-width: 699px)').matches;
   const isTouch = () => window.matchMedia('(pointer: coarse)').matches;
   const setMessage = (message) => { const el = $('browser-message-text'); if (el) el.textContent = message; };
   const setAddressPlaceholder = () => {
     $('browser-url').placeholder = isNarrow()
       ? 'Search or address'
-      : 'Search or enter a web or localhost address';
+      : 'Search or enter address';
   };
   setAddressPlaceholder();
   window.addEventListener('resize', setAddressPlaceholder);
@@ -352,7 +414,12 @@ export async function init(T1) {
   }
 
   sessionPill.addEventListener('click', () => {
-    void renderSessionMenu().finally(() => sessionMenu.showModal());
+    dockTrigger = sessionPill;
+    void renderSessionMenu().finally(() => {
+      closeOtherDocks(sessionMenu);
+      if (!sessionMenu.open) sessionMenu.show();
+      sessionMenu.querySelector('.drawer-row')?.focus();
+    });
   });
   $('session-menu-close').onclick = () => sessionMenu.close();
   $('session-menu-new').onclick = () => {
@@ -391,7 +458,12 @@ export async function init(T1) {
   // Settings focus restoration after the inherited close handler runs.
   if (settingsModal) {
     new MutationObserver(() => {
-      if (!settingsModal.classList.contains('open')) setTimeout(() => $('workspace-tools')?.focus(), 0);
+      if (settingsModal.classList.contains('open')) return;
+      setTimeout(() => {
+        // Closing Settings to open another dock must not steal that dock's focus.
+        if (document.querySelector('dialog.workspace-drawer[open]')) return;
+        $('workspace-tools')?.focus();
+      }, 0);
     }).observe(settingsModal, { attributes: true, attributeFilter: ['class'] });
   }
 
@@ -508,20 +580,121 @@ export async function init(T1) {
   let busy = false;
   const permissionLabel = (permission) => permission === 'view' ? 'View only' : permission === 'control' ? 'Control' : 'Private';
 
-  async function api(path = '', method = 'GET', data) {
+  // The workspace key and the owner capability are minted per server process.
+  // A server restart (or a long-lived tab) leaves the page holding a stale key;
+  // recover the key from the owner cookie, and reload once if the cookie itself
+  // was rotated. Without this, every browser action repeats "Only the owner…".
+  let authRecovering = false;
+  let authBlocked = false;
+  async function fetchWorkspaceKey() {
+    try {
+      const res = await fetch('/api/browser/bootstrap', {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) return null;
+      const value = await res.json();
+      return value && typeof value.key === 'string' ? value.key : null;
+    } catch (_) { return null; }
+  }
+  const RELOAD_GUARD_KEY = 'townmouse.ownerReloadAt';
+  function readReloadGuard() {
+    const now = Date.now();
+    const valid = (value) => Number.isFinite(value) && value > 0 && value <= now;
+    try {
+      const stored = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0);
+      if (valid(stored)) return stored;
+    } catch (_) { /* storage blocked */ }
+    // window.name survives a reload when Safari blocks cookies and storage.
+    // Reject foreign/future values (a future timestamp would make the guard
+    // arithmetic think a reload just happened forever).
+    const match = /(?:^|;)townmouseReloadAt=(\d+)(?:;|$)/.exec(window.name || '');
+    const fallback = match ? Number(match[1]) : 0;
+    return valid(fallback) ? fallback : 0;
+  }
+  function writeReloadGuard(at) {
+    try { sessionStorage.setItem(RELOAD_GUARD_KEY, String(at)); return; } catch (_) { /* storage blocked */ }
+    window.name = `townmouseReloadAt=${at}`;
+  }
+  function queueResumeRequest(request) {
+    if (!request || request.method === 'GET' || typeof request.path !== 'string') return;
+    try {
+      const raw = sessionStorage.getItem('townmouse.resume');
+      const prior = raw ? JSON.parse(raw) : null;
+      const queue = Array.isArray(prior) ? prior : prior ? [prior] : [];
+      queue.push(request);
+      sessionStorage.setItem('townmouse.resume', JSON.stringify(queue));
+    } catch (_) { /* storage blocked; the reload still recovers the session */ }
+  }
+  function recoverOwnerSession(request) {
+    if (authRecovering) {
+      // A GET poll may already own the recovery/reload slot; do not drop a
+      // user mutation that failed at the same moment.
+      queueResumeRequest(request);
+      return;
+    }
+    authRecovering = true;
+    setMessage('Refreshing the owner session…');
+    const last = readReloadGuard();
+    if (Date.now() - last < 15000) {
+      // A reload this soon after the last one did not fix the session. Stop
+      // retrying (and stop polling) until the user reloads manually.
+      authRecovering = false;
+      authBlocked = true;
+      setMessage('Owner session expired. Reload the page to reconnect.');
+      return;
+    }
+    // Replay user actions that the stale key refused, so a click is not
+    // silently lost. Background polls are not worth replaying; a fresh load
+    // fetches state anyway.
+    queueResumeRequest(request);
+    writeReloadGuard(Date.now());
+    location.reload();
+    // If a beforeunload handler or a slow navigation keeps this document
+    // alive, do not leave recovery latched forever.
+    setTimeout(() => { authRecovering = false; }, 5000);
+  }
+  async function api(path = '', method = 'GET', data, retry = true) {
+    // Once the guarded recovery has given up, every poll would otherwise repeat
+    // the rejected request (plus a bootstrap fetch) until a manual reload.
+    if (authBlocked) throw new Error('Owner session expired. Reload the page to reconnect.');
     const res = await fetch('/api/browser' + path, {
       method,
       headers: { 'Content-Type': 'application/json', 'X-Workspace-Key': key || '' },
       ...(data ? { body: JSON.stringify(data) } : {})
     });
-    const value = await res.json();
-    if (!res.ok) throw new Error(value.error);
-    return value;
+    const value = await res.json().catch(() => ({}));
+    if (res.ok) return value;
+    const message = value.error || `Request failed (${res.status}).`;
+    const ownerAuthFailure = res.status === 403 &&
+      /^(Workspace access required|Only the owner can|Owner page required|Browser access token required)/.test(message);
+    if (ownerAuthFailure && retry) {
+      if (path === '/bootstrap') {
+        // The page navigation already had its one chance to mint the owner
+        // cookie. If bootstrap still denies, a reload cannot fix it (blocked
+        // cookies or an offline/service-worker shell) and would loop forever.
+        authBlocked = true;
+        setMessage('Owner session unavailable. Reload with cookies enabled for this site.');
+        throw new Error(message);
+      }
+      const fresh = await fetchWorkspaceKey();
+      if (fresh) {
+        key = fresh;
+        return api(path, method, data, false);
+      }
+      recoverOwnerSession({ path, method, data });
+    }
+    throw new Error(message);
   }
   function safe(fn) {
     return async (event) => {
       try { await fn(event); }
-      catch (error) { setMessage(error.message); T1.toast?.(error.message); }
+      catch (error) {
+        // The 403 that triggered recovery must not overwrite the "refreshing"
+        // message with the owner restriction recovery exists to hide.
+        if (authBlocked || authRecovering) return;
+        setMessage(error.message);
+        T1.toast?.(error.message);
+      }
     };
   }
 
@@ -617,6 +790,9 @@ export async function init(T1) {
   function renderTabs() {
     renderTabContainer($('browser-tabs'), tabs);
     renderTabContainer($('browser-tablist'), tabs);
+    // A collapsed desktop rail hides the sidebar tab list. Only then does the
+    // browser strip earn its vertical height; one tab needs no switcher.
+    body.classList.toggle('multi-tab', tabs.length > 1);
     selectNav($('workspace-terminal'), browser.hidden);
     selectNav($('workspace-browser'), !browser.hidden && current?.kind === 'human');
     selectNav($('agent-browser'), !browser.hidden && current?.kind === 'agent');
@@ -662,6 +838,34 @@ export async function init(T1) {
   }
   function toggleShare() { setShareExpanded(!browser.classList.contains('share-open')); }
 
+  // Browser chrome is collapsible so the page can use the whole surface. The
+  // collapsed state is remembered; the restore strip names the current page so
+  // a collapsed surface never becomes a mystery.
+  let chromeCollapsed = false;
+  try { chromeCollapsed = localStorage.getItem(LS_BROWSER_CHROME) === 'collapsed'; } catch (_) { /* storage may be blocked */ }
+  function setChromeCollapsed(collapsed, persist = true) {
+    chromeCollapsed = collapsed;
+    browser.classList.toggle('chrome-collapsed', collapsed);
+    const toggle = $('browser-chrome-toggle');
+    const restore = $('browser-chrome-restore');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-label', collapsed ? 'Show browser controls' : 'Collapse browser controls');
+      toggle.title = collapsed ? 'Show browser controls' : 'Collapse browser controls';
+    }
+    if (restore) restore.hidden = !collapsed;
+    if (collapsed) { browser.classList.remove('share-open'); setShareExpanded(false); }
+    if (persist) {
+      try { localStorage.setItem(LS_BROWSER_CHROME, collapsed ? 'collapsed' : 'expanded'); } catch (_) { /* storage may be blocked */ }
+    }
+    // The canvas changes size without a window resize, so tell the server.
+    window.setTimeout(() => { resizeViewer().catch(() => {}); }, 0);
+  }
+  function updateChromeRestoreTitle(title) {
+    const label = $('browser-chrome-restore-title');
+    if (label) label.textContent = title || 'New tab';
+  }
+
   async function resizeViewer() {
     if (!current || browser.hidden) return;
     const box = browser.querySelector('.browser-canvas');
@@ -671,6 +875,19 @@ export async function init(T1) {
     current.viewWidth = width;
     current.viewHeight = height;
     await api('/' + current.id + '/viewport', 'POST', { width, height });
+  }
+  // A docked panel changes the browser column without firing window.resize;
+  // observe the canvas so the server viewport (and screenshot) follows the
+  // visible surface instead of staying at its pre-dock size.
+  const viewerResizeObserver = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => {
+        clearTimeout(window.__browserResize);
+        window.__browserResize = setTimeout(() => resizeViewer().catch(() => {}), 250);
+      })
+    : null;
+  if (viewerResizeObserver) {
+    const viewerBox = browser.querySelector('.browser-canvas');
+    if (viewerBox) viewerResizeObserver.observe(viewerBox);
   }
   window.addEventListener('resize', () => {
     clearTimeout(window.__browserResize);
@@ -693,6 +910,7 @@ export async function init(T1) {
       const title = current.kind === 'agent' ? 'Agent browser' : (snap.title || 'New tab');
       $('browser-title').textContent = title;
       $('browser-title-compact').textContent = title;
+      updateChromeRestoreTitle(title);
       if (document.activeElement !== $('browser-url')) $('browser-url').value = blank ? '' : snap.url;
       updateBrowserState();
       renderTabs();
@@ -725,7 +943,7 @@ export async function init(T1) {
     const tab = await api('', 'POST', { kind: 'human' });
     tabs.push(tab);
     await show(tab);
-    setMessage(isNarrow() ? 'Private browser. Share only when needed.' : 'Private browser. Choose agent access only when you want to share.');
+    setMessage('');
   };
   const openBrowser = async () => {
     const human = tabs.filter((tab) => tab.kind === 'human');
@@ -858,7 +1076,12 @@ export async function init(T1) {
         if (action === 'copy-url') copyAttachmentText(card.dataset.url || '', 'Attachment URL copied');
         if (action === 'open-url' && card.dataset.url) window.open(card.dataset.url, '_blank', 'noopener');
       });
-      body.append(card);
+      // In-flow inside the shell: the card reserves height and pushes the
+      // terminal instead of covering the top of the live surface.
+      const shell = document.querySelector('.app-shell');
+      const terminalContainer = shell?.querySelector('.terminal-container');
+      if (shell && terminalContainer) shell.insertBefore(card, terminalContainer);
+      else body.append(card);
     }
     card.dataset.path = attachment.path || '';
     card.dataset.url = attachment.url || '';
@@ -902,14 +1125,19 @@ export async function init(T1) {
   $('hide-browser-compact').onclick = hide;
   $('browser-share-toggle').onclick = toggleShare;
   $('browser-share-bottom').onclick = toggleShare;
+  $('browser-chrome-toggle').onclick = () => setChromeCollapsed(true);
+  $('browser-chrome-restore').onclick = () => setChromeCollapsed(false);
+  setChromeCollapsed(chromeCollapsed, false);
 
   $('workspace-tools').setAttribute('aria-controls', 'workspace-drawer');
   $('workspace-tools').setAttribute('aria-expanded', 'false');
   drawer.addEventListener('close', () => $('workspace-tools').setAttribute('aria-expanded', 'false'));
   $('workspace-tools').onclick = () => {
+    dockTrigger = $('workspace-tools');
     filterDrawer('');
     $('tool-filter').value = '';
-    drawer.showModal();
+    closeOtherDocks(drawer);
+    if (!drawer.open) drawer.show();
     $('workspace-tools').setAttribute('aria-expanded', 'true');
     if (!isTouch()) $('tool-filter').focus();
   };
@@ -927,9 +1155,32 @@ export async function init(T1) {
     event.preventDefault();
     event.stopPropagation();
     drawer.close();
-    closeConfirm.showModal();
+    closeOtherDocks(closeConfirm);
+    if (!closeConfirm.open) closeConfirm.show();
+    $('close-confirm-cancel').focus();
   }, true);
   $('tool-filter').oninput = (event) => filterDrawer(event.target.value);
+
+  // Docked panels close with Escape, like any other surface-level affordance,
+  // but the terminal underneath stays live and focused throughout.
+  // Capture-phase: the docks are non-modal, so the terminal keeps focus and
+  // xterm would otherwise consume Escape before this handler sees it.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const openPanel = [...document.querySelectorAll('dialog.workspace-drawer[open]')].pop();
+    if (!openPanel) return;
+    // The terminal and browser keep their keys. If focus is in a live surface,
+    // Escape belongs to that surface; the dock is closed with its own control.
+    if (event.target instanceof Element &&
+        event.target.closest('.terminal-container, .browser-canvas')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const trigger = dockTrigger;
+    dockTrigger = null;
+    openPanel.close();
+    if (trigger && trigger.isConnected && trigger.offsetParent !== null) trigger.focus();
+    else $('workspace-tools')?.focus();
+  }, true);
 
   $('browser-address').onsubmit = safe(async (event) => {
     event.preventDefault();
@@ -967,9 +1218,15 @@ export async function init(T1) {
     const close = document.createElement('button');
     close.textContent = 'Done';
     close.onclick = () => { dialog.close(); dialog.remove(); };
+    // Escape and closeOtherDocks close the dialog without running close.onclick;
+    // remove it on close so one-off docks do not accumulate in the DOM.
+    dialog.addEventListener('close', () => dialog.remove());
     dialog.append(heading, close, content);
     body.append(dialog);
-    dialog.showModal();
+    dockTrigger = document.activeElement;
+    closeOtherDocks(dialog);
+    dialog.show();
+    close.focus();
   });
   $('copy-agent').onclick = safe(async () => {
     const access = await api('/' + current.id + '/access');
@@ -990,9 +1247,12 @@ export async function init(T1) {
       const done = document.createElement('button');
       done.textContent = 'Done';
       done.onclick = () => { dialog.close(); dialog.remove(); };
+      dialog.addEventListener('close', () => dialog.remove());
       dialog.append(label, field, done);
       body.append(dialog);
-      dialog.showModal();
+      dockTrigger = document.activeElement;
+      closeOtherDocks(dialog);
+      dialog.show();
       field.select();
     }
   });
@@ -1012,7 +1272,7 @@ export async function init(T1) {
   });
   $('browser-frame').addEventListener('wheel', safe(async (event) => {
     event.preventDefault();
-    await action('scroll', { deltaY: event.deltaY });
+    await action('scroll', { deltaY: event.deltaY, pointer: true });
   }), { passive: false });
   $('browser-type').onsubmit = safe(async (event) => {
     event.preventDefault();
@@ -1029,7 +1289,7 @@ export async function init(T1) {
     if (touchStart !== null) {
       const delta = touchStart - event.changedTouches[0].clientY;
       touchStart = null;
-      if (Math.abs(delta) > 20) await action('scroll', { deltaY: delta });
+      if (Math.abs(delta) > 20) await action('scroll', { deltaY: delta, pointer: true });
     }
   }));
 
@@ -1102,12 +1362,31 @@ export async function init(T1) {
 
   try {
     key = (await api('/bootstrap')).key;
+    let pending = null;
+    try {
+      pending = JSON.parse(sessionStorage.getItem('townmouse.resume') || 'null');
+      sessionStorage.removeItem('townmouse.resume');
+    } catch (_) { /* storage blocked */ }
+    const replay = Array.isArray(pending) ? pending : pending ? [pending] : [];
+    let replayedTab = null;
+    for (const request of replay) {
+      if (!request || typeof request.path !== 'string' || request.path === '/bootstrap') continue;
+      try {
+        const result = await api(request.path, request.method || 'GET', request.data);
+        if (request.method === 'POST' && request.path === '' && result?.id) replayedTab = result;
+      } catch (_) { /* replay is best-effort */ }
+    }
     tabs = await api();
     renderTabs();
+    // Re-apply the visible half of a replayed "New tab" click: the mutation
+    // alone created the tab server-side but left the browser surface hidden.
+    if (replayedTab) await show(tabs.find((tab) => tab.id === replayedTab.id) || replayedTab);
   } catch (error) {
-    setMessage(error.message);
+    if (!authRecovering && !authBlocked) setMessage(error.message);
   }
-  setInterval(() => refresh().catch((error) => setMessage(error.message)), 1000);
+  setInterval(() => refresh().catch((error) => {
+    if (!authRecovering && !authBlocked) setMessage(error.message);
+  }), 1000);
   // Reconcile the sidebar with the server so a crashed Chromium or a closed
   // context cannot leave a permanently stale tab.
   setInterval(async () => {

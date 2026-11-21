@@ -11,8 +11,22 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 const WebSocket = require('ws');
-const pty = require('node-pty');
 const { v4: uuidv4 } = require('uuid');
+const { ensurePtyHelpers, isTerminalEngineError, terminalEngineHelp } = require('./pty-permissions');
+
+// The terminal engine is native. If it is missing (npm 12 skips dependency
+// install scripts; node-pty has no Linux prebuild) the useful answer is the
+// remedy, not a require stack.
+let pty;
+try {
+  pty = require('node-pty');
+} catch (error) {
+  if (isTerminalEngineError(error)) {
+    console.error(terminalEngineHelp(process.platform, error.message));
+    process.exit(78);
+  }
+  throw error;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -21,6 +35,7 @@ const PORT = process.env.PORT || 11001;
 // loopback is not reachable from the host; publish that port to loopback only.
 const HOST = process.env.HOST || '127.0.0.1';
 const { createRequestBoundary } = require('./request-boundary');
+const { installStaticDependencies } = require('./static-deps');
 const isTrustedRequest = createRequestBoundary(PORT, process.env.TERMINALONE_TRUSTED_ORIGINS || '');
 const MAX_CONCURRENT_SESSIONS = 10;
 
@@ -951,9 +966,29 @@ require('./attachments').installAttachments(app);
 // Pane input/command bodies can be large pastes. 2 MB keeps a single request
 // below the attachment limit while still bounding local API requests.
 app.use(express.json({ limit: '2mb' }));
+// Repair node-pty's spawn-helper mode before any pane can spawn. npm tarballs do
+// not carry the executable bit, and npm 12 does not run dependency postinstalls,
+// so this cannot be left to the install step.
+const ptyHelpers = ensurePtyHelpers();
+if (ptyHelpers.fixed.length) {
+  info(null, 'Repaired node-pty spawn helper permissions', { dir: ptyHelpers.dir, files: ptyHelpers.fixed.length });
+}
+
 const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
 const closeBrowsers = () => browserWorkspace.closeAll();
-const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
+
+// workspace-panes loads node-pty at module load. If the native engine is
+// missing, explain the actual fix instead of dying in a require stack.
+let paneWorkspace;
+try {
+  paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
+} catch (error) {
+  if (isTerminalEngineError(error)) {
+    console.error(terminalEngineHelp(process.platform, error.message));
+    process.exit(78);
+  }
+  throw error;
+}
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs
@@ -962,9 +997,20 @@ app.get('/panes', (req, res) => res.sendFile(path.join(__dirname, '..', 'public'
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
-app.use('/node_modules', express.static(path.join(__dirname, '..', 'node_modules')));
+// Resolve dependency assets through Node's lookup paths: a hoisted `npm install`
+// has no package-local node_modules, and the terminal page would 404 its engine.
+// This replaces the old blanket static mount, which both missed hoisted installs
+// and served every file under node_modules.
+installStaticDependencies(app);
 
-app.get('/health', (req, res) => { res.json({ status: 'ok', sessions: activeSessions.size }); });
+app.get('/health', (req, res) => {
+  // `browser.engine` is reported without launching it: an install with no
+  // Chromium is healthy for terminal work and should say why browser panes
+  // cannot start instead of failing later with a stack trace.
+  let browser = { engine: 'unknown' };
+  try { browser = browserWorkspace.engineStatus(); } catch (_) { /* reported as unknown */ }
+  res.json({ status: 'ok', sessions: activeSessions.size, browser });
+});
 app.get('/api/voice/settings', (req, res) => {
   res.json(voiceSettingsPayload());
 });

@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const pty = require('node-pty');
 const { resolveShell } = require('./shell-resolve');
 const { replayTranscript } = require('./replay-text');
@@ -530,19 +531,23 @@ function installWorkspacePanes(app, browserWorkspace, options = {}) {
       detached: process.platform !== 'win32'
     });
     job.child = child;
-    const collect = (channel) => (chunk) => {
-      const text = chunk.toString('utf8');
-      const key = channel === 'stdout' ? 'stdout' : 'stderr';
-      const truncatedKey = channel === 'stdout' ? 'stdoutTruncated' : 'stderrTruncated';
+    // Pipe chunks split multi-byte characters at arbitrary byte boundaries.
+    // Decode per stream so `é` is not turned into two replacement characters.
+    const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
+    const append = (key, text) => {
+      if (!text) return;
       if (job[key].length < MAX_JOB_OUTPUT) {
         job[key] += text.slice(0, MAX_JOB_OUTPUT - job[key].length);
       }
-      if (job[key].length >= MAX_JOB_OUTPUT || text.length > MAX_JOB_OUTPUT) job[truncatedKey] = true;
+      if (job[key].length >= MAX_JOB_OUTPUT || text.length > MAX_JOB_OUTPUT) job[key + 'Truncated'] = true;
     };
+    const collect = (channel) => (chunk) => append(channel, decoders[channel].write(chunk));
     child.stdout.on('data', collect('stdout'));
     child.stderr.on('data', collect('stderr'));
     const finish = (status, detail = {}) => {
       if (job.status !== 'running') return;
+      append('stdout', decoders.stdout.end());
+      append('stderr', decoders.stderr.end());
       job.status = status;
       job.endedAt = Date.now();
       job.exitCode = detail.exitCode ?? null;

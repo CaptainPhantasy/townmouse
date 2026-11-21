@@ -423,17 +423,23 @@ async function scrollPosition(page) {
 }
 
 async function signature(page) {
-  let frame;
-  try { frame = page.mainFrame(); } catch (_) { return { hash: '', scrollX: 0, scrollY: 0, url: '', title: '' }; }
-  let result;
-  try { result = await frame.evaluate(pageSignature, {}); }
-  catch (_) { return { hash: '', scrollX: 0, scrollY: 0, url: '', title: '' }; }
+  // Every frame contributes, because a click inside an iframe is invalidated
+  // by that iframe scrolling or rearranging even when the outer page is still.
+  const parts = [];
+  let main = null;
+  for (const frame of page.frames()) {
+    let result;
+    try { result = await frame.evaluate(pageSignature, {}); } catch (_) { continue; }
+    if (!main) main = result; // page.frames() lists the main frame first
+    parts.push(`${frame.url()}|${result.scrollX},${result.scrollY}|${result.signature}`);
+  }
+  if (!main) return { hash: '', scrollX: 0, scrollY: 0, url: '', title: '' };
   return {
-    hash: hashSignature(result.signature),
-    scrollX: result.scrollX,
-    scrollY: result.scrollY,
-    url: result.url,
-    title: result.title
+    hash: hashSignature(parts.join('||')),
+    scrollX: main.scrollX,
+    scrollY: main.scrollY,
+    url: main.url,
+    title: main.title
   };
 }
 

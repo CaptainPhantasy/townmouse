@@ -6,7 +6,7 @@
 **Tag:** `v0.2.1` (annotated, points to `056ed39`)
 **GitHub release:** https://github.com/CaptainPhantasy/townmouse/releases/tag/v0.2.1 (Latest)
 **Release asset:** https://github.com/CaptainPhantasy/townmouse/releases/download/v0.2.1/townmouse-0.2.1.tgz — 6,475,409 bytes, sha256 `804a0752aada0307991dadfeba22dc6990f5ea9ee57c02de79c30c5d84f6b44b`, with `SHA256SUMS` beside it. This is an installable channel now: the asset was downloaded, checksum-verified, installed into a clean project with `--ignore-scripts`, and its server answered `/health` and served the terminal engine.
-**npm:** pending the owner's second factor; `npm publish` returns `EOTP`. The release does not depend on it: the tagged tarball is attached to the release.
+**npm:** published as `townmouse@0.2.1` (latest). Registry `dist.shasum` `f94a5ec1f072e24a813258c3b8cc6d1731127f08`, `dist.integrity` `sha512-wBFqcgUDWZWShWw6iYjiDbO5gb8qj+pV+X+orVzhQXTXfJGQN9b31vjHo5Ghr35fJYiciO7n46k0SilkJQcNZw==`. The registry tarball's sha256 is `804a0752…b44b` — byte-identical to the release asset.
 **Container:** `townmouse:0.2.1` (image `0f2b26e73a1a`), built from `056ed39` with provenance labels.
 
 ## Contents
@@ -28,6 +28,9 @@
 | Container health | `docker inspect` + `/health` | `healthy`; browser engine `/usr/bin/chromium` |
 | Tag and release | `git ls-remote --tags`, `gh release view` | present; v0.2.1 marked Latest; v0.2.0 notes point here |
 | Release asset | `gh release download v0.2.1`, `shasum -c`, clean `npm install`, start | checksum OK; `townmouse --version` → `0.2.1`; `/health` 200; engine asset 200 |
+| npm publish | `npm publish --access public --auth-type=web` (owner-approved security key) | `+ townmouse@0.2.1`; registry version visible after processing |
+| npm artifact | `npm pack townmouse@0.2.1`, sha256 | `804a0752…b44b`, identical to the release asset |
+| npm install | clean `npm install townmouse@0.2.1`, start | install 0; `townmouse --version` → `0.2.1`; `/health` 200; engine asset 200 |
 
 ## Known limits (stated, not hidden)
 
@@ -35,4 +38,4 @@
 - Windows is unsupported; PWA offline coverage is the shell only.
 - The live `dlaude` conversation-save check was not run.
 - No load or soak test was run.
-- The npm artifact is not published yet; the owner's 2FA is the only blocker.
+- npm publication required the owner's security-key approval; no long-lived automation token was used for it.

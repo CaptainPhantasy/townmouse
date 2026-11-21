@@ -68,9 +68,9 @@ prebuilt Linux binary; install with `--allow-scripts=node-pty`, or run
 needs rebuilding, `npm run repair` does that. The engine is native code; it is
 not going to apologize for needing a compiler.
 
-## Run it (Or: From source, from npm, or from a container)
+## Run it (Or: Four doors, one room)
 
-### From source
+### From source (Or: The workbench)
 
 ```sh
 git clone https://github.com/CaptainPhantasy/townmouse.git
@@ -83,22 +83,67 @@ Open `http://localhost:11001`. The server binds to `127.0.0.1`. A terminal can
 run commands with your account's permissions; keep the server on loopback
 unless you have an authenticated proxy in front.
 
-### From npm
+### From npm (Or: The package is the product)
 
 ```sh
-npx townmouse
-```
-
-`npx townmouse` runs without a global install; `npm install -g townmouse` puts
-the `townmouse` command on your PATH. The binary starts the server, prints the
-URL, and opens a browser unless you pass `--no-open`. Use `--port` for a port
-other than 11001:
-
-```sh
+npm install -g townmouse
+townmouse --version
+townmouse                       # starts the server and opens the workspace
 townmouse --port 12000 --no-open
 ```
 
-### With Docker
+`npx townmouse` runs it without a global install. The command starts the server,
+prints the URL, and opens a browser unless `--no-open` is passed; `--help` and
+`--version` do what they say.
+
+The first run creates `~/.townmouse` (mode 0700) holding the workspace token
+(mode 0600) and the attachment tree. Back that directory up before upgrades; it
+is the part that is yours.
+
+```sh
+npm run doctor     # Node version and native modules
+npm run repair     # rebuild node-pty if the engine and the runtime disagree
+```
+
+On Linux with npm 12, dependency install scripts are skipped by default and
+node-pty has no Linux prebuild. Allow the build, or rebuild afterwards, then
+check:
+
+```sh
+npm install -g --allow-scripts=node-pty townmouse
+# or, in an existing install:
+npm rebuild node-pty
+npm run doctor
+```
+
+If the terminal engine cannot load, the server says so and names those remedies
+instead of printing a stack trace.
+
+Upgrade, roll back, uninstall:
+
+```sh
+npm install -g townmouse@latest     # upgrade
+npm install -g townmouse@0.2.1      # roll back to a known version
+npm rm -g townmouse                 # uninstall
+```
+
+Data is compatible within a minor version. A breaking data change would get a
+migration note, not a shrug.
+
+### From the release tarball (Or: When the registry is not the route)
+
+Every release attaches the exact tarball and its checksum, byte for byte the
+same artifact the registry serves:
+
+```sh
+VERSION=0.2.1   # set to the release you want
+curl -LO "https://github.com/CaptainPhantasy/townmouse/releases/download/v$VERSION/townmouse-$VERSION.tgz"
+curl -LO "https://github.com/CaptainPhantasy/townmouse/releases/download/v$VERSION/SHA256SUMS"
+shasum -a 256 -c SHA256SUMS
+npm install -g "./townmouse-$VERSION.tgz"
+```
+
+### With Docker (Or: The room in a box)
 
 ```sh
 TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
@@ -111,8 +156,12 @@ TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
 docker run --rm -p 127.0.0.1:11001:11001 \
   -v townmouse-home:/home/node/.townmouse \
   -v townmouse-config:/home/node/.config/terminalone \
-  townmouse
+  townmouse:latest
 ```
+
+The image carries Open Container labels for its version and the exact commit it
+was built from, so an image can be traced back to the source. It is built
+locally today; a registry tag will be added when the registry is chosen.
 
 The image uses `node:22-bookworm-slim` and installs Chromium. The volume holds
 the workspace data. Mount project directories explicitly; the terminal starts
@@ -135,6 +184,8 @@ WebSocket connections. Start Townmouse with the exact public address:
 
 ```sh
 TERMINALONE_TRUSTED_ORIGINS=https://townmouse.example.com npm start
+# or, from an installed package:
+TERMINALONE_TRUSTED_ORIGINS=https://townmouse.example.com townmouse --no-open
 ```
 
 The proxy must forward to `http://127.0.0.1:11001`, preserve the public `Host`
@@ -167,7 +218,7 @@ before it gives the machine a funeral.
 or shows the shortcut sheet. **Keyboard** focuses the active terminal; in a
 browser pane it focuses the page-type field. `Alt+T` creates a tab, `Alt+1..9`
 selects one, `Alt+Arrow` moves pane focus, `Alt+Shift+Arrow` reorders a pane,
-`Alt+M` maximizes, and `Alt+W` asks before closing the active pane. Drag a pane
+`Alt+M` maximizes (the pane header also carries a visible maximize/restore control), and `Alt+W` asks before closing the active pane. Drag a pane
 header to reorder it, or drag the divider between panes to resize them.
 
 Browser panes accept clicks, wheel scrolling, touch-drag scrolling, typing,
@@ -198,29 +249,52 @@ TOWNMOUSE_PANES_CLI=<repo>/scripts/panes
 No code is copied between the browser and the terminal. Run the CLI directly:
 
 ```bash
+"$TOWNMOUSE_PANES_CLI" guide
 "$TOWNMOUSE_PANES_CLI" state
 "$TOWNMOUSE_PANES_CLI" tab create --title "Second workspace"
 "$TOWNMOUSE_PANES_CLI" pane create --kind terminal
 "$TOWNMOUSE_PANES_CLI" pane create --kind browser --url https://example.com
-"$TOWNMOUSE_PANES_CLI" pane url <pane-id> https://example.com
-"$TOWNMOUSE_PANES_CLI" pane run <pane-id> "npm test"
-"$TOWNMOUSE_PANES_CLI" pane send-text <pane-id> "multi-line prompt"
-"$TOWNMOUSE_PANES_CLI" pane keys <pane-id> ctrl+c
+"$TOWNMOUSE_PANES_CLI" pane exec <pane-id> -- "npm test"       # tracked job, exit code
+"$TOWNMOUSE_PANES_CLI" pane run <pane-id> "npm test"           # typed line, unconfirmed
 "$TOWNMOUSE_PANES_CLI" pane wait <pane-id> --match "PASS" --timeout 60000
+"$TOWNMOUSE_PANES_CLI" pane read <pane-id> --lines 120         # clean screen text
+"$TOWNMOUSE_PANES_CLI" pane read <pane-id> --raw
+"$TOWNMOUSE_PANES_CLI" pane browser observe --elements
+"$TOWNMOUSE_PANES_CLI" pane browser click --ref e12
+"$TOWNMOUSE_PANES_CLI" pane browser type --ref e12 --replace "café 東京"
+"$TOWNMOUSE_PANES_CLI" pane browser key Alt+M
+"$TOWNMOUSE_PANES_CLI" pane browser scroll --ref e12 --dy 400
+"$TOWNMOUSE_PANES_CLI" pane browser wait --text "Saved" --timeout 10000
+"$TOWNMOUSE_PANES_CLI" pane browser sizing fixed --width 1280 --height 800
 "$TOWNMOUSE_PANES_CLI" pane status <pane-id> --state blocked
-"$TOWNMOUSE_PANES_CLI" pane read <pane-id> --lines 120
 "$TOWNMOUSE_PANES_CLI" pane text <pane-id>
 "$TOWNMOUSE_PANES_CLI" attach ./screenshot.png --pane <pane-id>
 ```
 
-`pane create` defaults to the current tab. The orchestrator can create as many
-tabs as the server allows; each tab holds up to four panes. A tab can be all
-terminals, all browsers, or any mix. `pane text` reads the browser page's
-readable content, because an agent should not have to guess what a pane is
-showing. `pane wait` blocks on text, a regex, an idle interval, or an
-agent-reported state; `pane status` records working, blocked, idle, or done so
-the pane header and orchestrator agree. `attach` uploads with the scoped pane
-token and prints the path and URL.
+`panes guide` prints the instruction sheet an agent gets on connect: every tool,
+what it needs, what it returns, and what this connection may not do. `pane
+create` defaults to the current tab; a tab holds up to four panes and can mix
+terminals and browsers freely.
+
+`pane exec` runs one non-interactive command as a tracked job and returns its id,
+status, exit code, and output; `pane job` reads it again. `pane run` types into
+the interactive terminal and does not prove the command finished. `pane read`
+returns clean screen text; `--raw` keeps the original escape data. `pane wait`
+blocks on text, a regex, an idle interval, or an agent-reported state, always
+with a timeout. Regex patterns run in a worker thread with a deadline, so a
+pathological pattern is refused instead of stalling the server.
+
+Browser panes are driven by ref from `pane browser observe --elements`: role,
+name, value, state, and box, across cross-origin frames and open shadow roots.
+Coordinate clicks still work. Every action reports completed, missing,
+wrong-kind, failed, stale, or unconfirmed, and a target from a changed page is
+refused with "look again". `pane text` reads the page's visible text and says
+when it was cut short.
+
+Status is three separate facts, not one badge: the program is running or exited;
+the agent last reported a state (with the age of that report); and the last
+tracked command has its own result. `attach` uploads with the scoped pane token
+and prints the path and URL.
 
 The workspace survives a server restart: tab titles, pane kinds, terminal
 working directories, browser URLs, pane order, and the active tab are saved in
@@ -238,13 +312,15 @@ Open **Browser** or a new tab. Enter a web address, search phrase, or localhost
 URL. Navigation, clicks, typing, and scrolling happen in the real page on the
 terminal host, not in an iframe.
 
-Human tabs start Private. The compatibility sharing flow keeps View only,
-Allow control, and Copy connection. Changing the permission rotates the token;
+Human tabs start Private. **Share** opens the permission row at every width -
+View only, Allow control, Copy connection, Read page, Close tab - and it starts
+closed so the page keeps the space. Changing the permission rotates the token;
 choosing Private rejects subsequent token requests; closing a tab destroys its
-context. On a phone or tablet, **Share** opens the permission row, Read page,
-and Close tab. On a phone, the tab strip, address bar, and Share sit together at
-the bottom above the remote keyboard; the address bar carries back, forward,
-reload, and Go.
+context. A **Collapse** control removes every bar above the page and remembers
+the choice, leaving a slim strip that names the page and brings the controls
+back. The mascot stays in the navigation rail. On a phone, the tab strip,
+address bar, and type row sit at the bottom above the remote keyboard; the
+address bar carries back, forward, reload, and Go.
 
 The agent browser is a separate context with control granted. Hide view keeps it
 running headless; reopen Agent to observe the same context. Its bearer-token API
@@ -268,6 +344,9 @@ agent work in the pane workspace, use the injected environment and
   attachment path above.
 - The browser viewer is image-based: it is remote interaction, not a native DOM
   exposed to the viewer's assistive technology.
+- Password fields are never returned in an element catalog, including to
+  view-only grants. The agent can focus and type into them without reading the
+  value.
 
 ### Your data (Or: The files that stay yours)
 
@@ -276,6 +355,9 @@ Workspace data lives in `~/.townmouse`:
 - `pane-token` — the workspace API token, mode 600.
 - `attachments/<date>/` — dropped files, mode 700/600.
 - `workspace.json` — tabs, panes, URLs, and the active tab, mode 600.
+- `~/.config/terminalone/voice.json` — voice command, model, language, and
+  arguments, mode 600. Outside `~/.townmouse`, so a Docker run mounts it as the
+  second volume.
 
 Back up `~/.townmouse` before upgrades. Project files live wherever you mounted
 them, never inside the package directory. Docker uses the `townmouse-home`
@@ -307,8 +389,10 @@ More docs:
 
 ## Status (Or: Version 0.2.1, and honest about it)
 
-Version 0.2.1. 0.1.0 was the first product cut. Two working surfaces: the single
-terminal/browser workspace and the pane workspace. The pane workspace is the
+Version 0.2.1. 0.1.0 was the first product cut. Available from npm as
+`townmouse@0.2.1`, as a checksummed tarball on the GitHub release, and as a
+locally built container image. Two working surfaces: the single terminal/browser
+workspace and the pane workspace. The pane workspace is the
 native path for agent work; the single-browser workspace remains for
 compatibility. Known limits are under Security and in
 [docs/PACKAGING.md](docs/PACKAGING.md).

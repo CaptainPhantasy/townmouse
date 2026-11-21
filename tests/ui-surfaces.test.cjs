@@ -177,6 +177,12 @@ async function assertDockClear(page, viewport, panelName, panelSelector) {
       // Browser open: both live surfaces exist on desktop/tablet; phone shows
       // the browser surface only.
       await page.click('#workspace-browser');
+      // Opening the browser creates a Chromium tab; a cold runner can take
+      // seconds. Wait for the surface instead of assuming a fixed delay.
+      await page.waitForFunction(() => {
+        const surface = document.querySelector('.browser-surface');
+        return surface && !surface.hidden;
+      }, { timeout: 15000 });
       await wait(700);
 
       if (viewport.name === 'desktop') {

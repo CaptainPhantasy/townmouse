@@ -60,6 +60,10 @@ npm 12 skips dependency install scripts by default — TownMouse falls back to a
 installed Chrome, Chromium, Edge, or Brave. Set `TERMINALONE_CHROME` to choose a
 specific binary. `GET /health` reports which engine resolved.
 
+On Linux, npm 12 skips dependency install scripts by default and node-pty has no
+prebuilt Linux binary; install with `--allow-scripts=node-pty`, or run
+`npm rebuild node-pty`, then `npm run doctor`. The container needs neither.
+
 `npm run doctor` checks the Node version and native modules. If `node-pty`
 needs rebuilding, `npm run repair` does that. The engine is native code; it is
 not going to apologize for needing a compiler.

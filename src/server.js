@@ -11,8 +11,22 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 
 const WebSocket = require('ws');
-const pty = require('node-pty');
 const { v4: uuidv4 } = require('uuid');
+const { ensurePtyHelpers, isTerminalEngineError, terminalEngineHelp } = require('./pty-permissions');
+
+// The terminal engine is native. If it is missing (npm 12 skips dependency
+// install scripts; node-pty has no Linux prebuild) the useful answer is the
+// remedy, not a require stack.
+let pty;
+try {
+  pty = require('node-pty');
+} catch (error) {
+  if (isTerminalEngineError(error)) {
+    console.error(terminalEngineHelp(process.platform, error.message));
+    process.exit(78);
+  }
+  throw error;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -22,7 +36,6 @@ const PORT = process.env.PORT || 11001;
 const HOST = process.env.HOST || '127.0.0.1';
 const { createRequestBoundary } = require('./request-boundary');
 const { installStaticDependencies } = require('./static-deps');
-const { ensurePtyHelpers } = require('./pty-permissions');
 const isTrustedRequest = createRequestBoundary(PORT, process.env.TERMINALONE_TRUSTED_ORIGINS || '');
 const MAX_CONCURRENT_SESSIONS = 10;
 
@@ -963,7 +976,19 @@ if (ptyHelpers.fixed.length) {
 
 const browserWorkspace = require('./browser-workspace').installBrowserWorkspace(app);
 const closeBrowsers = () => browserWorkspace.closeAll();
-const paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
+
+// workspace-panes loads node-pty at module load. If the native engine is
+// missing, explain the actual fix instead of dying in a require stack.
+let paneWorkspace;
+try {
+  paneWorkspace = require('./workspace-panes').installWorkspacePanes(app, browserWorkspace, { port: PORT });
+} catch (error) {
+  if (isTerminalEngineError(error)) {
+    console.error(terminalEngineHelp(process.platform, error.message));
+    process.exit(78);
+  }
+  throw error;
+}
 
 // App assets are served with no-store so the browser always runs the latest
 // frontend (critical during input/dictation iteration — a cached input-guard.mjs

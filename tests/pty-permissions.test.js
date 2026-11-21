@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { fixHelpersIn, spawnHelpers, nodePtyDir } = require('../src/pty-permissions');
+const { fixHelpersIn, spawnHelpers, nodePtyDir, isTerminalEngineError, terminalEngineHelp } = require('../src/pty-permissions');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-pty-'));
@@ -65,4 +65,26 @@ test('resolves the installed node-pty package root', () => {
   const dir = nodePtyDir();
   assert.ok(dir, 'node-pty must be resolvable from this project');
   assert.ok(fs.existsSync(path.join(dir, 'package.json')));
+});
+
+test('recognises a missing terminal engine and nothing else', () => {
+  for (const message of [
+    "Cannot find module 'node-pty'",
+    "Cannot find module '/app/node_modules/node-pty/build/Release/pty.node'",
+    'posix_spawnp failed.',
+    'Could not locate the bindings file'
+  ]) assert.equal(isTerminalEngineError(new Error(message)), true, message);
+  assert.equal(isTerminalEngineError(new Error('EADDRINUSE: address already in use')), false);
+  assert.equal(isTerminalEngineError(null), false);
+});
+
+test('the startup explanation names the real remedies', () => {
+  const linux = terminalEngineHelp('linux', 'Cannot find module node-pty');
+  assert.match(linux, /terminal engine \(node-pty\) could not load/);
+  assert.match(linux, /npm rebuild node-pty/);
+  assert.match(linux, /--allow-scripts=node-pty/);
+  assert.match(linux, /node-pty\n?has no prebuilt Linux binary/);
+  const mac = terminalEngineHelp('darwin');
+  assert.match(mac, /npm rebuild node-pty/);
+  assert.doesNotMatch(mac, /--allow-scripts=node-pty/);
 });

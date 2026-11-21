@@ -32,6 +32,7 @@ Townmouse is version 0.1.0, the first product cut, and is licensed AGPL-3.0-only
 - Containers accept a remapped host port, the image has a `HEALTHCHECK`, and the build context no longer carries `.runtime`.
 - The macOS installer scripts ship in the npm package.
 - New gates: `npm run test:package` installs the packed tarball with `--ignore-scripts` and exercises the installed application; `tests/agent-control.test.cjs` covers 36 agent journeys.
+- On Linux the package gate installs with the native build, because node-pty has no Linux prebuild. The server now explains a missing terminal engine and names the remedy (`npm rebuild node-pty`, `npm install --allow-scripts=node-pty townmouse`, or the container) instead of dying in a require stack.
 
 ## [0.1.0] — 2026-11-15
 

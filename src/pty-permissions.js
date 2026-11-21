@@ -59,4 +59,41 @@ function ensurePtyHelpers() {
   return { dir, fixed: fixHelpersIn(dir) };
 }
 
-module.exports = { ensurePtyHelpers, nodePtyDir, spawnHelpers, fixHelpersIn };
+// A missing or unbuilt native engine otherwise surfaces as a raw stack trace
+// from a `require` deep inside startup. The condition is common: npm 12 skips
+// dependency install scripts by default and node-pty has no Linux prebuild.
+const TERMINAL_ENGINE_ERROR = /node-pty|posix_spawn|pty\.node|bindings/i;
+
+function isTerminalEngineError(error) {
+  if (!error) return false;
+  return TERMINAL_ENGINE_ERROR.test(`${error.code || ''} ${error.message || error}`);
+}
+
+function terminalEngineHelp(platform = process.platform, detail = '') {
+  const linux = platform === 'linux';
+  const lines = ['Townmouse cannot start: the terminal engine (node-pty) could not load.'];
+  if (detail) lines.push(String(detail).split('\n')[0]);
+  lines.push('', 'The native module is missing or was built for another platform.');
+  if (linux) {
+    lines.push('npm 12 does not run dependency install scripts by default, and node-pty');
+    lines.push('has no prebuilt Linux binary, so an install that skipped scripts has none.');
+  }
+  lines.push(
+    '',
+    'Fix one of these, then check with `npm run doctor`:',
+    '  npm rebuild node-pty                              (needs python3, make, g++)'
+  );
+  if (linux) lines.push('  npm install --allow-scripts=node-pty townmouse     (Linux, npm 12)');
+  lines.push('  container channel: see docs/PACKAGING.md');
+  return lines.join('\n');
+}
+
+module.exports = {
+  ensurePtyHelpers,
+  nodePtyDir,
+  spawnHelpers,
+  fixHelpersIn,
+  isTerminalEngineError,
+  terminalEngineHelp,
+  TERMINAL_ENGINE_ERROR
+};

@@ -62,6 +62,22 @@ because a launch post would look better without it.
   tag.
 - `npx townmouse` is the no-install smoke path.
 
+**Linux and npm 12.** npm 12 does not run dependency install scripts by default
+(`allow-scripts = [""]`). node-pty ships prebuilds only for macOS and Windows,
+so a Linux install that skipped scripts has no terminal engine. Build it
+explicitly:
+
+```sh
+npm install --allow-scripts=node-pty townmouse
+# or, in an existing install:
+npm rebuild node-pty          # needs python3, make, and g++
+npm run doctor                # native_modules=ok
+```
+
+The server refuses to start with that explanation rather than a stack trace when
+the engine cannot load. The container channel needs no such step; the image
+compiles node-pty during `npm ci`.
+
 The CLI surface is small on purpose:
 
 ```sh

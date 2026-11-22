@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim
+FROM node:22.23.5-alpine3.23
 
 # Provenance. A published image must be traceable to a commit; pass these at
 # build time (docs/PACKAGING.md shows the command). Defaults say "unknown"

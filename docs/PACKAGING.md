@@ -119,7 +119,7 @@ and neither should you.
 
 ### 2. Container (Linux home server)
 
-The `Dockerfile` uses `node:22-bookworm-slim`, installs Chromium, sets
+The `Dockerfile` uses `node:22-alpine`, installs Chromium, sets
 `PUPPETEER_SKIP_DOWNLOAD=1` and `TERMINALONE_CHROME=/usr/bin/chromium`, runs as
 the `node` user, exposes `11001`, and declares volumes for both
 `/home/node/.townmouse` (workspace, attachments, pane token) and

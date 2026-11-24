@@ -174,7 +174,7 @@ The image carries Open Container labels for its version and the exact commit it
 was built from, so an image can be traced back to the source. It is built
 locally today; a registry tag will be added when the registry is chosen.
 
-The image uses `node:22-bookworm-slim` and installs Chromium. The volume holds
+The image uses `node:22-alpine` and installs Chromium. The volume holds
 the workspace data. Mount project directories explicitly; the terminal starts
 in `/home/node`. `GET /health` returns `status: "ok"`.
 

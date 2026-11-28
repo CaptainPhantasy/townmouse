@@ -135,6 +135,14 @@ expect_hook_from_temporary_home() {
   [ "$(tail -n 1 "$HOOK_RECEIPT")" = "$HOME_DIR" ] || fail "a hook ran under a HOME other than the temporary one"
 }
 
+# A backend the launcher starts outlives the launcher, and it creates its health
+# marker when it is ready, which can be after the test has moved on. Deleting a
+# shared marker races with it. A run that must start its own backend gets a
+# marker no earlier run can create.
+fresh_health() {
+  HEALTHY_FILE="$TMP/state/healthy-$1"
+}
+
 # A run that only prints must not nudge a service, start a backend or open a UI.
 expect_print_only() {
   if grep -q -E '^(LAUNCHCTL|NODE|OPEN):' "$1" 2>/dev/null; then
@@ -206,7 +214,7 @@ echo "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME"
 echo "python3 99999 user   12u  IPv4    0x0      0t0  TCP *:11002 (LISTEN)"
 EOF
 chmod +x "$FAKEBIN/lsof"
-rm -f "$HEALTHY_FILE"
+fresh_health collision
 
 state="$TMP/state/port-collision.log"
 if port_output="$(run_launcher "$state" 2>&1)"; then
@@ -224,7 +232,7 @@ echo "node    123 user   12u  IPv4 0x0      0t0  TCP *:11002 (LISTEN)"
 EOF
 chmod +x "$FAKEBIN/lsof"
 
-rm -f "$HEALTHY_FILE"
+fresh_health node-listener
 run_launcher "$TMP/state/node-listener.log" --serve-only > "$TMP/state/node-listener.out" 2>&1
 grep -q 'Townmouse service ready' "$TMP/state/node-listener.out" || fail "a starting Node listener blocked the launcher"
 if grep -q 'already in use by another process' "$TMP/state/node-listener.out"; then
@@ -232,7 +240,7 @@ if grep -q 'already in use by another process' "$TMP/state/node-listener.out"; t
 fi
 
 # Two launches that overlap must both report the service ready.
-rm -f "$HEALTHY_FILE"
+fresh_health overlap
 : > "$TMP/state/overlap.log"
 for run in 1 2; do
   "${CLEAN[@]}" \
@@ -276,7 +284,8 @@ touch "$ALT_ROOT/node_modules/node-pty/prebuilds/test/spawn-helper"
 chmod +x "$ALT_ROOT/scripts/"* \
   "$ALT_ROOT/node_modules/node-pty/prebuilds/test/spawn-helper"
 
-rm -f "$HEALTHY_FILE" "$HOOK_RECEIPT"
+rm -f "$HOOK_RECEIPT"
+fresh_health derived
 "${CLEAN[@]}" \
   HOME="$HOME_DIR" \
   STATE_FILE="$TMP/state/derived.log" \

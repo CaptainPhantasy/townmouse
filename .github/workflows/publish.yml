@@ -5,10 +5,11 @@ name: Publish
 # and creates the GitHub release with the tarball and checksum attached.
 # Ordinary merges whose version is already on npm skip after one registry read.
 #
-# One-time npm setup (after the first interactive publish):
-#   npmjs.com -> townmouse -> Settings -> Trusted publishing -> GitHub Actions
-#   Owner: CaptainPhantasy   Repository: townmouse
-#   Workflow filename: publish.yml   Environment: (leave blank)
+# One-time npm setup (after the first interactive publish), on the package's
+# Settings page:
+#   Trusted Publisher -> Add Trusted Publisher connection for GitHub Actions
+#   Organization or user: CaptainPhantasy   Repository: townmouse
+#   Workflow filename: publish.yml   Environment name: (leave blank)
 on:
   push:
     branches: [main]

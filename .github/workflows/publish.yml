@@ -35,7 +35,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
+          # No registry-url. With no token stored it writes a placeholder into
+          # .npmrc, and npm sends that in place of the trusted-publishing
+          # sign-in instead of reporting why the sign-in was refused.
           cache: 'npm'
 
       - name: Read version and check the registry
@@ -91,6 +93,13 @@ jobs:
       - name: Publish with provenance
         if: steps.version.outputs.skip == 'false'
         run: npm publish --provenance --access public
+
+      # npm writes the reason a trusted-publishing sign-in was refused only to
+      # its own debug log.
+      - name: Show why npm refused the sign-in
+        if: failure()
+        run: |
+          grep -h -E '^ *[0-9]+ [a-z]+ oidc ' "$(npm config get cache)"/_logs/*-debug-0.log | tail -n 12 || true
 
       - name: Tag the release
         if: steps.version.outputs.skip == 'false'

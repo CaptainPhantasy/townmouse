@@ -214,13 +214,18 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<APPEOF
 </dict>
 </plist>
 APPEOF
+# Say which macOS versions the wrapper runs on, matching LSMinimumSystemVersion in
+# the bundle. Without a target the compiler stamps its own default, which can be
+# newer than the Mac it is built on; Launch Services then refuses the icon with
+# kLSIncompatibleSystemVersionErr even though the program itself would run.
+SWIFT_TARGET="$(uname -m)-apple-macosx13.0"
 if [ -n "${TERMINALONE_SWIFTC:-}" ]; then
   [ -x "$TERMINALONE_SWIFTC" ] || { echo "ERROR: TERMINALONE_SWIFTC is not executable." >&2; exit 1; }
-  "$TERMINALONE_SWIFTC" -parse-as-library -O -framework AppKit -framework WebKit \
+  "$TERMINALONE_SWIFTC" -parse-as-library -O -target "$SWIFT_TARGET" -framework AppKit -framework WebKit \
     "$APP_DIR/native/TownmouseApp.swift" -o "$APP_BUNDLE/Contents/MacOS/Townmouse"
 else
   xcrun --find swiftc >/dev/null 2>&1 || { echo "ERROR: Swift compiler unavailable; install Apple Command Line Tools." >&2; exit 1; }
-  xcrun swiftc -parse-as-library -O -framework AppKit -framework WebKit \
+  xcrun swiftc -parse-as-library -O -target "$SWIFT_TARGET" -framework AppKit -framework WebKit \
     "$APP_DIR/native/TownmouseApp.swift" -o "$APP_BUNDLE/Contents/MacOS/Townmouse"
 fi
 printf '%s\n' "$LAUNCHER_LINK" > "$APP_BUNDLE/Contents/Resources/launcher-path.txt"

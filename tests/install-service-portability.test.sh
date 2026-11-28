@@ -67,6 +67,7 @@ EOF
 cat > "$FAKEBIN/swiftc" <<'EOF'
 #!/bin/bash
 set -euo pipefail
+echo "$*" >> "$SWIFTC_LOG"
 out=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then out="$2"; shift 2; else shift; fi
@@ -120,6 +121,7 @@ run_tool() {
        TERMINALONE_SKIP_LSREGISTER=1 \
        TERMINALONE_SKIP_RUNTIME_CHECK=1 \
        TERMINALONE_SWIFTC="$FAKEBIN/swiftc" \
+       SWIFTC_LOG="$site/swiftc.log" \
        bash "$SRC/scripts/$script" > "$site/$script.out" 2>&1; then
     cat "$site/$script.out"
     fail "$script exited with an error"
@@ -174,6 +176,9 @@ APP_PLIST="$APP_PARENT/Townmouse.app/Contents/Info.plist"
 file "$APP_EXEC" | grep -q 'Mach-O.*executable' || fail "the app binary is not a Mach-O executable"
 grep -q '<string>com.floyd.townmouse</string>' "$APP_PLIST" || fail "the app bundle carries the wrong identifier"
 [ "$(cat "$APP_PARENT/Townmouse.app/Contents/Resources/launcher-path.txt")" = "$LAUNCHER_PATH" ] || fail "the app bundle does not point at the installed launcher"
+# Without an explicit target the compiler stamps a macOS of its own choosing,
+# and Launch Services refuses an icon that demands a newer system than this Mac.
+grep -q -- "-target $(uname -m)-apple-macosx" "$SITE/swiftc.log" || fail "the wrapper is compiled without an explicit macOS target"
 
 if grep -q '/Volumes/ExampleDisk/OriginalInstall' "$PLIST_PATH" "$LAUNCHER_PATH" "$APP_PLIST"; then
   fail "generated artifacts still reference the original machine path"

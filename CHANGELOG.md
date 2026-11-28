@@ -18,6 +18,7 @@ Townmouse is version 0.3.0 and is licensed AGPL-3.0-only. The 1.0.x entries belo
 
 - The service installer test still looked for the engine's pre-rename source file and could not pass, and neither it nor the launcher test ran as part of `npm test`. Both are repaired, extended to prove TerminalOne's service and launcher are left alone, and run in `npm test`, in CI and in a new macOS CI job.
 - The smoke test starts its server on a port of its own instead of a product port, so the test suite cannot collide with an installed service.
+- The macOS wrapper is compiled for macOS 13 and newer, as its bundle declares. The compiler had stamped its own default (macOS 28 on one toolchain), so Launch Services refused to open the icon with `kLSIncompatibleSystemVersionErr` while the program ran when started by hand. A macOS CI job now compiles the wrapper with the real compiler and checks that stamp.
 
 ### Unchanged
 

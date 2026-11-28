@@ -177,7 +177,7 @@ TerminalOne's name, port or launcher. After `install-service.sh`, the `townmouse
 launcher on the internal disk comes first on `PATH` and is service-aware: it
 starts the service when it is not healthy, then opens the workspace. It accepts
 `--port <n>`, `--no-open` (or `--serve-only`), `--version` and `--help`.
-`scripts/uninstall-service.sh` removes the service, the launcher and the app.
+`scripts/uninstall-service.sh` removes the service, the launcher and the app. It never removes a `townmouse` command the installer did not write, such as the one npm creates for the package, and the installer never overwrites one. The launcher and the icon always use port 11002: `PORT` set while running `install-service.sh` changes the service's port only, so leave the service on 11002.
 
 **Upgrading from 0.2.x.** Those versions installed the service as
 `com.floyd.terminalone` on port 11001 and wrote their launcher as `t1`, so on a

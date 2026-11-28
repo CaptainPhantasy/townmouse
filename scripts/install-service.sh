@@ -41,6 +41,47 @@ BIN_DIR_OVERRIDE="${TERMINALONE_BIN_DIR:-}"
 
 [ -n "$NODE" ] || { echo "ERROR: Townmouse requires Node 22.x; run scripts/node-runtime.sh doctor"; exit 1; }
 [ -f "$APP_DIR/src/server.js" ] || { echo "ERROR: $APP_DIR/src/server.js not found (is the volume mounted?)"; exit 1; }
+# Pick the directory for the `townmouse` launcher before anything is changed, so
+# an unusable choice stops the install with nothing half-done. The directory must
+# be on the INTERNAL disk: macOS keeps writable paths on the Data volume, and a
+# launcher on a volume that unmounts would dangle. A `townmouse` that this
+# installer did not write (npm's own command for the package, or someone else's)
+# is never overwritten; such a directory is passed over.
+INTERNAL_DEV="$(df /System/Volumes/Data 2>/dev/null | tail -1 | awk '{print $1}')"
+[ -n "$INTERNAL_DEV" ] || INTERNAL_DEV="$(df / | tail -1 | awk '{print $1}')"
+is_internal() { case "$1" in /Volumes/*) return 1;; esac; [ "$(df "$1" 2>/dev/null | tail -1 | awk '{print $1}')" = "$INTERNAL_DEV" ]; }
+launcher_slot_is_free() {
+  local launcher="$1/townmouse"
+  { [ -e "$launcher" ] || [ -L "$launcher" ]; } || return 0
+  [ -f "$launcher" ] && [ ! -L "$launcher" ] && grep -q 'Townmouse launcher' "$launcher" 2>/dev/null
+}
+BIN_DIR_SELECTED=""
+if [ -n "$BIN_DIR_OVERRIDE" ]; then
+  if [ -e "$BIN_DIR_OVERRIDE/townmouse" ] && ! launcher_slot_is_free "$BIN_DIR_OVERRIDE"; then
+    echo "ERROR: $BIN_DIR_OVERRIDE/townmouse exists and was not written by this installer, so it will not be overwritten. Remove it, or point TERMINALONE_BIN_DIR at another directory on the internal disk." >&2
+    exit 1
+  fi
+  mkdir -p "$BIN_DIR_OVERRIDE"
+  BIN_DIR_SELECTED="$BIN_DIR_OVERRIDE"
+else
+  for d in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
+    if [ -d "$d" ] && [ -w "$d" ] && is_internal "$d" && launcher_slot_is_free "$d"; then BIN_DIR_SELECTED="$d"; break; fi
+  done
+  if [ -z "$BIN_DIR_SELECTED" ]; then
+    # Nothing writable, internal and free of a foreign `townmouse`: create ~/bin on the internal disk.
+    if mkdir -p "$HOME/bin" 2>/dev/null && is_internal "$HOME/bin" && launcher_slot_is_free "$HOME/bin"; then
+      BIN_DIR_SELECTED="$HOME/bin"
+    else
+      BIN_DIR_SELECTED="$HOME/.local/bin"
+      if ! launcher_slot_is_free "$BIN_DIR_SELECTED"; then
+        echo "ERROR: $BIN_DIR_SELECTED/townmouse exists and was not written by this installer, so it will not be overwritten. Remove it, or set TERMINALONE_BIN_DIR to a directory on the internal disk." >&2
+        exit 1
+      fi
+      mkdir -p "$BIN_DIR_SELECTED"
+      echo "  WARN  : no internal-disk bin dir found; townmouse placed on $BIN_DIR_SELECTED (may be external)."
+    fi
+  fi
+fi
 # A package tarball can lose execute bits on helper scripts. Restore the ones
 # this installer calls before it calls them.
 chmod +x "$APP_DIR/scripts/run-hooks" "$APP_DIR/scripts/townmouse.sh" "$APP_DIR/scripts/node-runtime.sh" 2>/dev/null || true
@@ -131,31 +172,6 @@ fi
 # bakes in the app path, checks the mount, and fails LOUDLY (stderr + GUI dialog)
 # instead of cryptically when the volume is gone.
 chmod +x "$APP_DIR/scripts/townmouse.sh" 2>/dev/null || true
-# Pick a bin dir on the INTERNAL disk. macOS: / is a sealed snapshot but writable
-# paths live on the Data volume (same physical internal container); we match that
-# device and reject any /Volumes/* external mount so the launcher can't live on a
-# disk that unmounts. Prefer dirs already on PATH.
-INTERNAL_DEV="$(df /System/Volumes/Data 2>/dev/null | tail -1 | awk '{print $1}')"
-[ -n "$INTERNAL_DEV" ] || INTERNAL_DEV="$(df / | tail -1 | awk '{print $1}')"
-is_internal() { case "$1" in /Volumes/*) return 1;; esac; [ "$(df "$1" 2>/dev/null | tail -1 | awk '{print $1}')" = "$INTERNAL_DEV" ]; }
-BIN_DIR_SELECTED=""
-if [ -n "$BIN_DIR_OVERRIDE" ]; then
-  mkdir -p "$BIN_DIR_OVERRIDE"
-  BIN_DIR_SELECTED="$BIN_DIR_OVERRIDE"
-else
-  for d in "$HOME/.local/bin" /usr/local/bin "$HOME/bin"; do
-    if [ -d "$d" ] && [ -w "$d" ] && is_internal "$d"; then BIN_DIR_SELECTED="$d"; break; fi
-  done
-  if [ -z "$BIN_DIR_SELECTED" ]; then
-    # Nothing writable+internal+existing; create ~/bin on the internal disk.
-    if mkdir -p "$HOME/bin" 2>/dev/null && is_internal "$HOME/bin"; then
-      BIN_DIR_SELECTED="$HOME/bin"
-    else
-      BIN_DIR_SELECTED="$HOME/.local/bin"; mkdir -p "$BIN_DIR_SELECTED"
-      echo "  WARN  : no internal-disk bin dir found; townmouse placed on $BIN_DIR_SELECTED (may be external)."
-    fi
-  fi
-fi
 LAUNCHER_LINK="$BIN_DIR_SELECTED/townmouse"
 LAUNCHER_TMP="$(mktemp "$BIN_DIR_SELECTED/.townmouse.XXXXXX")"
 cat > "$LAUNCHER_TMP" <<LAUNCHEREOF

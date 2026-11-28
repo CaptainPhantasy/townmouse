@@ -93,8 +93,9 @@ jobs:
 
       # The always-on service installer writes a launchd plist, a launcher on the
       # internal disk and a native app bundle. Those are macOS-only artifacts, so
-      # the ubuntu job skips those tests. The first two fake launchctl, node and
-      # swiftc and redirect HOME: nothing real is installed or removed. The third
+      # the ubuntu job skips these tests. The first two fake the tools the
+      # launcher and the installer call, redirect HOME and clear the caller's
+      # overrides: nothing real is started, installed or removed. The third
       # compiles the wrapper with the real compiler and reads back its minimum
       # macOS version.
       - name: Service launcher and installer

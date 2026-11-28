@@ -69,9 +69,18 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-case "$PORT" in
-  ''|*[!0-9]*) show_error "Invalid port: '$PORT'."; exit 2 ;;
-esac
+# The same range bin/townmouse accepts. Leading zeros are ignored.
+port_is_valid() {
+  local value="$1" digits
+  case "$value" in ''|*[!0-9]*) return 1 ;; esac
+  digits="$(printf '%s' "$value" | sed 's/^0*//')"
+  digits="${digits:-0}"
+  [ "${#digits}" -le 5 ] && [ "$digits" -ge 1 ] && [ "$digits" -le 65535 ]
+}
+if ! port_is_valid "$PORT"; then
+  show_error "Invalid port. Use a number from 1 to 65535."
+  exit 2
+fi
 
 URL="${TERMINALONE_URL:-http://localhost:$PORT}"
 HEALTH_URL="${TERMINALONE_HEALTH_URL:-$URL/health}"

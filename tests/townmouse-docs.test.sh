@@ -4,16 +4,34 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+fail() {
+  echo "FAIL: $*"
+  exit 1
+}
+
+# require_line <pattern> <file>...: every file must exist and contain a line that
+# matches. One grep over several files stops at the first match, which would let
+# a regression in a single file through.
+require_line() {
+  local pattern="$1"
+  shift
+  local file
+  for file in "$@"; do
+    [ -f "$file" ] || fail "$file is missing"
+    grep -q -e "$pattern" "$file" || fail "$file does not contain: $pattern"
+  done
+}
+
 # A reader who installs Townmouse must be able to find its own service identity.
-grep -q 'port 11002 by default' README.md
-grep -q 'com.floyd.townmouse' docs/PACKAGING.md
-grep -q 'scripts/install-service.sh' docs/PACKAGING.md
-grep -q 'scripts/uninstall-service.sh' docs/PACKAGING.md
+require_line 'port 11002 by default' README.md
+require_line 'com.floyd.townmouse' docs/PACKAGING.md
+require_line 'scripts/install-service.sh' docs/PACKAGING.md
+require_line 'scripts/uninstall-service.sh' docs/PACKAGING.md
 
 # The shipped scripts agree with the docs.
-grep -q '^LABEL="com.floyd.townmouse"' scripts/install-service.sh scripts/uninstall-service.sh scripts/townmouse.sh
-grep -q '^PORT="${PORT:-11002}"' scripts/install-service.sh scripts/townmouse.sh
-grep -q 'src/server.js` on PORT 11002' scripts/install-service.sh
+require_line '^LABEL="com.floyd.townmouse"' scripts/install-service.sh scripts/uninstall-service.sh scripts/townmouse.sh
+require_line '^PORT="${PORT:-11002}"' scripts/install-service.sh scripts/townmouse.sh
+require_line 'src/server.js` on PORT 11002' scripts/install-service.sh
 
 # Nothing executable claims TerminalOne's identity any more. Its label and port
 # may appear only in comments, or in the script that retires the 0.2.x service.

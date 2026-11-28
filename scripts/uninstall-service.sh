@@ -28,16 +28,13 @@ if [ -n "${TERMINALONE_BIN_DIR:-}" ]; then
 else
   LAUNCHER_DIRS=(/usr/local/bin "$HOME/.local/bin" "$HOME/bin")
 fi
-# Remove only a `townmouse` launcher this installer wrote (its text says so), so
-# an unrelated command of the same name survives.
+# Remove only the `townmouse` launcher this installer wrote: a regular file
+# whose text says so. A symlink of that name is npm's own command for the
+# package, or someone else's; it is never removed here.
 for dir in "${LAUNCHER_DIRS[@]}"; do
   [ -n "$dir" ] || continue
   launcher="$dir/townmouse"
-  if [ -L "$launcher" ]; then
-    case "$(readlink "$launcher")" in
-      *[Tt]ownmouse*) rm -f "$launcher" && echo "Removed $launcher (symlink)" ;;
-    esac
-  elif [ -f "$launcher" ] && grep -q 'Townmouse launcher' "$launcher" 2>/dev/null; then
+  if [ -f "$launcher" ] && [ ! -L "$launcher" ] && grep -q 'Townmouse launcher' "$launcher" 2>/dev/null; then
     rm -f "$launcher" && echo "Removed $launcher"
   fi
 done

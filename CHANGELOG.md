@@ -9,15 +9,15 @@ Townmouse is version 0.3.0 and is licensed AGPL-3.0-only. The 1.0.x entries belo
 ### Changed
 
 - **Townmouse has its own service identity on macOS.** The always-on service is installed as `com.floyd.townmouse` on port 11002, its launcher is `townmouse`, and the app bundle's identifier is `com.floyd.townmouse`. Until now the service installer was TerminalOne's with the name swapped: it wrote `com.floyd.terminalone`, took port 11001 and wrote a `t1` launcher, so on a Mac that also had TerminalOne, `t1` and TerminalOne.app opened Townmouse. TerminalOne keeps its label, its port and `t1`.
-- **The default port is 11002 everywhere**: the server, the `townmouse` command, the macOS wrapper, `scripts/panes`, `start.sh` and the container (`EXPOSE 11002`). Set `PORT` to use another port. Update any bookmark, proxy front or `docker run -p` mapping that named 11001.
-- **Upgrading retires the service 0.2.x left behind.** `scripts/install-service.sh` and `scripts/uninstall-service.sh` stop and remove a Townmouse service that 0.2.x installed under TerminalOne's label, and remove the `t1` launcher 0.2.x wrote. A TerminalOne service or launcher is never touched. If 0.2.x displaced TerminalOne on your Mac, run TerminalOne's own `scripts/install-service.sh` afterwards to restore it.
+- **The default port is 11002 everywhere**: the server, the `townmouse` command, the macOS wrapper, `scripts/panes`, `start.sh` and the container (`EXPOSE 11002`). Set `PORT` to use another port when you start the server yourself; the macOS service, its launcher and its icon stay on 11002. Update any bookmark, proxy front or `docker run -p` mapping that named 11001.
+- **Upgrading retires the service 0.2.x left behind.** `scripts/install-service.sh` and `scripts/uninstall-service.sh` stop and remove a Townmouse service that 0.2.x installed under TerminalOne's label, and remove the `t1` launcher 0.2.x wrote. The old service is recognised by the package beside its server, whatever its folder is called. A TerminalOne service or launcher is never touched, and neither is a `townmouse` command the installer did not write, such as the one npm creates for the package. If 0.2.x displaced TerminalOne on your Mac, run TerminalOne's own `scripts/install-service.sh` afterwards to restore it.
 - `scripts/t1.sh` is now `scripts/townmouse.sh`. The installed `townmouse` launcher accepts `--port <n>`, `--no-open`, `--version` and `--help` like the npm command, starts the service when it is not healthy, and only then opens the workspace.
 - The macOS wrapper no longer falls back to a `t1` launcher.
 
 ### Fixed
 
 - The service installer test still looked for the engine's pre-rename source file and could not pass, and neither it nor the launcher test ran as part of `npm test`. Both are repaired, extended to prove TerminalOne's service and launcher are left alone, and run in `npm test`, in CI and in a new macOS CI job.
-- The smoke test starts its server on a port of its own instead of a product port, so the test suite cannot collide with an installed service.
+- The smoke and feature tests start their servers on ports of their own instead of product ports, so the test suite cannot collide with an installed service.
 - The macOS wrapper is compiled for macOS 13 and newer, as its bundle declares. The compiler had stamped its own default (macOS 28 on one toolchain), so Launch Services refused to open the icon with `kLSIncompatibleSystemVersionErr` while the program ran when started by hand. A macOS CI job now compiles the wrapper with the real compiler and checks that stamp.
 
 ### Unchanged

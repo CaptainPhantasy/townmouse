@@ -19,7 +19,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const WebSocket = require('ws');
 
-const PORT = process.env.TEST_PORT || 11002;
+const PORT = process.env.TEST_PORT || 11358;
 const HOST = 'localhost';
 const BASE_URL = `http://${HOST}:${PORT}`;
 

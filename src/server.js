@@ -30,7 +30,9 @@ try {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PORT = process.env.PORT || 11001;
+// Port 11001 belongs to TerminalOne, the engine Townmouse embeds, so the two
+// products can run on one machine.
+const PORT = process.env.PORT || 11002;
 // Loopback by default. Docker sets HOST=0.0.0.0 because a container's
 // loopback is not reachable from the host; publish that port to loopback only.
 const HOST = process.env.HOST || '127.0.0.1';

@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORT=${PORT:-11001}
+PORT=${PORT:-11002}
 
 echo "Townmouse"
 echo "========="

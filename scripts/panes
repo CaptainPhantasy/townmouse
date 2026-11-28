@@ -7,7 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const api = (process.env.TOWNMOUSE_API || 'http://127.0.0.1:11001/api/panes').replace(/\/$/, '');
+const api = (process.env.TOWNMOUSE_API || 'http://127.0.0.1:11002/api/panes').replace(/\/$/, '');
 let token = process.env.TOWNMOUSE_TOKEN || '';
 if (!token) {
   try { token = fs.readFileSync(path.join(os.homedir(), '.townmouse', 'pane-token'), 'utf8').trim(); } catch (_) { /* reported below */ }

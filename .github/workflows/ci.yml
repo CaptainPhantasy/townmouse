@@ -67,9 +67,9 @@ jobs:
 
       - name: Start and probe /health
         run: |
-          docker run -d --name townmouse-ci -p 127.0.0.1:11001:11001 townmouse:ci
+          docker run -d --name townmouse-ci -p 127.0.0.1:11002:11002 townmouse:ci
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:11001/health >/dev/null; then
+            if curl -fsS http://127.0.0.1:11002/health >/dev/null; then
               echo "container is healthy after ${attempt} attempts"
               exit 0
             fi
@@ -85,3 +85,17 @@ jobs:
       - name: Stop the container
         if: always()
         run: docker rm -f townmouse-ci || true
+
+  macos-service:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The always-on service installer writes a launchd plist, a launcher on the
+      # internal disk and a native app bundle. Those are macOS-only artifacts, so
+      # the ubuntu job skips that test. Here launchctl, node and swiftc are faked
+      # and HOME is redirected: nothing real is installed or removed.
+      - name: Service launcher and installer
+        run: |
+          bash tests/townmouse-launch.test.sh
+          bash tests/install-service-portability.test.sh

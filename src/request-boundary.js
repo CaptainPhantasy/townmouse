@@ -4,7 +4,7 @@ const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 // A container is published on a host port that need not equal the port inside
 // it, so an exact `host:port` match would refuse every request (including
-// /health) for `-p 127.0.0.1:8080:11001`. The loopback *hostname* is what makes
+// /health) for `-p 127.0.0.1:8080:11002`. The loopback *hostname* is what makes
 // a request local; the port is the publisher's choice. When an Origin is
 // present it must still match the Host exactly and pass the origin checks
 // below, so a page on another local port cannot drive this server.

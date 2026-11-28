@@ -17,9 +17,10 @@ work in both. So can an agent. No hosted dashboard, no per-seat invoice, no
 "contact sales" button lurking behind the terminal.
 
 This is local software: a Node server and a static front end. The server listens
-on `127.0.0.1` at port 11001 by default, and anything the terminal runs has your
+on `127.0.0.1` at port 11002 by default, and anything the terminal runs has your
 account's authority. That is the deal. Treat it like a loaded shell, because it
-is one.
+is one. Port 11001 belongs to TerminalOne, the terminal engine Townmouse embeds,
+so the two products run side by side on one machine.
 
 ## What it does (Or: Fewer tabs, more work)
 
@@ -90,7 +91,7 @@ npm ci
 npm start
 ```
 
-Open `http://localhost:11001`. The server binds to `127.0.0.1`. A terminal can
+Open `http://localhost:11002`. The server binds to `127.0.0.1`. A terminal can
 run commands with your account's permissions; keep the server on loopback
 unless you have an authenticated proxy in front.
 
@@ -130,6 +131,18 @@ npm run doctor
 If the terminal engine cannot load, the server says so and names those remedies
 instead of printing a stack trace.
 
+On macOS, the installed package can also run as an always-on service with its own
+`townmouse` launcher:
+
+```sh
+"$(npm root -g)/townmouse/scripts/install-service.sh"
+townmouse                       # starts the service if needed, then opens the workspace
+"$(npm root -g)/townmouse/scripts/uninstall-service.sh"
+```
+
+The service is `com.floyd.townmouse` on port 11002. TerminalOne keeps its own
+service, port 11001 and `t1`; installing Townmouse never takes them over.
+
 Upgrade, roll back, uninstall:
 
 ```sh
@@ -164,7 +177,7 @@ TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
     --build-arg GIT_REVISION="$GIT_REVISION" \
     -t townmouse:"$TOWNMOUSE_VERSION" \
     -t townmouse:latest .
-docker run --rm -p 127.0.0.1:11001:11001 \
+docker run --rm -p 127.0.0.1:11002:11002 \
   -v townmouse-home:/home/node/.townmouse \
   -v townmouse-config:/home/node/.config/terminalone \
   townmouse:latest
@@ -199,7 +212,7 @@ TERMINALONE_TRUSTED_ORIGINS=https://townmouse.example.com npm start
 TERMINALONE_TRUSTED_ORIGINS=https://townmouse.example.com townmouse --no-open
 ```
 
-The proxy must forward to `http://127.0.0.1:11001`, preserve the public `Host`
+The proxy must forward to `http://127.0.0.1:11002`, preserve the public `Host`
 header and browser `Origin`, and support WebSocket upgrades. The setting takes
 exact HTTPS origins separated by commas; wildcards, paths, embedded credentials,
 and plain HTTP remote addresses are rejected. It allows an address. It does not

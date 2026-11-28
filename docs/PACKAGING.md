@@ -93,9 +93,10 @@ package:
 
 1. Publish the first version interactively (`npm login --auth-type=web`, then
    `npm publish --access public`, completing the second factor).
-2. On npmjs.com, open the package → Settings → **Trusted publishing** → add
-   GitHub Actions: owner `CaptainPhantasy`, repository `townmouse`, workflow
-   filename `publish.yml`, environment blank.
+2. On npmjs.com, open the package → Settings. Under **Trusted Publisher**,
+   choose **Add Trusted Publisher connection for GitHub Actions**: organization
+   or user `CaptainPhantasy`, repository `townmouse`, workflow filename
+   `publish.yml`, environment name blank.
 3. From then on, merging a version bump to `main` publishes and releases
    automatically with provenance. Bump `package.json`, date the changelog, and
    merge; nothing else is needed.

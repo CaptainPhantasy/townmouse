@@ -58,7 +58,7 @@ That is the pitch. The rest is details.
 
 ---
 
-## 0.3.0 — Its own name, place and button (2026-11-27)
+## 0.3.0 — Its own name, place and button (2026-11-28)
 
 Townmouse and TerminalOne, the engine it embeds, can now be installed on one Mac without Townmouse taking TerminalOne's place:
 
@@ -89,7 +89,7 @@ A patch release for two boundaries found after 0.2.0 was tagged:
 
 Townmouse was seeded on 2026-11-14 from TerminalOne commit `dd0cbde6` ("Preserve recovered TerminalOne glass browser workspace"), originally branch `dot/recover-terminalone-20261114`. The engine stays the canonical simple PTY. The browser workspace, agent browser, view/control grants, and workspace interface live here; they do not go upstream into TerminalOne.
 
-Product version: 0.3.0, released 2026-11-27.
+Product version: 0.3.0, released 2026-11-28.
 
 ---
 
@@ -190,7 +190,7 @@ Townmouse is AGPL-3.0-only. If you run this software, or a modified version of i
 │  DOCUMENT METADATA                                        │
 ├──────────────────────────────────────────────────────────┤
 │  Classification:   Pre-Release Notes                      │
-│  Product:          Townmouse 0.3.0 (2026-11-27)           │
+│  Product:          Townmouse 0.3.0 (2026-11-28)           │
 │  Engine:           TerminalOne v1.0.0 (2026-06-22)        │
 │  Cat Supervision:  Bella Approved (keyboard walked on)    │
 │  Bowser Status:    Monitoring routers, sitting on tabs    │

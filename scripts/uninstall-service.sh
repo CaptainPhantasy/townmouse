@@ -2,13 +2,16 @@
 #
 # Townmouse — remove the always-on LaunchAgent. Full reversal of install-service.sh.
 # Stops the running service and deletes the plist. Does not touch app code or ports
-# beyond releasing 11001 when the process stops.
+# beyond releasing 11002 when the process stops. TerminalOne is a separate product:
+# its service, its `t1` launcher and TerminalOne.app are never removed here.
 #
 set -euo pipefail
 
-LABEL="com.floyd.terminalone"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+LABEL="com.floyd.townmouse"
 DOMAIN="gui/$(id -u)"
-PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+PLIST_DIR="${TERMINALONE_PLIST_DIR:-$HOME/Library/LaunchAgents}"
+PLIST="$PLIST_DIR/$LABEL.plist"
 
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 if [ -f "$PLIST" ]; then
@@ -18,21 +21,34 @@ else
   echo "No plist found at $PLIST (nothing to remove)"
 fi
 
-# Remove the `t1` launcher(s) created by install-service.sh — symlink (legacy) or
-# the generated binary (current). Guarded: only delete if it's ours (marker match)
-# so we never clobber an unrelated `t1` on the user's PATH.
-for d in /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
-  f="$d/t1"
-  if [ -L "$f" ]; then
-    case "$(readlink "$f")" in *Townmouse*|*TerminalOne*) rm -f "$f" && echo "Removed $f (symlink)";; esac
-  elif [ -f "$f" ] && grep -Eq 'Townmouse launcher|TerminalOne launcher' "$f" 2>/dev/null; then
-    rm -f "$f" && echo "Removed $f (binary)"
+bash "$SCRIPT_DIR/retire-legacy-service.sh"
+
+if [ -n "${TERMINALONE_BIN_DIR:-}" ]; then
+  LAUNCHER_DIRS=("$TERMINALONE_BIN_DIR")
+else
+  LAUNCHER_DIRS=(/usr/local/bin "$HOME/.local/bin" "$HOME/bin")
+fi
+# Remove only the `townmouse` launcher this installer wrote: a regular file
+# whose text says so. A symlink of that name is npm's own command for the
+# package, or someone else's; it is never removed here.
+for dir in "${LAUNCHER_DIRS[@]}"; do
+  [ -n "$dir" ] || continue
+  launcher="$dir/townmouse"
+  if [ -f "$launcher" ] && [ ! -L "$launcher" ] && grep -q 'Townmouse launcher' "$launcher" 2>/dev/null; then
+    rm -f "$launcher" && echo "Removed $launcher"
   fi
 done
 
-# Remove the no-terminal app launcher from both possible install locations.
-for APP_BUNDLE in "/Applications/Townmouse.app" "$HOME/Applications/Townmouse.app" "/Applications/TerminalOne.app" "$HOME/Applications/TerminalOne.app"; do
-  if [ -d "$APP_BUNDLE" ]; then rm -rf "$APP_BUNDLE" && echo "Removed $APP_BUNDLE"; fi
+if [ -n "${TERMINALONE_APPLICATIONS_DIR:-}" ]; then
+  APP_DIRS=("$TERMINALONE_APPLICATIONS_DIR")
+else
+  APP_DIRS=(/Applications "$HOME/Applications")
+fi
+# Remove the no-terminal app launcher Townmouse's installer built, and nothing else.
+for dir in "${APP_DIRS[@]}"; do
+  [ -n "$dir" ] || continue
+  bundle="$dir/Townmouse.app"
+  if [ -d "$bundle" ]; then rm -rf "$bundle" && echo "Removed $bundle"; fi
 done
 
 # Remove the PATH line added to shell rc files by install-service.sh.

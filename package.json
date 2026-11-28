@@ -1,6 +1,6 @@
 {
   "name": "townmouse",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A terminal and agent browser workspace built on TerminalOne.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -29,7 +29,7 @@
     "dev": "scripts/node-runtime.sh exec src/server.js",
     "doctor": "scripts/node-runtime.sh doctor",
     "repair": "scripts/node-runtime.sh repair",
-    "test": "npm run test:security && bash tests/hooks.test.sh && npm run test:unit && scripts/node-runtime.sh exec tests/smoke-test.js && scripts/node-runtime.sh exec tests/feature-test.js && scripts/node-runtime.sh exec tests/feature-behavior-test.js && scripts/node-runtime.sh exec tests/voice-input.test.js && scripts/node-runtime.sh exec tests/responsive-test.js && npm run test:ui && npm run test:panes && npm run test:agent-control && npm run test:voice-routing",
+    "test": "npm run test:security && bash tests/hooks.test.sh && bash tests/townmouse-docs.test.sh && bash tests/townmouse-launch.test.sh && bash tests/install-service-portability.test.sh && bash tests/townmouse-app-build.test.sh && npm run test:unit && scripts/node-runtime.sh exec tests/smoke-test.js && scripts/node-runtime.sh exec tests/feature-test.js && scripts/node-runtime.sh exec tests/feature-behavior-test.js && scripts/node-runtime.sh exec tests/voice-input.test.js && scripts/node-runtime.sh exec tests/responsive-test.js && npm run test:ui && npm run test:panes && npm run test:agent-control && npm run test:voice-routing",
     "test:unit": "scripts/node-runtime.sh exec tests/input-guard.test.mjs && node --test tests/input-chunks.test.mjs tests/replay-text.test.mjs tests/attachments-retention.test.mjs tests/service-worker.test.js tests/commercial-polish.test.js tests/autosave-restore.test.mjs tests/shell-resolve.test.js tests/static-deps.test.js tests/pty-permissions.test.js tests/chrome-resolve.test.js tests/safe-regex.test.js && node --test tests/clipboard-text.test.mjs",
     "test:smoke": "scripts/node-runtime.sh exec tests/smoke-test.js",
     "test:features": "scripts/node-runtime.sh exec tests/feature-test.js",
@@ -68,7 +68,8 @@
     "scripts/prepare-native.sh",
     "scripts/install-service.sh",
     "scripts/uninstall-service.sh",
-    "scripts/t1.sh",
+    "scripts/retire-legacy-service.sh",
+    "scripts/townmouse.sh",
     "scripts/run-hooks",
     "README.md",
     "TOWNMOUSE.md",

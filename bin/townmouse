@@ -5,7 +5,7 @@ const path = require('path');
 const pkg = require('../package.json');
 
 const ROOT = path.join(__dirname, '..');
-let port = Number(process.env.PORT) || 11001;
+let port = Number(process.env.PORT) || 11002;
 let openBrowser = true;
 
 for (let i = 0; i < process.argv.length; i++) {
@@ -15,7 +15,7 @@ for (let i = 0; i < process.argv.length; i++) {
 
 Usage: townmouse [--port <n>] [--no-open]
 
-  --port <n>   Port for the local server (default 11001)
+  --port <n>   Port for the local server (default 11002)
   --no-open    Do not open a browser window
 `);
     process.exit(0);

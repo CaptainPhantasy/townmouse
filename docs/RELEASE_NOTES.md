@@ -58,6 +58,14 @@ That is the pitch. The rest is details.
 
 ---
 
+## 0.3.0 — Its own name, place and button (2026-11-28)
+
+Townmouse and TerminalOne, the engine it embeds, can now be installed on one Mac without Townmouse taking TerminalOne's place:
+
+- **Own service identity.** The macOS service is `com.floyd.townmouse` on port 11002, with a `townmouse` launcher and app identifier `com.floyd.townmouse`. TerminalOne keeps `com.floyd.terminalone`, port 11001 and `t1`.
+- **Default port 11002** for the server, the `townmouse` command, the macOS wrapper and the container. Set `PORT` to use another port.
+- **Upgrading retires the 0.2.x service** that sat under TerminalOne's label, and never touches a TerminalOne service or launcher. If 0.2.x displaced TerminalOne, run TerminalOne's `scripts/install-service.sh` afterwards.
+
 ## 0.2.1 — Security fixes (2026-11-21)
 
 A patch release for two boundaries found after 0.2.0 was tagged:
@@ -81,7 +89,7 @@ A patch release for two boundaries found after 0.2.0 was tagged:
 
 Townmouse was seeded on 2026-11-14 from TerminalOne commit `dd0cbde6` ("Preserve recovered TerminalOne glass browser workspace"), originally branch `dot/recover-terminalone-20261114`. The engine stays the canonical simple PTY. The browser workspace, agent browser, view/control grants, and workspace interface live here; they do not go upstream into TerminalOne.
 
-Product version: 0.2.1, released 2026-11-21.
+Product version: 0.3.0, released 2026-11-28.
 
 ---
 
@@ -168,7 +176,7 @@ npm ci
 npm start
 ```
 
-Open `http://localhost:11001`. The server binds to `127.0.0.1` by default. A terminal can run commands with your account's permissions.
+Open `http://localhost:11002`. The server binds to `127.0.0.1` by default. A terminal can run commands with your account's permissions.
 
 ---
 
@@ -182,7 +190,7 @@ Townmouse is AGPL-3.0-only. If you run this software, or a modified version of i
 │  DOCUMENT METADATA                                        │
 ├──────────────────────────────────────────────────────────┤
 │  Classification:   Pre-Release Notes                      │
-│  Product:          Townmouse 0.2.1 (2026-11-21)           │
+│  Product:          Townmouse 0.3.0 (2026-11-28)           │
 │  Engine:           TerminalOne v1.0.0 (2026-06-22)        │
 │  Cat Supervision:  Bella Approved (keyboard walked on)    │
 │  Bowser Status:    Monitoring routers, sitting on tabs    │

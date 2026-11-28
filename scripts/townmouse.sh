@@ -1,50 +1,89 @@
 #!/bin/bash
 #
-# t1 — open Townmouse. Ensures the always-on service is running, waits for it to
-# be healthy, then opens the UI as a chrome-less app window (falls back to the
-# default browser). This is the volume-resident implementation; install-service.sh
-# generates a self-contained `t1` binary on the internal disk that delegates here,
-# plus ~/Applications/Townmouse.app. Run install once, then use `t1` or Spotlight.
+# townmouse — open Townmouse. Ensures the always-on service is running, waits for
+# it to be healthy, then opens the UI as a chrome-less app window (falls back to
+# the default browser). This is the volume-resident implementation; install-service.sh
+# generates a self-contained `townmouse` launcher on the internal disk that delegates
+# here, plus /Applications/Townmouse.app. Run install once, then use `townmouse` or
+# Spotlight.
+#
+# Townmouse keeps its own service name and port so it can sit beside TerminalOne,
+# the engine it embeds: Townmouse is `com.floyd.townmouse` on 11002, TerminalOne is
+# `com.floyd.terminalone` on 11001.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-PORT="${PORT:-11001}"
+PORT="${PORT:-11002}"
 APP_DIR="${TERMINALONE_APP_DIR:-$(cd "$SCRIPT_DIR/.." && pwd -P)}"
 LOG_DIR="${TERMINALONE_LOG_DIR:-$HOME/Library/Logs/Townmouse}"
-URL="${TERMINALONE_URL:-http://localhost:$PORT}"
-HEALTH_URL="${TERMINALONE_HEALTH_URL:-$URL/health}"
-LABEL="com.floyd.terminalone"
+LABEL="com.floyd.townmouse"
 DOMAIN="gui/$(id -u)"
 SERVE_ONLY=false
-[ "${1:-}" = "--serve-only" ] && SERVE_ONLY=true
 
 show_usage() {
   cat <<'EOF'
-Usage: t1 [--serve-only]
+Usage: townmouse [--port <n>] [--no-open]
 
 Open Townmouse, or ensure its service is healthy without opening a browser.
 
 Options:
-  --serve-only  Start or verify the service, then exit
+  --port <n>    Port for the local server (default 11002)
+  --no-open     Start or verify the service, then exit
+  --serve-only  Same as --no-open
+  -v, --version Show the installed version and exit
   -h, --help    Show this help and exit
 EOF
 }
 
-case "${1:-}" in
-  help|-h|--help)
-    show_usage
-    exit 0
-    ;;
-esac
-
 show_error() {
   local msg="$1"
-  printf 't1: %s\n' "$msg" >&2
+  printf 'townmouse: %s\n' "$msg" >&2
   if [ ! -t 2 ] && command -v osascript >/dev/null 2>&1; then
     osascript -e "display dialog \"$msg\" with title \"Townmouse\" buttons {\"OK\"} default button \"OK\" with icon caution" >/dev/null 2>&1 || true
   fi
 }
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    help|-h|--help)
+      show_usage
+      exit 0
+      ;;
+    -v|--version)
+      sed -n 's/^  "version": "\([^"]*\)".*/\1/p' "$APP_DIR/package.json" | head -n 1
+      exit 0
+      ;;
+    --serve-only|--no-open)
+      SERVE_ONLY=true
+      ;;
+    --port)
+      [ "$#" -ge 2 ] || { show_error "--port needs a number"; exit 2; }
+      PORT="$2"
+      shift
+      ;;
+    --port=*)
+      PORT="${1#--port=}"
+      ;;
+  esac
+  shift
+done
+
+# The same range bin/townmouse accepts. Leading zeros are ignored.
+port_is_valid() {
+  local value="$1" digits
+  case "$value" in ''|*[!0-9]*) return 1 ;; esac
+  digits="$(printf '%s' "$value" | sed 's/^0*//')"
+  digits="${digits:-0}"
+  [ "${#digits}" -le 5 ] && [ "$digits" -ge 1 ] && [ "$digits" -le 65535 ]
+}
+if ! port_is_valid "$PORT"; then
+  show_error "Invalid port. Use a number from 1 to 65535."
+  exit 2
+fi
+
+URL="${TERMINALONE_URL:-http://localhost:$PORT}"
+HEALTH_URL="${TERMINALONE_HEALTH_URL:-$URL/health}"
 
 wait_for_health() {
   local tries="${1:-32}"
@@ -78,7 +117,7 @@ if ! wait_for_health 1; then
     fi
 
     if ! "$APP_DIR/scripts/node-runtime.sh" doctor >/dev/null 2>&1; then
-      show_error "Townmouse runtime is not ready. Run: t1 repair"
+      show_error "Townmouse runtime is not ready. Run: townmouse repair"
       exit 1
     fi
 

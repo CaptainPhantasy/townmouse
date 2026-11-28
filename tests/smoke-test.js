@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Smoke + functional test for TerminalOne.
- * - Spawns the server on TEST_PORT (default 11001).
+ * Smoke + functional test for the Townmouse terminal engine.
+ * - Spawns the server on TEST_PORT (default 11356, clear of the product ports
+ *   11001 and 11002 so the suite never collides with an installed service).
  * - HTTP: verifies /health and that index.html ships the settings UI.
  * - Browser (puppeteer): verifies the style toggle, the 12 color themes
  *   (incl. Matrix + all VOID themes), that a theme persists across a style
@@ -13,7 +14,7 @@ const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 
-const PORT = process.env.TEST_PORT || 11001;
+const PORT = process.env.TEST_PORT || 11356;
 const HOST = 'localhost';
 const BASE_URL = `http://${HOST}:${PORT}`;
 

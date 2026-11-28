@@ -106,8 +106,8 @@ The CLI surface is small on purpose:
 npm ci
 npm start
 npx townmouse
-townmouse --port 11001
-townmouse --port=11001 --no-open
+townmouse --port 11002
+townmouse --port=11002 --no-open
 townmouse --help
 townmouse --version
 npm pack
@@ -121,7 +121,7 @@ and neither should you.
 
 The `Dockerfile` uses `node:22-alpine`, installs Chromium, sets
 `PUPPETEER_SKIP_DOWNLOAD=1` and `TERMINALONE_CHROME=/usr/bin/chromium`, runs as
-the `node` user, exposes `11001`, and declares volumes for both
+the `node` user, exposes `11002`, and declares volumes for both
 `/home/node/.townmouse` (workspace, attachments, pane token) and
 `/home/node/.config/terminalone` (voice settings).
 It sets `HOST=0.0.0.0` for container port forwarding and
@@ -139,7 +139,7 @@ TOWNMOUSE_VERSION=$(node -p "require('./package.json').version") \
     --build-arg GIT_REVISION="$GIT_REVISION" \
     -t townmouse:"$TOWNMOUSE_VERSION" \
     -t townmouse:latest .
-docker run --rm -p 127.0.0.1:11001:11001 -v townmouse-home:/home/node/.townmouse -v townmouse-config:/home/node/.config/terminalone townmouse
+docker run --rm -p 127.0.0.1:11002:11002 -v townmouse-home:/home/node/.townmouse -v townmouse-config:/home/node/.config/terminalone townmouse
 ```
 
 The host port may differ from the container port; the request boundary accepts
@@ -148,7 +148,7 @@ host loopback. Mount project directories explicitly; the terminal starts in
 `/home/node`, not in your project. Health:
 
 ```sh
-curl http://127.0.0.1:11001/health
+curl http://127.0.0.1:11002/health
 ```
 
 `GET /health` returns `status: "ok"` plus the live session count. If it does not
@@ -158,7 +158,7 @@ guessing.
 ### 3. macOS application wrapper
 
 `native/TownmouseApp.swift` is a WKWebView shell pointed at `TOWNMOUSE_URL`
-(default `http://127.0.0.1:11001`). It probes `/health`. If nothing answers, it
+(default `http://127.0.0.1:11002`). It probes `/health`. If nothing answers, it
 tries a separately installed launcher and waits up to 12 seconds before showing
 a startup error.
 
@@ -167,6 +167,25 @@ and writes the launcher path into the bundle so the wrapper can start the
 backend. The installer scripts ship in the npm package, so this works from a
 global or local install; it is still a local convenience build, not a signed
 distribution.
+
+**Service identity.** Townmouse's service is its own: launchd label
+`com.floyd.townmouse`, port `11002`, launcher `townmouse`, bundle identifier
+`com.floyd.townmouse`. TerminalOne, the engine Townmouse embeds, keeps
+`com.floyd.terminalone`, port `11001` and the `t1` launcher, so the two products
+can be installed side by side; nothing Townmouse's installer writes takes
+TerminalOne's name, port or launcher. After `install-service.sh`, the `townmouse`
+launcher on the internal disk comes first on `PATH` and is service-aware: it
+starts the service when it is not healthy, then opens the workspace. It accepts
+`--port <n>`, `--no-open` (or `--serve-only`), `--version` and `--help`.
+`scripts/uninstall-service.sh` removes the service, the launcher and the app. It never removes a `townmouse` command the installer did not write, such as the one npm creates for the package, and the installer never overwrites one. The launcher and the icon always use port 11002: `PORT` set while running `install-service.sh` changes the service's port only, so leave the service on 11002.
+
+**Upgrading from 0.2.x.** Those versions installed the service as
+`com.floyd.terminalone` on port 11001 and wrote their launcher as `t1`, so on a
+Mac with TerminalOne, `t1` and TerminalOne.app opened Townmouse. The 0.3.0
+installer and uninstaller stop and remove that service, and remove the `t1`
+launcher 0.2.x wrote, when they find them; a TerminalOne service or launcher is
+never touched. If 0.2.x displaced TerminalOne, run TerminalOne's own
+`scripts/install-service.sh` afterwards to restore it.
 
 A distributable `.app` must bundle or launch the Node server or npm CLI, use a
 stable data directory, and be codesigned and notarized. Until that is done, there

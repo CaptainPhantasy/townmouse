@@ -105,14 +105,14 @@ function installAttachments(app) {
       const relative = `/attachments/${day}/${encodeURIComponent(stored)}`;
       const forwardedHost = String(req.get('X-Forwarded-Host') || '').split(',')[0].trim();
       const forwardedProto = String(req.get('X-Forwarded-Proto') || '').split(',')[0].trim();
-      const host = forwardedHost || req.get('host') || `127.0.0.1:${process.env.PORT || 11001}`;
+      const host = forwardedHost || req.get('host') || `127.0.0.1:${process.env.PORT || 11002}`;
       const protocol = forwardedProto === 'https' ? 'https' : req.protocol;
       res.set('Cache-Control', 'no-store');
       res.json({
         name: original,
         path: target,
         url: `${protocol}://${host}${relative}`,
-        localUrl: `http://127.0.0.1:${process.env.PORT || 11001}${relative}`,
+        localUrl: `http://127.0.0.1:${process.env.PORT || 11002}${relative}`,
         relativeUrl: relative,
         mime: String(req.get('Content-Type') || 'application/octet-stream'),
         bytes: data.length

@@ -17,7 +17,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=1 \
     TOWNMOUSE_CHROMIUM_NO_SANDBOX=1 \
     HOST=0.0.0.0 \
     NODE_ENV=production \
-    PORT=11001
+    PORT=11002
 
 RUN apk add --no-cache \
        ca-certificates chromium python3 make g++ linux-headers
@@ -39,9 +39,9 @@ RUN chmod +x scripts/panes bin/townmouse \
   && chmod 700 /home/node/.townmouse /home/node/.config/terminalone
 
 USER node
-EXPOSE 11001
+EXPOSE 11002
 VOLUME ["/home/node/.townmouse", "/home/node/.config/terminalone"]
 # curl is not in the base image; Node's fetch answers the same question.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:11001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:11002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 CMD ["node", "src/server.js"]

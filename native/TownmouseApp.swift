@@ -7,7 +7,7 @@ import WebKit
 final class TownmouseApp: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
-    private let serviceURL = URL(string: ProcessInfo.processInfo.environment["TOWNMOUSE_URL"] ?? ProcessInfo.processInfo.environment["TERMINALONE_URL"] ?? "http://127.0.0.1:11001")!
+    private let serviceURL = URL(string: ProcessInfo.processInfo.environment["TOWNMOUSE_URL"] ?? ProcessInfo.processInfo.environment["TERMINALONE_URL"] ?? "http://127.0.0.1:11002")!
 
     static func main() {
         let app = NSApplication.shared
@@ -83,9 +83,9 @@ final class TownmouseApp: NSObject, NSApplicationDelegate {
             candidates.append(path)
         }
         candidates += [
-            NSString(string: "~/.local/bin/t1").expandingTildeInPath,
-            "/usr/local/bin/t1",
-            NSString(string: "~/bin/t1").expandingTildeInPath,
+            NSString(string: "~/.local/bin/townmouse").expandingTildeInPath,
+            "/usr/local/bin/townmouse",
+            NSString(string: "~/bin/townmouse").expandingTildeInPath,
         ]
         guard let launcher = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { return }
         let process = Process()
@@ -99,7 +99,7 @@ final class TownmouseApp: NSObject, NSApplicationDelegate {
     private func presentStartupError() {
         let alert = NSAlert()
         alert.messageText = "Townmouse could not start"
-        alert.informativeText = "Run ‘t1 doctor’ in a terminal for the exact cause and repair command."
+        alert.informativeText = "Run ‘townmouse doctor’ in a terminal for the exact cause and repair command."
         alert.alertStyle = .critical
         alert.addButton(withTitle: "OK")
         alert.runModal()
